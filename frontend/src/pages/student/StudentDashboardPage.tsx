@@ -33,15 +33,16 @@ function StudentDashboardPage() {
 
   /**
    * Handle sign out event
-   * Phase 1: Logs to console
-   * Future: Will call API and redirect to login
+   * Navigates to login page
+   * Future: Will call API to clear session
    * 
    * Requirement 8.2
    */
   const handleSignOut = () => {
     try {
       console.log('Sign out clicked');
-      // Future: Call API and redirect to login
+      // Future: Call API to clear session
+      navigate('/login');
     } catch (error) {
       console.error('Error during sign out:', error);
     }
