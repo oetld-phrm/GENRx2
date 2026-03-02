@@ -33,3 +33,4 @@ cdk.out/
 
 # Testing
 coverage/
+tools/

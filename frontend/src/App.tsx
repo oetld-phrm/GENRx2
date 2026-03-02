@@ -5,6 +5,17 @@ import StudentDashboardPage from './pages/student/StudentDashboardPage';
 import PatientsPage from './pages/student/PatientsPage';
 import PatientDashboardPage from './pages/student/PatientDashboardPage';
 import StudentChatPage from './pages/student/StudentChatPage';
+import { validateConfig } from './config/aws-config';
+
+// Validate configuration on app load
+if (import.meta.env.DEV) {
+  if (validateConfig()) {
+    console.log('✅ AWS configuration is valid');
+  } else {
+    console.warn('⚠️ AWS configuration is incomplete. Some features may not work.');
+    console.warn('Run: npm run setup (or check .env file)');
+  }
+}
 
 function App() {
   return (
