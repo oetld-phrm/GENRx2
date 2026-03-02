@@ -33,7 +33,7 @@ export interface Patient {
   id: string;                    // Unique identifier
   name: string;                  // Patient name
   avatarUrl?: string;            // Optional patient image URL
-  llmEvaluation: string;         // LLM evaluation status
+  completionStatus: 'not-started' | 'in-progress' | 'completed'; // Completion status
   instructorEvaluation: string;  // Instructor evaluation status
 }
 
@@ -86,14 +86,21 @@ const mockPatients: Patient[] = [
     id: '1',
     name: 'Pamela',
     avatarUrl: undefined, // Will display initials
-    llmEvaluation: 'Incomplete',
+    completionStatus: 'in-progress',
     instructorEvaluation: 'Incomplete'
   },
   {
     id: '2',
     name: 'Timothy',
     avatarUrl: undefined, // Will display initials
-    llmEvaluation: 'Complete',
+    completionStatus: 'completed',
+    instructorEvaluation: 'Incomplete'
+  },
+  {
+    id: '3',
+    name: 'Sarah',
+    avatarUrl: undefined, // Will display initials
+    completionStatus: 'not-started',
     instructorEvaluation: 'Incomplete'
   }
 ];

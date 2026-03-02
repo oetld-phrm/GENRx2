@@ -2,14 +2,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import UserAvatar from '@/components/UserAvatar';
 import { mockDataService } from '@/services/studentService';
-import { ArrowLeft, Mic, Send, FileText, StickyNote, User, Eye, CheckCircle } from 'lucide-react';
-import { SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
+import { ArrowLeft, Mic, Send, FileText, StickyNote, User, Eye, CheckCircle, X, Menu } from 'lucide-react';
+import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { useState, useRef, useEffect } from 'react';
 import CaseMaterialsDialog from '@/components/CaseMaterialsDialog';
 import NotesDialog from '@/components/NotesDialog';
 import PatientInformationDialog from '@/components/PatientInformationDialog';
 import ConfirmRevealDialog from '@/components/ConfirmRevealDialog';
 import AnswerKeyDialog from '@/components/AnswerKeyDialog';
+import ConfirmConcludeDialog from '@/components/ConfirmConcludeDialog';
 
 // Message interface matching database schema
 interface Message {
@@ -52,6 +53,10 @@ function StudentChatPage() {
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
   const [isConfirmRevealOpen, setIsConfirmRevealOpen] = useState(false);
   const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
+  const [isConfirmConcludeOpen, setIsConfirmConcludeOpen] = useState(false);
+
+  // State for voice mode
+  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
 
   // State for chat
   const [messages, setMessages] = useState<Message[]>([]);
@@ -129,6 +134,16 @@ function StudentChatPage() {
     console.log('Revealing answer...');
     setIsConfirmRevealOpen(false);
     setIsAnswerKeyOpen(true);
+  };
+
+  /**
+   * Handle conclude interaction confirmation
+   */
+  const handleConcludeInteraction = () => {
+    console.log('Concluding interaction...');
+    setIsConfirmConcludeOpen(false);
+    // Future: Show AI debrief and disable chat input
+    // Navigate to debrief page or show debrief dialog
   };
 
   /**
@@ -213,6 +228,13 @@ function StudentChatPage() {
         isOpen={isAnswerKeyOpen}
         onClose={() => setIsAnswerKeyOpen(false)}
         answerKey={answerKey}
+      />
+
+      {/* Confirm Conclude Dialog */}
+      <ConfirmConcludeDialog
+        isOpen={isConfirmConcludeOpen}
+        onCancel={() => setIsConfirmConcludeOpen(false)}
+        onConfirm={handleConcludeInteraction}
       />
 
       {/* Header */}
@@ -300,6 +322,7 @@ function StudentChatPage() {
               variant="outline"
               className="w-full justify-start text-white hover:opacity-90 border-0"
               style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[6] }}
+              onClick={() => setIsConfirmConcludeOpen(true)}
             >
               <CheckCircle className="w-5 h-5 mr-2" />
               Conclude Interaction
@@ -309,6 +332,68 @@ function StudentChatPage() {
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col">
+          {/* Voice Mode Overlay */}
+          {isVoiceModeActive && (
+            <div className="absolute inset-0 bg-white z-40 flex flex-col items-center justify-center">
+              {/* Patient Avatar */}
+              <div className="mb-8">
+                <UserAvatar
+                  name={patient.name}
+                  imageUrl={patient.imageUrl}
+                  size="xlarge"
+                />
+              </div>
+
+              {/* Voice Mode Active Text */}
+              <h2 className="text-2xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                Voice Mode Active
+              </h2>
+              <p className="text-base mb-12" style={{ color: UI_COLORS.text.body }}>
+                Speak naturally to interact with the AI patient.
+              </p>
+
+              {/* Voice Visualization Bars */}
+              <div className="flex items-center gap-1 mb-16">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 rounded-full animate-pulse"
+                    style={{
+                      backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[1],
+                      height: `${20 + Math.random() * 40}px`,
+                      animationDelay: `${i * 0.1}s`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Control Buttons */}
+              <div className="flex gap-4">
+                {/* Close Voice Mode Button */}
+                <button
+                  onClick={() => setIsVoiceModeActive(false)}
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[5] }}
+                  aria-label="Close voice mode"
+                >
+                  <X className="w-6 h-6 text-white" />
+                </button>
+
+                {/* Open Notes Button */}
+                <button
+                  onClick={() => setIsNotesOpen(true)}
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{
+                    backgroundColor: UI_COLORS.button.primary,
+                  }}
+                  aria-label="Open notes"
+                >
+                  <Menu className="w-6 h-6 text-white" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Chat Messages Area */}
           <div className="flex-1 overflow-y-auto p-6">
             {messages.length === 0 ? (
@@ -378,6 +463,7 @@ function StudentChatPage() {
           <div className="border-t border-gray-300 p-6">
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setIsVoiceModeActive(true)}
                 className="p-3 rounded-full bg-gray-800 text-white hover:bg-gray-900 transition-colors"
                 aria-label="Voice input"
               >

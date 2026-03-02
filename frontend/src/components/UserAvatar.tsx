@@ -3,7 +3,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 interface UserAvatarProps {
   name: string;
   imageUrl?: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'small' | 'medium' | 'large' | 'xlarge';
   backgroundColor?: string;
 }
 
@@ -11,6 +11,7 @@ const sizeClasses = {
   small: 'h-11 w-11 text-sm',
   medium: 'h-16 w-16 text-xl',
   large: 'h-24 w-24 text-3xl',
+  xlarge: 'h-32 w-32 text-4xl',
 };
 
 function UserAvatar({ name, imageUrl, size = 'medium', backgroundColor }: UserAvatarProps) {

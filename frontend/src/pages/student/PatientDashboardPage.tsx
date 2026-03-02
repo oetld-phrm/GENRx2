@@ -141,8 +141,7 @@ function PatientDashboardPage() {
                 <thead className="bg-gray-50 border-b border-gray-300">
                   <tr>
                     <th className="px-6 py-3 text-left font-semibold text-gray-900 text-sm">Name</th>
-                    <th className="px-6 py-3 text-center font-semibold text-gray-900 text-sm">Completion Status</th>
-                    <th className="px-6 py-3 text-center font-semibold text-gray-900 text-sm">Scores (if applicable)</th>
+                    <th className="px-6 py-3 text-center font-semibold text-gray-900 text-sm">Chat Completion Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,7 +153,6 @@ function PatientDashboardPage() {
                     >
                       <td className="px-6 py-4 text-gray-900">{chat.name}</td>
                       <td className="px-6 py-4 text-gray-600 text-center">{chat.completionStatus}</td>
-                      <td className="px-6 py-4 text-gray-600 text-center">{chat.score || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
