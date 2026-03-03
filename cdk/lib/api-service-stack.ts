@@ -31,6 +31,8 @@ import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as appsync from "aws-cdk-lib/aws-appsync";
+import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as cr from "aws-cdk-lib/custom-resources";
 
 export class ApiServiceStack extends cdk.Stack {
   private readonly api: apigateway.SpecRestApi;
@@ -56,6 +58,10 @@ export class ApiServiceStack extends cdk.Stack {
     db: DatabaseStack,
     vpcStack: VpcStack,
     ecsSocketStack: any = null,
+    textGenRepo?: ecr.IRepository,
+    dataIngestRepo?: ecr.IRepository,
+    textGenBuildProjectName?: string,
+    dataIngestBuildProjectName?: string,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -1096,6 +1102,75 @@ export class ApiServiceStack extends cdk.Stack {
     });
 
     /**
+     * ECR Image Waiter Custom Resource
+     * Waits for Docker images to exist in ECR before creating Lambda functions.
+     * This prevents race conditions on first deploy when CodePipeline hasn't built images yet.
+     */
+    const imageWaiterFunction = new lambda.Function(this, `${id}-EcrImageWaiter`, {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      code: lambda.Code.fromAsset("lambda/ecrImageWaiter"),
+      handler: "index.handler",
+      timeout: cdk.Duration.seconds(900),
+      functionName: `${id}-EcrImageWaiter`,
+      memorySize: 128,
+    });
+
+    // Grant ECR read permissions
+    imageWaiterFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ecr:DescribeImages",
+          "ecr:DescribeRepositories",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    // Grant CodeBuild start permissions (for triggering builds)
+    imageWaiterFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["codebuild:StartBuild"],
+        resources: [`arn:aws:codebuild:${this.region}:${this.account}:project/*`],
+      })
+    );
+
+    const imageWaiterProvider = new cr.Provider(this, `${id}-EcrImageWaiterProvider`, {
+      onEventHandler: imageWaiterFunction,
+    });
+
+    // Wait for text generation image
+    if (textGenRepo) {
+      const textGenImageWaiter = new cdk.CustomResource(this, `${id}-TextGenImageWaiter`, {
+        serviceToken: imageWaiterProvider.serviceToken,
+        properties: {
+          RepositoryName: textGenRepo.repositoryName,
+          ImageTag: "latest",
+          MaxRetries: "28",
+          RetryDelaySeconds: "30",
+          TriggerBuildOnMissing: textGenBuildProjectName ? "true" : "false",
+          CodeBuildProjectName: textGenBuildProjectName || "",
+        },
+      });
+    }
+
+    // Wait for data ingestion image
+    if (dataIngestRepo) {
+      const dataIngestImageWaiter = new cdk.CustomResource(this, `${id}-DataIngestImageWaiter`, {
+        serviceToken: imageWaiterProvider.serviceToken,
+        properties: {
+          RepositoryName: dataIngestRepo.repositoryName,
+          ImageTag: "latest",
+          MaxRetries: "28",
+          RetryDelaySeconds: "30",
+          TriggerBuildOnMissing: dataIngestBuildProjectName ? "true" : "false",
+          CodeBuildProjectName: dataIngestBuildProjectName || "",
+        },
+      });
+    }
+
+    /**
      *
      * Create Lambda with container image for text generation workflow in RAG pipeline
      */
@@ -1103,7 +1178,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-TextGenLambdaDockerFunction`,
       {
-        code: lambda.DockerImageCode.fromImageAsset("./text_generation"),
+        code: lambda.DockerImageCode.fromEcr(textGenRepo!),
         memorySize: 512,
         timeout: cdk.Duration.seconds(300),
         vpc: vpcStack.vpc, // Pass the VPC
@@ -1295,7 +1370,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-DataIngestLambdaDockerFunction`,
       {
-        code: lambda.DockerImageCode.fromImageAsset("./data_ingestion"),
+        code: lambda.DockerImageCode.fromEcr(dataIngestRepo!),
         memorySize: 3008,
         timeout: cdk.Duration.seconds(900),
         vpc: vpcStack.vpc, // Pass the VPC

@@ -8,6 +8,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as ecr from "aws-cdk-lib/aws-ecr";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 
@@ -20,6 +21,7 @@ export class EcsSocketStack extends Stack {
     vpcStack: VpcStack,
     db: DatabaseStack,
     apiServiceStack: any,
+    socketServerRepo: ecr.IRepository,
     props?: StackProps
   ) {
     super(scope, id, props);
@@ -124,7 +126,7 @@ export class EcsSocketStack extends Stack {
 
     // 4) Container listening on port 80
     taskDef.addContainer("SocketContainer", {
-      image: ecs.ContainerImage.fromAsset("./socket-server"),
+      image: ecs.ContainerImage.fromEcrRepository(socketServerRepo, "latest"),
       portMappings: [{ containerPort: 80 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "Socket",

@@ -3,11 +3,12 @@ import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
 import { AmplifyStack } from "../lib/amplify-stack";
 import { ApiServiceStack } from "../lib/api-service-stack";
-
 import { DatabaseStack } from "../lib/database-stack";
 import { DBFlowStack } from "../lib/dbFlow-stack";
 import { VpcStack } from "../lib/vpc-stack";
 import { EcsSocketStack } from "../lib/ecs-socket-stack";
+import { CICDStack } from "../lib/cicd-stack";
+
 const app = new cdk.App();
 
 const env = {
@@ -16,6 +17,31 @@ const env = {
 };
 
 const StackPrefix = app.node.tryGetContext("StackPrefix");
+const githubRepo = app.node.tryGetContext("githubRepo");
+
+// CI/CD pipeline — creates ECR repos, CodeBuild projects, and CodePipeline
+const cicdStack = new CICDStack(app, `${StackPrefix}-CICD`, {
+  env,
+  githubRepo,
+  githubBranch: app.node.tryGetContext("githubBranch") || "main",
+  lambdaFunctions: [
+    {
+      name: "textGeneration",
+      functionName: `${StackPrefix}-Api-TextGenLambdaDockerFunction`,
+      sourceDir: "cdk/text_generation",
+    },
+    {
+      name: "dataIngestion",
+      functionName: `${StackPrefix}-Api-DataIngestLambdaDockerFunction`,
+      sourceDir: "cdk/data_ingestion",
+    },
+    {
+      name: "socketServer",
+      functionName: `${StackPrefix}-EcsSocket-SocketServer`,
+      sourceDir: "cdk/socket-server",
+    },
+  ],
+});
 
 const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
@@ -27,6 +53,10 @@ const apiStack = new ApiServiceStack(
   dbStack,
   vpcStack,
   null, // ecsSocketStack will be passed later
+  cicdStack.ecrRepositories["textGeneration"],
+  cicdStack.ecrRepositories["dataIngestion"],
+  cicdStack.buildProjects["textGeneration"]?.projectName,
+  cicdStack.buildProjects["dataIngestion"]?.projectName,
   { env }
 );
 const ecsSocketStack = new EcsSocketStack(
@@ -35,6 +65,7 @@ const ecsSocketStack = new EcsSocketStack(
   vpcStack,
   dbStack,
   apiStack,
+  cicdStack.ecrRepositories["socketServer"],
   { env }
 );
 const dbFlowStack = new DBFlowStack(
@@ -51,9 +82,9 @@ const amplifyStack = new AmplifyStack(
   `${StackPrefix}-Amplify`,
   apiStack,
   ecsSocketStack,
-  apiStack, // Pass apiStack instead of appSyncStack since AppSync is now part of it
+  apiStack,
   {
     env,
   }
 );
-cdk.Tags.of(app).add("app", "Virtual-Care-Interaction");
+cdk.Tags.of(app).add("app", "GenRx");
