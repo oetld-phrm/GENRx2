@@ -83,9 +83,6 @@ applications:
         baseDirectory: dist
         files:
           - '**/*'
-      cache:
-        paths:
-          - 'node_modules/**/*'
 `,
       customRules: [
         {
