@@ -2,12 +2,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import UserAvatar from '@/components/UserAvatar';
 import { mockDataService } from '@/services/studentService';
-import { ArrowLeft, FileText, StickyNote, User, Stethoscope, Flag, Eye } from 'lucide-react';
+import { ArrowLeft, FileText, User, Stethoscope, Flag, Eye, Menu, ChevronRight } from 'lucide-react';
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { useState, useRef, useEffect } from 'react';
-import CaseMaterialsDialog from '@/components/CaseMaterialsDialog';
-import PhysicalAssessmentDialog from '@/components/PhysicalAssessmentDialog';
-import NotesDialog from '@/components/NotesDialog';
 import PatientInformationDialog from '@/components/PatientInformationDialog';
 import ReportIssueDialog from '@/components/ReportIssueDialog';
 import AIDebriefDialog from '@/components/AIDebriefDialog';
@@ -47,12 +44,30 @@ function ChatHistoryPage() {
   };
 
   // State for dialogs
-  const [isCaseMaterialsOpen, setIsCaseMaterialsOpen] = useState(false);
-  const [isPhysicalAssessmentOpen, setIsPhysicalAssessmentOpen] = useState(false);
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
   const [isReportIssueOpen, setIsReportIssueOpen] = useState(false);
   const [isAIDebriefOpen, setIsAIDebriefOpen] = useState(false);
+
+  // State for content sidebar (case materials or physical assessment)
+  const [contentSidebarType, setContentSidebarType] = useState<'case-materials' | 'physical-assessment' | null>(null);
+
+  // State for sidebar visibility
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(true);
+
+  // Mock saved notes - will be fetched from database
+  const savedNotes = [
+    {
+      id: 'note-1',
+      text: 'Patient reports chest pain with pressure-like sensation',
+      timestamp: '2026-02-18T10:02:00Z',
+    },
+    {
+      id: 'note-2',
+      text: 'Need to check ECG results and vital signs',
+      timestamp: '2026-02-18T10:05:00Z',
+    },
+  ];
 
   // State for chat - Mock data, will be replaced with database fetch
   const [messages ] = useState<Message[]>([
@@ -163,27 +178,16 @@ function ChatHistoryPage() {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
+  /**
+   * Format note timestamp for display
+   */
+  const formatNoteTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: UI_COLORS.background.white }}>
-      {/* Case Materials Dialog */}
-      <CaseMaterialsDialog
-        isOpen={isCaseMaterialsOpen}
-        onClose={() => setIsCaseMaterialsOpen(false)}
-        materials={caseMaterials}
-      />
-
-      {/* Physical Assessment Dialog */}
-      <PhysicalAssessmentDialog
-        isOpen={isPhysicalAssessmentOpen}
-        onClose={() => setIsPhysicalAssessmentOpen(false)}
-      />
-
-      {/* Notes Dialog */}
-      <NotesDialog
-        isOpen={isNotesOpen}
-        onClose={() => setIsNotesOpen(false)}
-      />
-
       {/* Patient Information Dialog */}
       <PatientInformationDialog
         isOpen={isPatientInfoOpen}
@@ -207,6 +211,18 @@ function ChatHistoryPage() {
       {/* Header */}
       <header className="flex border-b border-border items-center justify-between py-6 px-8" style={{ backgroundColor: UI_COLORS.header.background }}>
         <div className="flex items-center gap-4">
+          {/* Sidebar Toggle Button */}
+          <button
+            onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+            className="p-2 rounded-lg transition-colors"
+            style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
           <UserAvatar
             name={user.name}
             imageUrl={user.avatarUrl}
@@ -229,7 +245,19 @@ function ChatHistoryPage() {
           </div>
         </div>
 
-        <div className="flex items-center">
+        <div className="flex items-center gap-4">
+          {/* Right Sidebar Toggle Button */}
+          <button
+            onClick={() => setIsRightSidebarVisible(!isRightSidebarVisible)}
+            className="p-2 rounded-lg transition-colors"
+            style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+            aria-label="Toggle right sidebar"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
           <Button
             variant="default"
             onClick={handleSignOut}
@@ -245,12 +273,51 @@ function ChatHistoryPage() {
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-64 flex flex-col" style={{ backgroundColor: UI_COLORS.background.white, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: UI_COLORS.border.default }}>
+        {/* Left Sidebar */}
+        <aside 
+          className="flex flex-col transition-all duration-300 ease-in-out"
+          style={{ 
+            backgroundColor: UI_COLORS.background.white, 
+            borderRightWidth: isSidebarVisible ? '1px' : '0px', 
+            borderRightStyle: 'solid', 
+            borderRightColor: UI_COLORS.border.default,
+            width: isSidebarVisible ? '16rem' : '0rem',
+            minWidth: isSidebarVisible ? '16rem' : '0rem',
+            overflow: 'hidden',
+            opacity: isSidebarVisible ? 1 : 0,
+          }}
+        >
           {/* Patient Info */}
           <div className="p-6" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
-            <h2 className="font-semibold text-lg mb-1" style={{ color: UI_COLORS.text.heading }}>{patient.name}</h2>
-            <p className="text-sm" style={{ color: UI_COLORS.text.body }}>{patient.gender}, {patient.age} years old</p>
+            <h2 className="font-semibold text-lg mb-1 whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>{patient.name}</h2>
+            <p className="text-sm whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>{patient.gender}, {patient.age} years old</p>
+          </div>
+
+          {/* Notes Section - Read Only */}
+          <div className="p-4 flex flex-col" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default, maxHeight: '400px' }}>
+            <h3 className="font-semibold text-sm mb-3 whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>Notes</h3>
+            
+            {/* Saved Notes List - Scrollable */}
+            {savedNotes.length > 0 ? (
+              <div className="overflow-y-auto space-y-2 flex-1">
+                {savedNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="p-2 rounded text-xs flex-shrink-0"
+                    style={{ backgroundColor: UI_COLORS.background.hoverLight }}
+                  >
+                    <p className="text-xs leading-relaxed mb-1" style={{ color: UI_COLORS.text.body }}>
+                      {note.text}
+                    </p>
+                    <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>
+                      {formatNoteTime(note.timestamp)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>No notes saved for this chat.</p>
+            )}
           </div>
 
           {/* Spacer */}
@@ -260,7 +327,7 @@ function ChatHistoryPage() {
           <div className="flex flex-col gap-3 p-4">
             <Button
               variant="outline"
-              className="w-full justify-start text-white hover:opacity-90 border-0"
+              className="w-full justify-start text-white hover:opacity-90 border-0 whitespace-nowrap"
               style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[2] }}
               onClick={handleViewAIDebrief}
             >
@@ -269,40 +336,7 @@ function ChatHistoryPage() {
             </Button>
             <Button
               variant="outline"
-              className="w-full justify-start transition-colors border-0"
-              style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
-              onClick={() => setIsCaseMaterialsOpen(true)}
-            >
-              <FileText className="w-5 h-5 mr-2" />
-              Case Materials
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start transition-colors border-0"
-              style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
-              onClick={() => setIsPhysicalAssessmentOpen(true)}
-            >
-              <Stethoscope className="w-5 h-5 mr-2" />
-              Physical Assessment
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start transition-colors border-0"
-              style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
-              onClick={() => setIsNotesOpen(true)}
-            >
-              <StickyNote className="w-5 h-5 mr-2" />
-              Notes
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start transition-colors border-0"
+              className="w-full justify-start transition-colors border-0 whitespace-nowrap"
               style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
@@ -313,7 +347,7 @@ function ChatHistoryPage() {
             </Button>
             <Button
               variant="outline"
-              className="w-full justify-start text-white hover:opacity-90 border-0"
+              className="w-full justify-start text-white hover:opacity-90 border-0 whitespace-nowrap"
               style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[5] }}
               onClick={() => setIsReportIssueOpen(true)}
             >
@@ -390,6 +424,153 @@ function ChatHistoryPage() {
             )}
           </div>
         </div>
+
+        {/* Content Sidebar (Case Materials or Physical Assessment) */}
+        <aside 
+          className="flex flex-col transition-all duration-300 ease-in-out"
+          style={{ 
+            backgroundColor: UI_COLORS.background.white, 
+            borderLeftWidth: contentSidebarType ? '1px' : '0px', 
+            borderLeftStyle: 'solid', 
+            borderLeftColor: UI_COLORS.border.default,
+            width: contentSidebarType ? '24rem' : '0rem',
+            minWidth: contentSidebarType ? '24rem' : '0rem',
+            overflow: 'hidden',
+            opacity: contentSidebarType ? 1 : 0,
+          }}
+        >
+          {/* Header with close button */}
+          {contentSidebarType && (
+            <div className="p-4 flex items-center justify-between" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+              <h2 className="font-semibold text-lg whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>
+                {contentSidebarType === 'case-materials' ? 'Case Materials' : 'Physical Assessment'}
+              </h2>
+              <button
+                onClick={() => setContentSidebarType(null)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+                aria-label="Close content sidebar"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
+          {/* Content Area */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {contentSidebarType === 'case-materials' && (
+              <div className="space-y-6">
+                {/* Group materials by their 'group' property */}
+                {Object.entries(
+                  caseMaterials.reduce((acc, material) => {
+                    if (!acc[material.group]) {
+                      acc[material.group] = [];
+                    }
+                    acc[material.group].push(material);
+                    return acc;
+                  }, {} as Record<string, typeof caseMaterials>)
+                ).map(([groupName, materials]) => (
+                  <div key={groupName}>
+                    {/* Group Header */}
+                    <h3 className="font-semibold text-base mb-3 pb-2" style={{ color: UI_COLORS.text.heading, borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+                      {groupName}
+                    </h3>
+                    
+                    {/* Materials in this group */}
+                    <div className="space-y-3">
+                      {materials.map((material) => (
+                        <div
+                          key={material.id}
+                          className="p-4 rounded-lg cursor-pointer transition-colors"
+                          style={{ backgroundColor: UI_COLORS.background.hoverLight }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.background.hover}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.background.hoverLight}
+                        >
+                          <div className="flex items-start gap-3">
+                            <FileText className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: UI_COLORS.text.muted }} />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-sm mb-1" style={{ color: UI_COLORS.text.heading }}>
+                                {material.title}
+                              </h4>
+                              <p className="text-xs" style={{ color: UI_COLORS.text.body }}>
+                                {material.description}
+                              </p>
+                              <p className="text-xs mt-1" style={{ color: UI_COLORS.text.muted }}>
+                                Type: {material.type}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {contentSidebarType === 'physical-assessment' && (
+              <div className="space-y-4">
+                <p className="text-sm" style={{ color: UI_COLORS.text.body }}>
+                  Physical assessment content will be displayed here.
+                </p>
+                <div className="p-4 rounded-lg" style={{ backgroundColor: UI_COLORS.background.hoverLight }}>
+                  <h3 className="font-semibold text-sm mb-2" style={{ color: UI_COLORS.text.heading }}>
+                    Assessment Tools
+                  </h3>
+                  <p className="text-xs" style={{ color: UI_COLORS.text.body }}>
+                    Physical assessment tools and information will appear here.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Right Sidebar */}
+        <aside 
+          className="flex flex-col transition-all duration-300 ease-in-out"
+          style={{ 
+            backgroundColor: UI_COLORS.background.white, 
+            borderLeftWidth: isRightSidebarVisible ? '1px' : '0px', 
+            borderLeftStyle: 'solid', 
+            borderLeftColor: UI_COLORS.border.default,
+            width: isRightSidebarVisible ? '16rem' : '0rem',
+            minWidth: isRightSidebarVisible ? '16rem' : '0rem',
+            overflow: 'hidden',
+            opacity: isRightSidebarVisible ? 1 : 0,
+          }}
+        >
+          {/* Spacer */}
+          <div className="flex-1"></div>
+
+          {/* Right Sidebar Buttons */}
+          <div className="flex flex-col gap-3 p-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start transition-colors border-0 whitespace-nowrap"
+              style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+              onClick={() => setContentSidebarType('case-materials')}
+            >
+              <FileText className="w-5 h-5 mr-2" />
+              Case Materials
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start transition-colors border-0 whitespace-nowrap"
+              style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+              onClick={() => setContentSidebarType('physical-assessment')}
+            >
+              <Stethoscope className="w-5 h-5 mr-2" />
+              Physical Assessment
+            </Button>
+          </div>
+        </aside>
       </div>
     </div>
   );
