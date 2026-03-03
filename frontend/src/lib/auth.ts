@@ -30,11 +30,11 @@ class AuthService {
   }
 
   // Sign in with username and password
-  async signIn(username: string, password: string): Promise<User> {
+  async signIn(_username: string, _password: string): Promise<User> {
     // TODO: Implement Cognito authentication
     // This is a placeholder - you'll need to use AWS SDK or Amplify
     
-    const endpoint = `https://cognito-idp.${awsConfig.region}.amazonaws.com/`;
+    const _endpoint = `https://cognito-idp.${awsConfig.region}.amazonaws.com/`;
     
     // Example using AWS SDK (you'll need to install @aws-sdk/client-cognito-identity-provider)
     // const client = new CognitoIdentityProviderClient({ region: awsConfig.region });

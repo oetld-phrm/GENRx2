@@ -179,7 +179,7 @@ def get_patient_details(patient_id):
         if cur:
             cur.close()
         connection.rollback()
-        return None, None, None
+        return None, None, None, None
 
 
 
