@@ -54,9 +54,9 @@ function DashboardHeader({
             variant="default"
             onClick={onStudentView}
             className="px-6 transition-colors"
-            style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+            style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
           >
             Student View
           </Button>
