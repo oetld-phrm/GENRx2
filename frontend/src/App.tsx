@@ -1,4 +1,8 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// Initialize Amplify config before anything else
+import '@/config/aws-config';
+
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import StudentDashboardPage from './pages/student/StudentDashboardPage';
@@ -6,19 +10,95 @@ import PatientsPage from './pages/student/PatientsPage';
 import PatientDashboardPage from './pages/student/PatientDashboardPage';
 import StudentChatPage from './pages/student/StudentChatPage';
 import ChatHistoryPage from './pages/student/ChatHistoryPage';
+import { authService, type AuthUser } from './lib/auth';
+
+// Auth context for sharing auth state across components
+interface AuthContextType {
+  user: AuthUser | null;
+  loading: boolean;
+  signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  signOut: async () => {},
+  refreshUser: async () => {},
+});
+
+export const useAuth = () => useContext(AuthContext);
+
+// Protected route wrapper — redirects to /login if not authenticated
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// Inner app component that has access to navigation
+function AppRoutes() {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const currentUser = await authService.getCurrentUser();
+      setUser(currentUser);
+    } catch {
+      setUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      await refreshUser();
+      setLoading(false);
+    };
+    checkAuth();
+  }, [refreshUser]);
+
+  const handleSignOut = async () => {
+    await authService.signOut();
+    setUser(null);
+    navigate('/login');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, signOut: handleSignOut, refreshUser }}>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+        <Route path="/signup" element={user ? <Navigate to="/" replace /> : <SignUpPage />} />
+
+        {/* Protected routes */}
+        <Route path="/" element={<ProtectedRoute><StudentDashboardPage /></ProtectedRoute>} />
+        <Route path="/patients/:groupId" element={<ProtectedRoute><PatientsPage /></ProtectedRoute>} />
+        <Route path="/patients/:groupId/:patientId" element={<ProtectedRoute><PatientDashboardPage /></ProtectedRoute>} />
+        <Route path="/patients/:groupId/:patientId/chat" element={<ProtectedRoute><StudentChatPage /></ProtectedRoute>} />
+        <Route path="/patients/:groupId/:patientId/chat/:chatId/history" element={<ProtectedRoute><ChatHistoryPage /></ProtectedRoute>} />
+      </Routes>
+    </AuthContext.Provider>
+  );
+}
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignUpPage />} />
-        <Route path="/" element={<StudentDashboardPage />} />
-        <Route path="/patients/:groupId" element={<PatientsPage />} />
-        <Route path="/patients/:groupId/:patientId" element={<PatientDashboardPage />} />
-        <Route path="/patients/:groupId/:patientId/chat" element={<StudentChatPage />} />
-        <Route path="/patients/:groupId/:patientId/chat/:chatId/history" element={<ChatHistoryPage />} />
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
 }
