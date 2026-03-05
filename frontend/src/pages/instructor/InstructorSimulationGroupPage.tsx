@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
 import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload } from 'lucide-react';
@@ -481,9 +482,9 @@ function InstructorSimulationGroupPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: UI_COLORS.background.white }}>
+    <PageContainer>
       {/* Header */}
-      <header className="flex border-b border-border items-center justify-between py-6 px-8" style={{ backgroundColor: UI_COLORS.header.background }}>
+      <header className="flex-shrink-0 flex border-b border-border items-center justify-between py-6 px-8" style={{ backgroundColor: UI_COLORS.header.background }}>
         <div className="flex items-center gap-4">
           {/* Sidebar Toggle Button */}
           <button
@@ -547,7 +548,7 @@ function InstructorSimulationGroupPage() {
         </div>
       </header>
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside 
           className="flex flex-col transition-all duration-300 ease-in-out border-r"
@@ -559,7 +560,8 @@ function InstructorSimulationGroupPage() {
             borderRightColor: UI_COLORS.border.default,
             width: isMainSidebarVisible ? '16rem' : '0rem',
             minWidth: isMainSidebarVisible ? '16rem' : '0rem',
-            overflow: 'hidden',
+            overflowY: isMainSidebarVisible ? 'auto' : 'hidden',
+            overflowX: 'hidden',
             opacity: isMainSidebarVisible ? 1 : 0,
             pointerEvents: isMainSidebarVisible ? 'auto' : 'none',
           }}
@@ -672,7 +674,7 @@ function InstructorSimulationGroupPage() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-hidden" style={{ padding: activeSection === 'rubric' || activeSection === 'editPatient' || activeSection === 'viewStudent' ? '0' : '2rem' }}>
+        <main className="flex-1 overflow-y-auto" style={{ padding: activeSection === 'rubric' || activeSection === 'editPatient' || activeSection === 'viewStudent' ? '0' : '2rem' }}>
           {activeSection === 'analytics' && (
             <div className="space-y-6">
               {/* Simulation Group Title */}
@@ -1023,7 +1025,7 @@ function InstructorSimulationGroupPage() {
             <div className="flex h-full relative">
               {/* Question List Sidebar */}
               <aside 
-                className="flex flex-col border-r"
+                className="flex flex-col border-r overflow-y-auto"
                 style={{ 
                   backgroundColor: UI_COLORS.background.white, 
                   borderRightWidth: '1px',
@@ -1343,7 +1345,7 @@ Return valid JSON in exactly this structure:
             <div className="flex h-full">
               {/* Edit Patient Sidebar */}
               <aside 
-                className="flex flex-col border-r"
+                className="flex flex-col border-r overflow-y-auto"
                 style={{ 
                   backgroundColor: UI_COLORS.background.white, 
                   borderRightWidth: '1px',
@@ -1635,7 +1637,7 @@ Return valid JSON in exactly this structure:
                     <div className="flex h-full">
                       {/* Question List Sidebar */}
                       <aside 
-                        className="flex flex-col border-r"
+                        className="flex flex-col border-r overflow-y-auto"
                         style={{ 
                           backgroundColor: UI_COLORS.background.white, 
                           borderRightWidth: '1px',
@@ -1913,7 +1915,7 @@ Return valid JSON in exactly this structure:
                     <div className="flex h-full">
                       {/* Materials List Sidebar */}
                       <aside 
-                        className="flex flex-col border-r"
+                        className="flex flex-col border-r overflow-y-auto"
                         style={{ 
                           backgroundColor: UI_COLORS.background.white, 
                           borderRightWidth: '1px',
@@ -2178,7 +2180,7 @@ Return valid JSON in exactly this structure:
             <div className="flex h-full">
               {/* Student View Sidebar */}
               <aside 
-                className="flex flex-col border-r"
+                className="flex flex-col border-r overflow-y-auto"
                 style={{ 
                   backgroundColor: UI_COLORS.background.white, 
                   borderRightWidth: '1px',
@@ -2492,7 +2494,7 @@ Return valid JSON in exactly this structure:
           )}
         </main>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

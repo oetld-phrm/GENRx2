@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
@@ -15,13 +16,13 @@ import { getSimulationGroupColor } from '@/lib/colors';
 function InstructorDashboardPage() {
   const navigate = useNavigate();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  
+
   // Load simulation groups from mock data service and store in state
   const [groups, setGroups] = useState<InstructorSimulationGroup[]>(() => mockInstructorDataService.getSimulationGroups());
-  
+
   // Load user data from mock data service with error handling
   let user = mockInstructorDataService.getCurrentUser();
-  
+
   if (!user || !user.name) {
     console.warn('User data is missing or invalid, using default values');
     user = {
@@ -59,7 +60,7 @@ function InstructorDashboardPage() {
   const handleCreateGroupSubmit = (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => {
     try {
       console.log('Creating group with data:', data);
-      
+
       // Create new group object
       const newGroup: InstructorSimulationGroup = {
         id: `group-${Date.now()}`, // Temporary ID until backend provides one
@@ -70,10 +71,10 @@ function InstructorDashboardPage() {
         studentCount: 0,
         patientCount: 0
       };
-      
+
       // Add to state - will be replaced with API call later
       setGroups(prevGroups => [...prevGroups, newGroup]);
-      
+
       // Future: Call API to create group
       // const createdGroup = await api.createGroup(data);
       // setGroups(prevGroups => [...prevGroups, createdGroup]);
@@ -93,7 +94,7 @@ function InstructorDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <PageContainer>
       <DashboardHeader
         title="Instructor Dashboard"
         subtitle="Home Page"
@@ -103,7 +104,7 @@ function InstructorDashboardPage() {
         onStudentView={handleStudentView}
         showStudentViewButton={true}
       />
-      <main className="px-8 py-6">
+      <main className="flex-1 overflow-y-auto px-8 py-6">
         <SimulationGroupsSection
           groups={groups}
           onJoinGroup={handleCreateGroup}
@@ -118,8 +119,9 @@ function InstructorDashboardPage() {
         onOpenChange={setIsCreateDialogOpen}
         onCreate={handleCreateGroupSubmit}
       />
-    </div>
+    </PageContainer>
   );
 }
+
 
 export default InstructorDashboardPage;
