@@ -6,8 +6,6 @@ import { useState, useEffect, createContext, useContext, useCallback } from 'rea
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import StudentDashboardPage from './pages/student/StudentDashboardPage';
-import InstructorDashboardPage from './pages/instructor/InstructorDashboardPage';
-import InstructorSimulationGroupPage from './pages/instructor/InstructorSimulationGroupPage';
 import PatientsPage from './pages/student/PatientsPage';
 import PatientDashboardPage from './pages/student/PatientDashboardPage';
 import StudentChatPage from './pages/student/StudentChatPage';
@@ -50,6 +48,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Role-based dashboard redirect
+function DashboardRedirect() {
+  const { user } = useAuth();
+  
+  // Redirect based on user role
+  if (user?.groups.includes('instructor')) {
+    return <Navigate to="/instructor" replace />;
+  } else if (user?.groups.includes('admin')) {
+    return <Navigate to="/admin" replace />;
+  }
+  
+  // Default to student dashboard
+  return <StudentDashboardPage />;
+}
+
 // Inner app component that has access to navigation
 function AppRoutes() {
   const navigate = useNavigate();
@@ -87,11 +100,16 @@ function AppRoutes() {
         <Route path="/signup" element={user ? <Navigate to="/" replace /> : <SignUpPage />} />
 
         {/* Protected routes */}
-        <Route path="/" element={<ProtectedRoute><StudentDashboardPage /></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><DashboardRedirect /></ProtectedRoute>} />
+        <Route path="/student" element={<ProtectedRoute><StudentDashboardPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId" element={<ProtectedRoute><PatientsPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId/:patientId" element={<ProtectedRoute><PatientDashboardPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId/:patientId/chat" element={<ProtectedRoute><StudentChatPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId/:patientId/chat/:chatId/history" element={<ProtectedRoute><ChatHistoryPage /></ProtectedRoute>} />
+        
+        {/* Instructor routes - TODO: Implement instructor pages */}
+        {/* <Route path="/instructor" element={<ProtectedRoute><InstructorDashboardPage /></ProtectedRoute>} /> */}
+        {/* <Route path="/instructor/group/:groupId" element={<ProtectedRoute><InstructorSimulationGroupPage /></ProtectedRoute>} /> */}
       </Routes>
     </AuthContext.Provider>
   );

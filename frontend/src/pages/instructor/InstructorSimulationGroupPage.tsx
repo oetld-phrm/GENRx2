@@ -2,10 +2,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import UserAvatar from '@/components/UserAvatar';
-import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial } from '@/services/instructorService';
+import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 /**
@@ -90,15 +90,43 @@ function InstructorSimulationGroupPage() {
   );
   
   // Load data from instructor service
-  const user = mockInstructorDataService.getCurrentUser();
-  const simulationGroup = mockInstructorDataService.getSimulationGroup(groupId || '1');
-  const patientAnalytics = mockInstructorDataService.getPatientAnalytics(groupId || '1');
-  const students = mockInstructorDataService.getStudents(groupId || '1');
+  const [user, setUser] = useState<UserData>({ name: 'Instructor', avatarUrl: undefined });
+  const [simulationGroup, setSimulationGroup] = useState<any>(null);
+  const [patientAnalytics, setPatientAnalytics] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   
   // Use state for manageable patients so we can trigger re-renders
-  const [manageablePatients, setManageablePatients] = useState(() => 
-    mockInstructorDataService.getManageablePatients(groupId || '1')
-  );
+  const [manageablePatients, setManageablePatients] = useState<any[]>([]);
+  
+  // Load initial data
+  useEffect(() => {
+    const loadData = async () => {
+      if (!groupId) return;
+      
+      try {
+        const [userData, groupData, analyticsData, studentsData, patientsData] = await Promise.all([
+          instructorService.getCurrentUser(),
+          instructorService.getSimulationGroup(groupId),
+          instructorService.getPatientAnalytics(groupId),
+          instructorService.getStudents(groupId),
+          instructorService.getManageablePatients(groupId),
+        ]);
+        
+        setUser(userData);
+        setSimulationGroup(groupData);
+        setPatientAnalytics(analyticsData);
+        setStudents(studentsData);
+        setManageablePatients(patientsData);
+      } catch (error) {
+        console.error('Error loading instructor data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [groupId]);
   
   // State for selected patient
   const [selectedPatientId, setSelectedPatientId] = useState<string>(
@@ -136,7 +164,7 @@ function InstructorSimulationGroupPage() {
    * Handle back to all groups navigation
    */
   const handleBackToAllGroups = () => {
-    navigate('/');
+    navigate('/instructor');
   };
 
   /**
@@ -149,12 +177,17 @@ function InstructorSimulationGroupPage() {
   /**
    * Handle generate new access code
    */
-  const handleGenerateAccessCode = () => {
+  const handleGenerateAccessCode = async () => {
     if (groupId) {
-      const newCode = mockInstructorDataService.generateAccessCode(groupId);
-      console.log('Generated new access code:', newCode);
-      // Force re-render by navigating to same route
-      navigate(`/instructor/group/${groupId}`, { replace: true });
+      try {
+        const newCode = await instructorService.generateAccessCode(groupId);
+        console.log('Generated new access code:', newCode);
+        // Reload simulation group data
+        const groupData = await instructorService.getSimulationGroup(groupId);
+        setSimulationGroup(groupData);
+      } catch (error) {
+        console.error('Error generating access code:', error);
+      }
     }
   };
 
@@ -479,6 +512,14 @@ function InstructorSimulationGroupPage() {
       handleUpdateMaterialField('contentUrl', URL.createObjectURL(file));
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-gray-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: UI_COLORS.background.white }}>

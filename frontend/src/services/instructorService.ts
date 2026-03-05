@@ -1,9 +1,8 @@
 /**
- * Instructor Service (Populated with Mock Data for now)
+ * Instructor Service
  * 
- * Provides hardcoded data for instructor views including simulation groups,
- * patient analytics, and access codes.
- * Designed for easy replacement with API Gateway URLs
+ * Calls real backend API endpoints via API Gateway.
+ * Falls back to mock data if API calls fail (for local dev without backend).
  * 
  * DATABASE SCHEMA ALIGNMENT:
  * - Physical Assessment Materials: persona_media table (media_id, persona_id, media_type, url, title, description, created_at)
@@ -15,6 +14,8 @@
  */
 
 import { getSimulationGroupColor } from '@/lib/colors';
+import { apiClient } from '@/lib/api-client';
+import { authService } from '@/lib/auth';
 
 /**
  * Represents a simulation group from instructor perspective
@@ -196,22 +197,22 @@ export interface PatientUpdateData {
 }
 
 /**
- * Mock data service interface
+ * Instructor data service interface
  */
-export interface MockInstructorDataService {
-  getSimulationGroups: () => InstructorSimulationGroup[];
-  getCurrentUser: () => UserData;
-  getSimulationGroup: (id: string) => InstructorSimulationGroup | undefined;
-  getPatientAnalytics: (simulationGroupId: string) => PatientAnalytics[];
+export interface InstructorDataService {
+  getSimulationGroups: () => Promise<InstructorSimulationGroup[]>;
+  getCurrentUser: () => Promise<UserData>;
+  getSimulationGroup: (id: string) => Promise<InstructorSimulationGroup | undefined>;
+  getPatientAnalytics: (simulationGroupId: string) => Promise<PatientAnalytics[]>;
   getMessageCountData: (patientId: string) => MessageCountData[];
-  generateAccessCode: (simulationGroupId: string) => string;
-  getManageablePatients: (simulationGroupId: string) => ManageablePatient[];
+  generateAccessCode: (simulationGroupId: string) => Promise<string>;
+  getManageablePatients: (simulationGroupId: string) => Promise<ManageablePatient[]>;
   getPatient: (patientId: string) => ManageablePatient | undefined;
-  createPatient: (simulationGroupId: string, patientData: PatientCreateData) => void;
-  updatePatient: (simulationGroupId: string, patientData: PatientUpdateData) => void;
+  createPatient: (simulationGroupId: string, patientData: PatientCreateData) => Promise<void>;
+  updatePatient: (simulationGroupId: string, patientData: PatientUpdateData) => Promise<void>;
   uploadPatientPhoto: (patientId: string, photoFile: File) => Promise<string>;
-  updatePatientLLMEvaluation: (patientId: string, enabled: boolean) => void;
-  deletePatient: (patientId: string) => void;
+  updatePatientLLMEvaluation: (patientId: string, enabled: boolean) => Promise<void>;
+  deletePatient: (patientId: string) => Promise<void>;
   getGlobalRubricQuestions: (simulationGroupId: string) => GlobalRubricQuestion[];
   addGlobalRubricQuestion: (simulationGroupId: string, question: GlobalRubricQuestion) => void;
   updateGlobalRubricQuestion: (simulationGroupId: string, question: GlobalRubricQuestion) => void;
@@ -224,8 +225,8 @@ export interface MockInstructorDataService {
   addCaseMaterial: (patientId: string, material: CaseMaterial) => void;
   updateCaseMaterial: (patientId: string, material: CaseMaterial) => void;
   deleteCaseMaterial: (patientId: string, materialId: string) => void;
-  getEvaluationPrompt: (simulationGroupId: string) => string;
-  getStudents: (simulationGroupId: string) => Student[];
+  getEvaluationPrompt: (simulationGroupId: string) => Promise<string>;
+  getStudents: (simulationGroupId: string) => Promise<Student[]>;
   getStudentDetails: (studentId: string) => StudentDetails | undefined;
   getChatAttempts: (studentId: string, patientId: string) => ChatAttempt[];
   getChatMessages: (attemptId: string) => ChatMessage[];
@@ -737,8 +738,28 @@ const mockCaseMaterials: Record<string, CaseMaterial[]> = {
  * 
  * @returns Array of simulation groups
  */
-function getSimulationGroups(): InstructorSimulationGroup[] {
-  return mockInstructorSimulationGroups;
+async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<any[]>(
+      `/instructor/groups?email=${encodeURIComponent(user.email)}`
+    );
+
+    return data.map((group, index) => ({
+      id: group.simulation_group_id,
+      name: group.group_name,
+      subtitle: 'Medical Simulation Group',
+      iconColor: group.icon_color || getSimulationGroupColor(index),
+      accessCode: group.access_code || '',
+      studentCount: group.student_count || 0,
+      patientCount: group.patient_count || 0,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch instructor groups:', error);
+    return mockInstructorSimulationGroups;
+  }
 }
 
 /**
@@ -746,8 +767,23 @@ function getSimulationGroups(): InstructorSimulationGroup[] {
  * 
  * @returns User data object
  */
-function getCurrentUser(): UserData {
-  return mockInstructorUserData;
+async function getCurrentUser(): Promise<UserData> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<{ name: string }>(
+      `/student/get_name?user_email=${encodeURIComponent(user.email)}`
+    );
+
+    return {
+      name: data.name || user.email,
+      avatarUrl: undefined,
+    };
+  } catch (error) {
+    console.error('Failed to fetch user name:', error);
+    return mockInstructorUserData;
+  }
 }
 
 /**
@@ -756,8 +792,14 @@ function getCurrentUser(): UserData {
  * @param id - Simulation group ID
  * @returns Simulation group or undefined if not found
  */
-function getSimulationGroup(id: string): InstructorSimulationGroup | undefined {
-  return mockInstructorSimulationGroups.find(group => group.id === id);
+async function getSimulationGroup(id: string): Promise<InstructorSimulationGroup | undefined> {
+  try {
+    const groups = await getSimulationGroups();
+    return groups.find(group => group.id === id);
+  } catch (error) {
+    console.error('Failed to fetch simulation group:', error);
+    return mockInstructorSimulationGroups.find(group => group.id === id);
+  }
 }
 
 /**
@@ -766,8 +808,25 @@ function getSimulationGroup(id: string): InstructorSimulationGroup | undefined {
  * @param simulationGroupId - Simulation group ID
  * @returns Array of patient analytics
  */
-function getPatientAnalytics(simulationGroupId: string): PatientAnalytics[] {
-  return mockPatientAnalytics[simulationGroupId] || [];
+async function getPatientAnalytics(simulationGroupId: string): Promise<PatientAnalytics[]> {
+  try {
+    const data = await apiClient.request<any[]>(
+      `/instructor/analytics?simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+
+    return data.map((patient) => ({
+      id: patient.patient_id,
+      name: patient.patient_name,
+      instructorCompletionPercentage: patient.instructor_completion_percentage || 0,
+      llmCompletionPercentage: patient.ai_score_percentage || 0,
+      studentMessageCount: patient.student_message_count || 0,
+      aiMessageCount: patient.ai_message_count || 0,
+      studentAccessCount: patient.access_count || 0,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch patient analytics:', error);
+    return mockPatientAnalytics[simulationGroupId] || [];
+  }
 }
 
 /**
@@ -799,25 +858,37 @@ function getMessageCountData(patientId: string): MessageCountData[] {
  * @param simulationGroupId - Simulation group ID
  * @returns New access code
  */
-function generateAccessCode(simulationGroupId: string): string {
-  // Mock implementation - generates random code
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const segments = 4;
-  const segmentLength = 4;
-  
-  const code = Array.from({ length: segments }, () => {
-    return Array.from({ length: segmentLength }, () => 
-      chars.charAt(Math.floor(Math.random() * chars.length))
-    ).join('');
-  }).join('-');
-  
-  // Update the mock data
-  const group = mockInstructorSimulationGroups.find(g => g.id === simulationGroupId);
-  if (group) {
-    group.accessCode = code;
+async function generateAccessCode(simulationGroupId: string): Promise<string> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<{ access_code: string }>(
+      `/instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulationGroupId)}&instructor_email=${encodeURIComponent(user.email)}`,
+      { method: 'POST' }
+    );
+
+    return data.access_code;
+  } catch (error) {
+    console.error('Failed to generate access code:', error);
+    // Fallback to mock implementation
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const segments = 4;
+    const segmentLength = 4;
+    
+    const code = Array.from({ length: segments }, () => {
+      return Array.from({ length: segmentLength }, () => 
+        chars.charAt(Math.floor(Math.random() * chars.length))
+      ).join('');
+    }).join('-');
+    
+    const group = mockInstructorSimulationGroups.find(g => g.id === simulationGroupId);
+    if (group) {
+      group.accessCode = code;
+    }
+    
+    return code;
   }
-  
-  return code;
 }
 
 /**
@@ -827,8 +898,30 @@ function generateAccessCode(simulationGroupId: string): string {
  * @param simulationGroupId - Simulation group ID
  * @returns Array of manageable patients with all persona fields
  */
-function getManageablePatients(simulationGroupId: string): ManageablePatient[] {
-  return mockManageablePatients[simulationGroupId] || [];
+async function getManageablePatients(simulationGroupId: string): Promise<ManageablePatient[]> {
+  try {
+    const data = await apiClient.request<any[]>(
+      `/instructor/view_patients?simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+
+    return data.map((patient) => ({
+      id: patient.patient_id,
+      simulation_group_id: patient.simulation_group_id,
+      name: patient.patient_name,
+      age: patient.patient_age,
+      gender: patient.patient_gender,
+      persona_number: patient.patient_number,
+      prompt: patient.patient_prompt,
+      average_wpm: patient.average_wpm,
+      voice_id: patient.voice_id,
+      interaction_mode: patient.interaction_mode,
+      llmEvaluationEnabled: patient.llm_completion || false,
+      photoUrl: patient.photo_url,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch manageable patients:', error);
+    return mockManageablePatients[simulationGroupId] || [];
+  }
 }
 
 /**
@@ -855,25 +948,52 @@ function getPatient(patientId: string): ManageablePatient | undefined {
  * @param simulationGroupId - Simulation group ID
  * @param patientData - New patient data
  */
-function createPatient(simulationGroupId: string, patientData: PatientCreateData): void {
-  const newPatient: ManageablePatient = {
-    id: `patient-${Date.now()}`,
-    simulation_group_id: simulationGroupId,
-    name: patientData.name,
-    age: patientData.age,
-    gender: patientData.gender,
-    prompt: patientData.prompt || DEFAULT_PATIENT_PROMPT,
-    persona_number: patientData.persona_number,
-    average_wpm: patientData.average_wpm,
-    voice_id: patientData.voice_id,
-    interaction_mode: patientData.interaction_mode,
-    llmEvaluationEnabled: false,
-  };
-  
-  if (!mockManageablePatients[simulationGroupId]) {
-    mockManageablePatients[simulationGroupId] = [];
+async function createPatient(simulationGroupId: string, patientData: PatientCreateData): Promise<void> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    const queryParams = new URLSearchParams({
+      simulation_group_id: simulationGroupId,
+      patient_name: patientData.name,
+      patient_number: patientData.persona_number?.toString() || '1',
+      patient_age: patientData.age.toString(),
+      patient_gender: patientData.gender,
+      instructor_email: user.email,
+    });
+
+    if (patientData.voice_id) {
+      queryParams.append('voice_id', patientData.voice_id);
+    }
+
+    await apiClient.request(`/instructor/create_patient?${queryParams.toString()}`, {
+      method: 'POST',
+      body: {
+        patient_prompt: patientData.prompt || DEFAULT_PATIENT_PROMPT,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to create patient:', error);
+    // Fallback to mock
+    const newPatient: ManageablePatient = {
+      id: `patient-${Date.now()}`,
+      simulation_group_id: simulationGroupId,
+      name: patientData.name,
+      age: patientData.age,
+      gender: patientData.gender,
+      prompt: patientData.prompt || DEFAULT_PATIENT_PROMPT,
+      persona_number: patientData.persona_number,
+      average_wpm: patientData.average_wpm,
+      voice_id: patientData.voice_id,
+      interaction_mode: patientData.interaction_mode,
+      llmEvaluationEnabled: false,
+    };
+    
+    if (!mockManageablePatients[simulationGroupId]) {
+      mockManageablePatients[simulationGroupId] = [];
+    }
+    mockManageablePatients[simulationGroupId].push(newPatient);
   }
-  mockManageablePatients[simulationGroupId].push(newPatient);
 }
 
 /**
@@ -883,35 +1003,58 @@ function createPatient(simulationGroupId: string, patientData: PatientCreateData
  * @param simulationGroupId - Simulation group ID
  * @param patientData - Updated patient data
  */
-function updatePatient(simulationGroupId: string, patientData: PatientUpdateData): void {
-  const patients = mockManageablePatients[simulationGroupId];
-  if (patients) {
-    const index = patients.findIndex(p => p.id === patientData.id);
-    if (index !== -1) {
-      patients[index] = {
-        ...patients[index],
-        name: patientData.name,
-        age: patientData.age,
-        gender: patientData.gender,
-        prompt: patientData.prompt,
-        photoUrl: patientData.photoUrl,
-        persona_number: patientData.persona_number,
-        average_wpm: patientData.average_wpm,
-        voice_id: patientData.voice_id,
-        interaction_mode: patientData.interaction_mode,
-      };
+async function updatePatient(simulationGroupId: string, patientData: PatientUpdateData): Promise<void> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    const queryParams = new URLSearchParams({
+      patient_id: patientData.id,
+      instructor_email: user.email,
+      simulation_group_id: simulationGroupId,
+    });
+
+    await apiClient.request(`/instructor/edit_patient?${queryParams.toString()}`, {
+      method: 'PUT',
+      body: {
+        patient_name: patientData.name,
+        patient_age: patientData.age,
+        patient_gender: patientData.gender,
+        patient_prompt: patientData.prompt,
+      },
+    });
+
+    // Handle file uploads if needed
+    if (patientData.llmUploadFile) {
+      console.log('LLM Upload file:', patientData.llmUploadFile.name);
     }
-  }
-  // In a real implementation, files would be uploaded to a server
-  // For now, we just log them
-  if (patientData.llmUploadFile) {
-    console.log('LLM Upload file:', patientData.llmUploadFile.name);
-  }
-  if (patientData.patientInfoFile) {
-    console.log('Patient Info file:', patientData.patientInfoFile.name);
-  }
-  if (patientData.answerKeyFile) {
-    console.log('Answer Key file:', patientData.answerKeyFile.name);
+    if (patientData.patientInfoFile) {
+      console.log('Patient Info file:', patientData.patientInfoFile.name);
+    }
+    if (patientData.answerKeyFile) {
+      console.log('Answer Key file:', patientData.answerKeyFile.name);
+    }
+  } catch (error) {
+    console.error('Failed to update patient:', error);
+    // Fallback to mock
+    const patients = mockManageablePatients[simulationGroupId];
+    if (patients) {
+      const index = patients.findIndex(p => p.id === patientData.id);
+      if (index !== -1) {
+        patients[index] = {
+          ...patients[index],
+          name: patientData.name,
+          age: patientData.age,
+          gender: patientData.gender,
+          prompt: patientData.prompt,
+          photoUrl: patientData.photoUrl,
+          persona_number: patientData.persona_number,
+          average_wpm: patientData.average_wpm,
+          voice_id: patientData.voice_id,
+          interaction_mode: patientData.interaction_mode,
+        };
+      }
+    }
   }
 }
 
@@ -948,13 +1091,29 @@ async function uploadPatientPhoto(patientId: string, photoFile: File): Promise<s
  * @param patientId - Patient ID
  * @param enabled - Whether LLM evaluation is enabled
  */
-function updatePatientLLMEvaluation(patientId: string, enabled: boolean): void {
-  // Find and update patient across all groups
-  for (const groupPatients of Object.values(mockManageablePatients)) {
-    const patient = groupPatients.find(p => p.id === patientId);
-    if (patient) {
-      patient.llmEvaluationEnabled = enabled;
-      break;
+async function updatePatientLLMEvaluation(patientId: string, enabled: boolean): Promise<void> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    await apiClient.request(
+      `/instructor/toggle_llm_completion?patient_id=${encodeURIComponent(patientId)}&instructor_email=${encodeURIComponent(user.email)}`,
+      {
+        method: 'PUT',
+        body: {
+          llm_completion: enabled,
+        },
+      }
+    );
+  } catch (error) {
+    console.error('Failed to update LLM evaluation:', error);
+    // Fallback to mock
+    for (const groupPatients of Object.values(mockManageablePatients)) {
+      const patient = groupPatients.find(p => p.id === patientId);
+      if (patient) {
+        patient.llmEvaluationEnabled = enabled;
+        break;
+      }
     }
   }
 }
@@ -964,12 +1123,25 @@ function updatePatientLLMEvaluation(patientId: string, enabled: boolean): void {
  * 
  * @param patientId - Patient ID
  */
-function deletePatient(patientId: string): void {
-  // Remove patient from all groups
-  for (const groupId of Object.keys(mockManageablePatients)) {
-    mockManageablePatients[groupId] = mockManageablePatients[groupId].filter(
-      p => p.id !== patientId
+async function deletePatient(patientId: string): Promise<void> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    await apiClient.request(
+      `/instructor/delete_patient?patient_id=${encodeURIComponent(patientId)}&instructor_email=${encodeURIComponent(user.email)}`,
+      {
+        method: 'DELETE',
+      }
     );
+  } catch (error) {
+    console.error('Failed to delete patient:', error);
+    // Fallback to mock
+    for (const groupId of Object.keys(mockManageablePatients)) {
+      mockManageablePatients[groupId] = mockManageablePatients[groupId].filter(
+        p => p.id !== patientId
+      );
+    }
   }
 }
 
@@ -1031,9 +1203,17 @@ function deleteGlobalRubricQuestion(simulationGroupId: string, questionId: strin
  * @param simulationGroupId - Simulation group ID
  * @returns Evaluation prompt as markdown string
  */
-function getEvaluationPrompt(): string {
-  // For now, return the same prompt for all groups
-  return mockEvaluationPrompt;
+async function getEvaluationPrompt(simulationGroupId: string): Promise<string> {
+  try {
+    const data = await apiClient.request<{ system_prompt: string }>(
+      `/instructor/get_prompt?simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+
+    return data.system_prompt || mockEvaluationPrompt;
+  } catch (error) {
+    console.error('Failed to fetch evaluation prompt:', error);
+    return mockEvaluationPrompt;
+  }
 }
 
 /**
@@ -1042,8 +1222,21 @@ function getEvaluationPrompt(): string {
  * @param simulationGroupId - Simulation group ID
  * @returns Array of students
  */
-function getStudents(simulationGroupId: string): Student[] {
-  return mockStudents[simulationGroupId] || [];
+async function getStudents(simulationGroupId: string): Promise<Student[]> {
+  try {
+    const data = await apiClient.request<any[]>(
+      `/instructor/view_students?simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+
+    return data.map((student) => ({
+      id: student.user_id,
+      name: `${student.first_name} ${student.last_name}`.trim() || student.username,
+      email: student.user_email,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch students:', error);
+    return mockStudents[simulationGroupId] || [];
+  }
 }
 
 /**
@@ -1205,10 +1398,10 @@ function getDefaultPatientPrompt(): string {
 }
 
 /**
- * Mock instructor data service object
- * Provides methods to retrieve hardcoded data for now
+ * Instructor data service object
+ * Calls real API endpoints with fallback to mock data
  */
-export const mockInstructorDataService: MockInstructorDataService = {
+export const instructorService: InstructorDataService = {
   getSimulationGroups,
   getCurrentUser,
   getSimulationGroup,
@@ -1242,3 +1435,6 @@ export const mockInstructorDataService: MockInstructorDataService = {
   getChatNotes,
   getDefaultPatientPrompt
 };
+
+// Keep backward-compatible export
+export const mockInstructorDataService = instructorService;

@@ -14,11 +14,14 @@ import { useAuth } from '@/App';
  */
 function StudentDashboardPage() {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user: authUser } = useAuth();
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
   const [groups, setGroups] = useState<SimulationGroup[]>([]);
   const [user, setUser] = useState<UserData>({ name: 'Loading...' });
   const [loading, setLoading] = useState(true);
+
+  // Check if user has instructor role
+  const hasInstructorRole = authUser?.groups.includes('instructor') || false;
 
   // Fetch data from backend on mount
   useEffect(() => {
@@ -44,6 +47,13 @@ function StudentDashboardPage() {
    */
   const handleSignOut = async () => {
     await signOut();
+  };
+
+  /**
+   * Handle instructor view navigation
+   */
+  const handleInstructorView = () => {
+    navigate('/instructor');
   };
 
   /**
@@ -91,6 +101,8 @@ function StudentDashboardPage() {
         userName={user.name}
         userAvatarUrl={user.avatarUrl}
         onSignOut={handleSignOut}
+        onInstructorView={handleInstructorView}
+        showInstructorViewButton={hasInstructorRole}
       />
       <main className="px-8 py-6">
         <SimulationGroupsSection

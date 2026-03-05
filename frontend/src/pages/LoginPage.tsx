@@ -69,7 +69,16 @@ function LoginPage() {
 
       // Refresh auth context so ProtectedRoute sees the new session
       await refreshUser();
-      navigate('/');
+      
+      // Role-based navigation
+      const user = await authService.getCurrentUser();
+      if (user?.groups.includes('instructor')) {
+        navigate('/instructor');
+      } else if (user?.groups.includes('admin')) {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Sign in failed';
       
