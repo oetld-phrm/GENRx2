@@ -10,6 +10,8 @@ import PatientsPage from './pages/student/PatientsPage';
 import PatientDashboardPage from './pages/student/PatientDashboardPage';
 import StudentChatPage from './pages/student/StudentChatPage';
 import ChatHistoryPage from './pages/student/ChatHistoryPage';
+import InstructorDashboardPage from './pages/instructor/InstructorDashboardPage';
+import InstructorSimulationGroupPage from './pages/instructor/InstructorSimulationGroupPage';
 import { authService, type AuthUser } from './lib/auth';
 
 // Auth context for sharing auth state across components
@@ -107,9 +109,9 @@ function AppRoutes() {
         <Route path="/patients/:groupId/:patientId/chat" element={<ProtectedRoute><StudentChatPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId/:patientId/chat/:chatId/history" element={<ProtectedRoute><ChatHistoryPage /></ProtectedRoute>} />
         
-        {/* Instructor routes - TODO: Implement instructor pages */}
-        {/* <Route path="/instructor" element={<ProtectedRoute><InstructorDashboardPage /></ProtectedRoute>} /> */}
-        {/* <Route path="/instructor/group/:groupId" element={<ProtectedRoute><InstructorSimulationGroupPage /></ProtectedRoute>} /> */}
+        {/* Instructor routes */}
+        <Route path="/instructor" element={<ProtectedRoute><InstructorDashboardPage /></ProtectedRoute>} />
+        <Route path="/instructor/group/:groupId" element={<ProtectedRoute><InstructorSimulationGroupPage /></ProtectedRoute>} />
       </Routes>
     </AuthContext.Provider>
   );
