@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
-import { mockDataService, type SimulationGroup } from '@/services/studentService';
+import { mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor } from '@/lib/colors';
 
 /**
@@ -17,10 +17,10 @@ function InstructorDashboardPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   
   // Load simulation groups from mock data service and store in state
-  const [groups, setGroups] = useState<SimulationGroup[]>(() => mockDataService.getSimulationGroups());
+  const [groups, setGroups] = useState<InstructorSimulationGroup[]>(() => mockInstructorDataService.getSimulationGroups());
   
   // Load user data from mock data service with error handling
-  let user = mockDataService.getCurrentUser();
+  let user = mockInstructorDataService.getCurrentUser();
   
   if (!user || !user.name) {
     console.warn('User data is missing or invalid, using default values');
@@ -61,11 +61,14 @@ function InstructorDashboardPage() {
       console.log('Creating group with data:', data);
       
       // Create new group object
-      const newGroup: SimulationGroup = {
+      const newGroup: InstructorSimulationGroup = {
         id: `group-${Date.now()}`, // Temporary ID until backend provides one
         name: data.name,
         subtitle: 'Medical Simulation Group',
-        iconColor: getSimulationGroupColor(groups.length) // Use next color in palette
+        iconColor: getSimulationGroupColor(groups.length), // Use next color in palette
+        accessCode: mockInstructorDataService.generateAccessCode(`group-${Date.now()}`),
+        studentCount: 0,
+        patientCount: 0
       };
       
       // Add to state - will be replaced with API call later
