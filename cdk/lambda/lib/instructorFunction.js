@@ -1391,6 +1391,87 @@ exports.handler = async (event) => {
           });
         }
         break;
+      case "POST /instructor/create_simulation_group":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.instructor_email &&
+          event.body
+        ) {
+          const { instructor_email } = event.queryStringParameters;
+          const { group_name, group_description, group_student_access, instructor_voice_enabled } = JSON.parse(event.body);
+
+          if (!group_name) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "group_name is required" });
+            break;
+          }
+
+          try {
+            // Get the instructor's user_id
+            const userResult = await sqlConnection`
+              SELECT user_id FROM "users" WHERE user_email = ${instructor_email} LIMIT 1;
+            `;
+
+            if (userResult.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Instructor not found" });
+              break;
+            }
+
+            const userId = userResult[0].user_id;
+            const accessCode = generateAccessCode();
+
+            // Insert new simulation group
+            const newGroup = await sqlConnection`
+              INSERT INTO "simulation_groups" (
+                simulation_group_id,
+                group_name,
+                group_description,
+                group_access_code,
+                group_student_access,
+                created_by,
+                instructor_voice_enabled
+              )
+              VALUES (
+                uuid_generate_v4(),
+                ${group_name},
+                ${group_description || null},
+                ${accessCode},
+                ${group_student_access !== undefined ? group_student_access : true},
+                ${userId},
+                ${instructor_voice_enabled !== undefined ? instructor_voice_enabled : true}
+              )
+              RETURNING *;
+            `;
+
+            // Enroll the instructor in the new group
+            await sqlConnection`
+              INSERT INTO "enrollments" (
+                enrollment_id,
+                user_id,
+                simulation_group_id,
+                enrollment_type
+              )
+              VALUES (
+                uuid_generate_v4(),
+                ${userId},
+                ${newGroup[0].simulation_group_id},
+                'instructor'
+              );
+            `;
+
+            response.statusCode = 201;
+            response.body = JSON.stringify(newGroup[0]);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "instructor_email query parameter and request body are required" });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

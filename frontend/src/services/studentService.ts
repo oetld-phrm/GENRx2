@@ -275,9 +275,3 @@ export const studentService = {
   },
 };
 
-// Keep backward-compatible export
-export const mockDataService = {
-  getSimulationGroups: () => [] as SimulationGroup[],
-  getCurrentUser: () => ({ name: 'Loading...' } as UserData),
-  getPatients: () => [] as Patient[],
-};

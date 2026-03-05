@@ -201,6 +201,7 @@ export interface PatientUpdateData {
  */
 export interface InstructorDataService {
   getSimulationGroups: () => Promise<InstructorSimulationGroup[]>;
+  createSimulationGroup: (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => Promise<InstructorSimulationGroup>;
   getCurrentUser: () => Promise<UserData>;
   getSimulationGroup: (id: string) => Promise<InstructorSimulationGroup | undefined>;
   getPatientAnalytics: (simulationGroupId: string) => Promise<PatientAnalytics[]>;
@@ -237,507 +238,6 @@ export interface InstructorDataService {
 /**
  * Hardcoded simulation groups for instructors
  */
-const mockInstructorSimulationGroups: InstructorSimulationGroup[] = [
-  {
-    id: '1',
-    name: 'Chronic Pain',
-    subtitle: 'Medical Simulation Group',
-    iconColor: getSimulationGroupColor(0),
-    accessCode: 'NB3W-PI3I-Q2EH-WPA3',
-    studentCount: 24,
-    patientCount: 2
-  },
-  {
-    id: '2',
-    name: 'Acne',
-    subtitle: 'Medical Simulation Group',
-    iconColor: getSimulationGroupColor(1),
-    accessCode: 'XY7Z-AB2C-DE4F-GH8I',
-    studentCount: 18,
-    patientCount: 3
-  },
-  {
-    id: '3',
-    name: 'Diabetes Management',
-    subtitle: 'Medical Simulation Group',
-    iconColor: getSimulationGroupColor(2),
-    accessCode: 'PQ9R-ST1U-VW3X-YZ5A',
-    studentCount: 32,
-    patientCount: 2
-  }
-];
-
-/**
- * Hardcoded user data for instructor
- */
-const mockInstructorUserData: UserData = {
-  name: 'Dr. Sarah Johnson',
-  avatarUrl: undefined // Will display initials
-};
-
-/**
- * Hardcoded patient analytics data
- */
-const mockPatientAnalytics: Record<string, PatientAnalytics[]> = {
-  '1': [ // Chronic Pain group
-    {
-      id: 'pamela',
-      name: 'Pamela',
-      instructorCompletionPercentage: 60,
-      llmCompletionPercentage: 0,
-      studentMessageCount: 49,
-      aiMessageCount: 36,
-      studentAccessCount: 10
-    },
-    {
-      id: 'timothy',
-      name: 'Timothy',
-      instructorCompletionPercentage: 0,
-      llmCompletionPercentage: 0,
-      studentMessageCount: 32,
-      aiMessageCount: 28,
-      studentAccessCount: 8
-    }
-  ],
-  '2': [ // Acne group
-    {
-      id: 'john',
-      name: 'John Davis',
-      instructorCompletionPercentage: 15,
-      llmCompletionPercentage: 20,
-      studentMessageCount: 65,
-      aiMessageCount: 52,
-      studentAccessCount: 15
-    }
-  ]
-};
-
-/**
- * Default patient prompt for all patients
- */
-const DEFAULT_PATIENT_PROMPT = "Pretend to be a patient with the context you are given. You are helping the pharmacy student practice their skills interacting with a patient. Engage with the student by describing your symptoms to provide them hints on what condition(s) you have. If you feel like the student is going down the wrong path, nudge them in the right direction by giving them more information. This is to help the student identify the proper diagnosis of the patient you are pretending to be.";
-
-/**
- * Hardcoded manageable patients data
- */
-const mockManageablePatients: Record<string, ManageablePatient[]> = {
-  '1': [ // Chronic Pain group
-    {
-      id: 'pamela',
-      simulation_group_id: '1',
-      name: 'Pamela',
-      age: 56,
-      gender: 'Female',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: true
-    },
-    {
-      id: 'timothy',
-      simulation_group_id: '1',
-      name: 'Timothy',
-      age: 42,
-      gender: 'Other',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: true
-    }
-  ],
-  '2': [ // Acne group
-    {
-      id: 'john',
-      simulation_group_id: '2',
-      name: 'John',
-      age: 38,
-      gender: 'Male',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: false
-    }
-  ]
-};
-
-/**
- * Hardcoded students data
- */
-const mockStudents: Record<string, Student[]> = {
-  '1': [ // Chronic Pain group
-    {
-      id: 'student-1',
-      name: 'Student 1',
-      email: 'student1@example.com'
-    },
-    {
-      id: 'student-2',
-      name: 'Student 2',
-      email: 'student2@example.com'
-    },
-    {
-      id: 'student-3',
-      name: 'Student 3',
-      email: 'student3@example.com'
-    },
-    {
-      id: 'student-4',
-      name: 'Student 4',
-      email: 'student4@example.com'
-    },
-    {
-      id: 'student-5',
-      name: 'Student 5',
-      email: 'student5@example.com'
-    }
-  ],
-  '2': [ // Acne group
-    {
-      id: 'student-6',
-      name: 'Student 6',
-      email: 'student6@example.com'
-    },
-    {
-      id: 'student-7',
-      name: 'Student 7',
-      email: 'student7@example.com'
-    }
-  ]
-};
-
-/**
- * Hardcoded student details data
- */
-const mockStudentDetails: Record<string, StudentDetails> = {
-  'student-1': {
-    id: 'student-1',
-    name: 'Student 1',
-    email: 'student1@example.com',
-    groupName: 'Chronic Pain',
-    casesAttempted: 4,
-    caseCompletionRate: 50
-  },
-  'student-2': {
-    id: 'student-2',
-    name: 'Student 2',
-    email: 'student2@example.com',
-    groupName: 'Chronic Pain',
-    casesAttempted: 3,
-    caseCompletionRate: 67
-  },
-  'student-3': {
-    id: 'student-3',
-    name: 'Student 3',
-    email: 'student3@example.com',
-    groupName: 'Chronic Pain',
-    casesAttempted: 2,
-    caseCompletionRate: 100
-  },
-  'student-4': {
-    id: 'student-4',
-    name: 'Student 4',
-    email: 'student4@example.com',
-    groupName: 'Chronic Pain',
-    casesAttempted: 5,
-    caseCompletionRate: 80
-  },
-  'student-5': {
-    id: 'student-5',
-    name: 'Student 5',
-    email: 'student5@example.com',
-    groupName: 'Chronic Pain',
-    casesAttempted: 1,
-    caseCompletionRate: 0
-  }
-};
-
-/**
- * Hardcoded chat attempts data (per student per patient)
- */
-const mockChatAttempts: Record<string, Record<string, ChatAttempt[]>> = {
-  'student-1': {
-    'pamela': [
-      {
-        id: 'attempt-1',
-        student_interaction_id: 'interaction-1',
-        attemptNumber: 4,
-        date: 'Feb 19, 2026',
-        completionStatus: 'In Progress',
-        score: null
-      },
-      {
-        id: 'attempt-2',
-        student_interaction_id: 'interaction-1',
-        attemptNumber: 3,
-        date: 'Feb 18, 2026',
-        completionStatus: 'Complete',
-        score: 67
-      },
-      {
-        id: 'attempt-3',
-        student_interaction_id: 'interaction-1',
-        attemptNumber: 2,
-        date: 'Feb 14, 2026',
-        completionStatus: 'Complete',
-        score: 88
-      },
-      {
-        id: 'attempt-4',
-        student_interaction_id: 'interaction-1',
-        attemptNumber: 1,
-        date: 'Jan 27, 2026',
-        completionStatus: 'In Progress',
-        score: null
-      }
-    ],
-    'timothy': [
-      {
-        id: 'attempt-5',
-        student_interaction_id: 'interaction-2',
-        attemptNumber: 2,
-        date: 'Feb 20, 2026',
-        completionStatus: 'Complete',
-        score: 75
-      },
-      {
-        id: 'attempt-6',
-        student_interaction_id: 'interaction-2',
-        attemptNumber: 1,
-        date: 'Feb 10, 2026',
-        completionStatus: 'Complete',
-        score: 82
-      }
-    ]
-  }
-};
-
-/**
- * Hardcoded chat messages data (per attempt)
- */
-const mockChatMessages: Record<string, ChatMessage[]> = {
-  'attempt-2': [
-    {
-      message_id: 'msg-1',
-      chat_id: 'attempt-2',
-      student_sent: false,
-      message_content: "Hello there! I'm Pamela, nice to meet you. I've been feeling really unwell lately, and I'm worried about these chest pains I've been having for the last week. They're quite uncomfortable and I'm not sure what's causing them. Do you think it could be related to my heart?",
-      time_sent: '10:00 AM'
-    },
-    {
-      message_id: 'msg-2',
-      chat_id: 'attempt-2',
-      student_sent: true,
-      message_content: "Yes it's possible, can you please tell me a little bit about your medical history?",
-      time_sent: '10:01 AM'
-    },
-    {
-      message_id: 'msg-3',
-      chat_id: 'attempt-2',
-      student_sent: false,
-      message_content: "I have a history of hypertension, which I've had for about 4 years now. I've also had a total abdominal hysterectomy, and I've been experiencing dyspnea, or shortness of breath, lately. Oh, and I've had a peptic ulcer in the past, which is why I've been taking over-the-counter non-steroidal anti-inflammatory drugs. Could any of these things be contributing to my chest pains?",
-      time_sent: '10:02 AM'
-    },
-    {
-      message_id: 'msg-4',
-      chat_id: 'attempt-2',
-      student_sent: true,
-      message_content: "What medications are you taking?",
-      time_sent: '10:03 AM'
-    },
-    {
-      message_id: 'msg-5',
-      chat_id: 'attempt-2',
-      student_sent: false,
-      message_content: "I'm not currently taking any prescription medications, but I do take ibuprofen (Advil) occasionally for headaches. I've also been taking NSAIDs regularly, which I know can irritate my stomach and make my peptic ulcer symptoms worse. I'm worried that maybe my medication use is related to my chest pains, but I'm not sure. Do you think that's possible?",
-      time_sent: '10:04 AM'
-    },
-    {
-      message_id: 'msg-6',
-      chat_id: 'attempt-2',
-      student_sent: true,
-      message_content: "Tell me more about how the pain feels",
-      time_sent: '10:05 AM'
-    }
-  ]
-};
-
-/**
- * Hardcoded notes data (per attempt)
- */
-const mockChatNotes: Record<string, string> = {
-  'attempt-2': 'No notes available.',
-  'attempt-3': 'sample notes go here.',
-  'attempt-4': ''
-};
-
-/**
- * Hardcoded evaluation prompt (markdown format)
- * This will be editable by admin users in the future
- */
-const mockEvaluationPrompt = `# Evaluation Prompt
-
-Evaluate the student's interview using the instructor-defined rubric and key questions.
-Use only the provided transcript, rubric, and student responses. Do not infer actions or facts that are not clearly supported.
-
-## Assess:
-
-- which key questions were addressed, partially addressed, or missed
-- how well the student's questions align with the rubric
-- overall clinical reasoning and question quality
-
-## Generate an AI debrief with:
-
-- Interview Summary (3-5 sentences)
-- Key Questions Successfully Addressed
-- Key Questions Missed or Incomplete
-- Rubric-Based Feedback (strengths, areas for improvement, next-time focus)
-- Overall Assessment (rubric alignment score + summary)
-
-## OUTPUT FORMAT
-
-Return valid JSON in exactly this structure:
-
-\`\`\`json
-{
-  "interview_summary": "string",
-  "key_questions_successfully_addressed": [
-    {
-      "question_id": "string",
-      "question_content": "string",
-      "feedback": "string"
-    }
-  ],
-  "key_questions_missed_or_incomplete": [
-    {
-      "question_id": "string",
-      "question_content": "string",
-      "status": "missed | partially_addressed",
-      "feedback": "string",
-      "clinical_importance": "string"
-    }
-  ],
-  "rubric_based_feedback": {
-    "strengths": ["string", "string"],
-    "areas_for_improvement": ["string", "string"],
-    "recommended_focus_next_time": ["string", "string"]
-  },
-  "overall_assessment": {
-    "rubric_alignment_score": 0,
-    "summary": "string"
-  }
-}
-\`\`\`
-`;
-
-/**
- * Hardcoded global rubric questions data
- */
-const mockGlobalRubricQuestions: Record<string, GlobalRubricQuestion[]> = {
-  '1': [ // Chronic Pain group
-    {
-      id: '1',
-      title: 'Medication History',
-      keyQuestion: 'Ask the patient about current medications, including prescription, OTC, and supplements.',
-      clinicalIntent: 'This question evaluates the student\'s ability to identify medications that may contribute to adverse reactions or drug interactions.',
-      evaluationCriteria: 'Student should attempt to identify:\n• Current medications\n• Dosage if relevant\n• Duration of use\n• Recent medication changes',
-      required: true,
-    },
-    {
-      id: '2',
-      title: 'Allergy History',
-      keyQuestion: 'Ask the patient about any known allergies, including medications, foods, and environmental allergens.',
-      clinicalIntent: 'This question evaluates the student\'s ability to identify potential allergic reactions and contraindications.',
-      evaluationCriteria: 'Student should attempt to identify:\n• Known allergies\n• Type of reaction\n• Severity of reaction\n• Management strategies',
-      required: true,
-    },
-    {
-      id: '3',
-      title: 'Symptom Duration',
-      keyQuestion: 'Ask the patient how long they have been experiencing their current symptoms.',
-      clinicalIntent: 'This question evaluates the student\'s ability to establish a timeline for the patient\'s condition.',
-      evaluationCriteria: 'Student should attempt to identify:\n• Onset of symptoms\n• Duration of symptoms\n• Progression of symptoms\n• Any triggering events',
-      required: false,
-    },
-  ],
-  '2': [ // Acne group - can have different questions
-    {
-      id: '1',
-      title: 'Skin Care Routine',
-      keyQuestion: 'Ask the patient about their current skin care routine and products used.',
-      clinicalIntent: 'This question evaluates the student\'s ability to identify potential irritants or contributing factors.',
-      evaluationCriteria: 'Student should attempt to identify:\n• Current products used\n• Frequency of use\n• Any recent changes\n• Skin sensitivity',
-      required: true,
-    },
-  ]
-};
-
-/**
- * Hardcoded case-specific questions data (per patient)
- */
-const mockCaseSpecificQuestions: Record<string, GlobalRubricQuestion[]> = {
-  'pamela': [
-    {
-      id: 'case-q1',
-      title: 'Chest Pain Characterization',
-      keyQuestion: 'Assess the characteristics of the patient\'s chest pain, including onset, duration, severity, quality and radiation.',
-      clinicalIntent: 'This question evaluates the student\'s ability to gather essential details about the chest pain that help differentiate between potentially life-threatening causes (e.g., cardiac ischemia), medication-related causes, gastrointestinal causes and musculoskeletal causes, and to support appropriate clinical decision-making and triage.',
-      evaluationCriteria: 'The student attempts to identify at least 3-4 of the following core characteristics of the chest pain:\n• When the pain started, whether the onset was sudden or gradual\n• Where the pain is located, localized or diffuse\n• Description of the pain (e.g., sharp, dull, pressure, burning, tightness)\n• Intensity of pain (e.g., pain scale or descriptive severity)\n• How long the pain lasts, whether it is constant or intermittent',
-      required: true,
-    },
-    {
-      id: 'case-q2',
-      title: 'Exacerbating and Relieving Factors',
-      keyQuestion: 'Identify factors that worsen or alleviate the patient\'s chest pain.',
-      clinicalIntent: 'This question assesses the student\'s ability to explore triggers and relieving factors, which are critical for distinguishing between cardiac, musculoskeletal, and gastrointestinal causes of chest pain.',
-      evaluationCriteria: 'The student attempts to identify:\n• Activities or positions that worsen the pain (e.g., exertion, deep breathing, lying down)\n• Factors that relieve the pain (e.g., rest, antacids, nitroglycerin)\n• Relationship to meals, stress, or physical activity',
-      required: true,
-    },
-    {
-      id: 'case-q3',
-      title: 'Symptom Duration',
-      keyQuestion: 'Determine how long the patient has been experiencing the chest pain symptoms.',
-      clinicalIntent: 'Understanding symptom duration helps assess urgency and chronicity, distinguishing acute emergencies from chronic conditions.',
-      evaluationCriteria: 'The student asks about:\n• When symptoms first began\n• Whether this is a new or recurring problem\n• Any changes in symptom pattern over time',
-      required: false,
-    },
-  ],
-  'timothy': [],
-  'john': []
-};
-
-/**
- * Hardcoded case materials data (per patient)
- */
-const mockCaseMaterials: Record<string, CaseMaterial[]> = {
-  'pamela': [
-    {
-      id: 'material-1',
-      title: 'Chest X-Ray',
-      description: 'Frontal chest radiograph obtained as part of the patient\'s clinical evaluation.',
-      materialType: 'image',
-      contentUrl: '',
-      embedLink: '',
-    },
-    {
-      id: 'material-2',
-      title: 'ECG Reading',
-      description: '12-lead electrocardiogram showing cardiac electrical activity.',
-      materialType: 'document',
-      contentUrl: '',
-      embedLink: '',
-    },
-    {
-      id: 'material-3',
-      title: 'Patient Interview Video',
-      description: 'Video recording of initial patient interview and history taking.',
-      materialType: 'video',
-      contentUrl: '',
-      embedLink: '',
-    },
-  ],
-  'timothy': [],
-  'john': []
-};
-
-/**
- * Get all simulation groups for instructor
- * 
- * @returns Array of simulation groups
- */
 async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
   try {
     const user = await authService.getCurrentUser();
@@ -758,8 +258,39 @@ async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
     }));
   } catch (error) {
     console.error('Failed to fetch instructor groups:', error);
-    return mockInstructorSimulationGroups;
+    return [];
   }
+}
+
+/**
+ * Create a new simulation group
+ */
+async function createSimulationGroup(data: { name: string; description: string; active: boolean; enableVoice: boolean }): Promise<InstructorSimulationGroup> {
+  const user = await authService.getCurrentUser();
+  if (!user?.email) throw new Error('Not authenticated');
+
+  const result = await apiClient.request<any>(
+    `/instructor/create_simulation_group?instructor_email=${encodeURIComponent(user.email)}`,
+    {
+      method: 'POST',
+      body: {
+        group_name: data.name,
+        group_description: data.description,
+        group_student_access: data.active,
+        instructor_voice_enabled: data.enableVoice,
+      },
+    }
+  );
+
+  return {
+    id: result.simulation_group_id,
+    name: result.group_name,
+    subtitle: 'Medical Simulation Group',
+    iconColor: getSimulationGroupColor(0),
+    accessCode: result.group_access_code || '',
+    studentCount: 0,
+    patientCount: 0,
+  };
 }
 
 /**
@@ -782,7 +313,7 @@ async function getCurrentUser(): Promise<UserData> {
     };
   } catch (error) {
     console.error('Failed to fetch user name:', error);
-    return mockInstructorUserData;
+    throw error;
   }
 }
 
@@ -798,7 +329,7 @@ async function getSimulationGroup(id: string): Promise<InstructorSimulationGroup
     return groups.find(group => group.id === id);
   } catch (error) {
     console.error('Failed to fetch simulation group:', error);
-    return mockInstructorSimulationGroups.find(group => group.id === id);
+    return [] as any;
   }
 }
 
@@ -825,7 +356,7 @@ async function getPatientAnalytics(simulationGroupId: string): Promise<PatientAn
     }));
   } catch (error) {
     console.error('Failed to fetch patient analytics:', error);
-    return mockPatientAnalytics[simulationGroupId] || [];
+    return [];
   }
 }
 
@@ -920,7 +451,7 @@ async function getManageablePatients(simulationGroupId: string): Promise<Managea
     }));
   } catch (error) {
     console.error('Failed to fetch manageable patients:', error);
-    return mockManageablePatients[simulationGroupId] || [];
+    return [];
   }
 }
 
@@ -1152,7 +683,7 @@ async function deletePatient(patientId: string): Promise<void> {
  * @returns Array of global rubric questions
  */
 function getGlobalRubricQuestions(simulationGroupId: string): GlobalRubricQuestion[] {
-  return mockGlobalRubricQuestions[simulationGroupId] || [];
+  return [];
 }
 
 /**
@@ -1212,7 +743,7 @@ async function getEvaluationPrompt(simulationGroupId: string): Promise<string> {
     return data.system_prompt || mockEvaluationPrompt;
   } catch (error) {
     console.error('Failed to fetch evaluation prompt:', error);
-    return mockEvaluationPrompt;
+    return [] as any;
   }
 }
 
@@ -1235,7 +766,7 @@ async function getStudents(simulationGroupId: string): Promise<Student[]> {
     }));
   } catch (error) {
     console.error('Failed to fetch students:', error);
-    return mockStudents[simulationGroupId] || [];
+    return [];
   }
 }
 
@@ -1246,7 +777,7 @@ async function getStudents(simulationGroupId: string): Promise<Student[]> {
  * @returns Student details or undefined if not found
  */
 function getStudentDetails(studentId: string): StudentDetails | undefined {
-  return mockStudentDetails[studentId];
+  return [] as any;
 }
 
 /**
@@ -1258,7 +789,7 @@ function getStudentDetails(studentId: string): StudentDetails | undefined {
  * @returns Array of chat attempts
  */
 function getChatAttempts(studentId: string, patientId: string): ChatAttempt[] {
-  return mockChatAttempts[studentId]?.[patientId] || [];
+  return [];
 }
 
 /**
@@ -1269,7 +800,7 @@ function getChatAttempts(studentId: string, patientId: string): ChatAttempt[] {
  * @returns Array of chat messages ordered by time_sent
  */
 function getChatMessages(attemptId: string): ChatMessage[] {
-  return mockChatMessages[attemptId] || [];
+  return [];
 }
 
 /**
@@ -1280,7 +811,7 @@ function getChatMessages(attemptId: string): ChatMessage[] {
  * @returns Notes text from chats.notes field
  */
 function getChatNotes(attemptId: string): string {
-  return mockChatNotes[attemptId] || '';
+  return [] as any;
 }
 
 /**
@@ -1290,7 +821,7 @@ function getChatNotes(attemptId: string): string {
  * @returns Array of case-specific questions
  */
 function getCaseSpecificQuestions(patientId: string): GlobalRubricQuestion[] {
-  return mockCaseSpecificQuestions[patientId] || [];
+  return [];
 }
 
 /**
@@ -1343,7 +874,7 @@ function deleteCaseSpecificQuestion(patientId: string, questionId: string): void
  * @returns Array of case materials (physical assessment materials)
  */
 function getCaseMaterials(patientId: string): CaseMaterial[] {
-  return mockCaseMaterials[patientId] || [];
+  return [];
 }
 
 /**
@@ -1403,6 +934,7 @@ function getDefaultPatientPrompt(): string {
  */
 export const instructorService: InstructorDataService = {
   getSimulationGroups,
+  createSimulationGroup,
   getCurrentUser,
   getSimulationGroup,
   getPatientAnalytics,

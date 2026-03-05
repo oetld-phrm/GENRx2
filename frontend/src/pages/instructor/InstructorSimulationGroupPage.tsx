@@ -5,6 +5,7 @@ import UserAvatar from '@/components/UserAvatar';
 import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
+import { useAuth } from '@/App';
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -16,6 +17,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
  */
 function InstructorSimulationGroupPage() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const { groupId } = useParams();
   const [activeSection, setActiveSection] = useState<'analytics' | 'patients' | 'students' | 'rubric' | 'prompt' | 'editPatient' | 'viewStudent'>('analytics');
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,8 +158,8 @@ function InstructorSimulationGroupPage() {
   /**
    * Handle sign out event
    */
-  const handleSignOut = () => {
-    navigate('/login');
+  const handleSignOut = async () => {
+    await signOut();
   };
 
   /**
