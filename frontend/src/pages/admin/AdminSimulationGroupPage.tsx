@@ -578,7 +578,12 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-${addQuestionType}-${Date.now()}`;
-    const newBankQuestion = { id: newQuestionId, title: question.title };
+    const newBankQuestion = { 
+      id: newQuestionId, 
+      title: question.title,
+      usedBySimulationGroups: [],
+      usedByPatients: addQuestionType === 'patientSpecific' ? [] : undefined
+    };
     
     // Add to question bank via service
     if (addQuestionType === 'global') {
@@ -622,7 +627,12 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-patient-${Date.now()}`;
-    const newBankQuestion = { id: newQuestionId, title: question.title };
+    const newBankQuestion = { 
+      id: newQuestionId, 
+      title: question.title,
+      usedBySimulationGroups: [],
+      usedByPatients: []
+    };
     
     // Add to question bank via service
     mockInstructorDataService.addToPatientSpecificQuestionBank(newBankQuestion);

@@ -238,6 +238,9 @@ export interface MockInstructorDataService {
   addToPatientSpecificQuestionBank: (question: QuestionBankItem) => void;
   getPatientCaseSpecificQuestionIds: (patientId: string) => Set<string>;
   updatePatientCaseSpecificQuestions: (patientId: string, questionIds: Set<string>) => void;
+  getSimulationGroupsUsingQuestion: (questionId: string, questionType?: 'global' | 'patientSpecific') => string[];
+  getPatientsUsingQuestion: (questionId: string) => string[];
+  isQuestionInUse: (questionId: string, questionType?: 'global' | 'patientSpecific') => boolean;
 }
 
 /**
@@ -748,6 +751,8 @@ const mockCaseMaterials: Record<string, CaseMaterial[]> = {
 export interface QuestionBankItem {
   id: string;
   title: string;
+  usedBySimulationGroups: string[]; // Track which simulation groups are using this question
+  usedByPatients?: string[]; // Track which patients are using this question (for patient-specific questions)
 }
 
 /**
@@ -755,14 +760,14 @@ export interface QuestionBankItem {
  * These are available questions that can be added to simulation groups
  */
 const mockGlobalQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-global-1', title: 'Patient History Assessment' },
-  { id: 'bank-global-2', title: 'Medication Review' },
-  { id: 'bank-global-3', title: 'Communication Skills' },
-  { id: 'bank-global-4', title: 'Clinical Reasoning' },
-  { id: 'bank-global-5', title: 'Patient Education' },
-  { id: 'bank-global-6', title: 'Documentation Quality' },
-  { id: 'bank-global-7', title: 'Professionalism' },
-  { id: 'bank-global-8', title: 'Safety Considerations' },
+  { id: 'bank-global-1', title: 'Patient History Assessment', usedBySimulationGroups: [] },
+  { id: 'bank-global-2', title: 'Medication Review', usedBySimulationGroups: [] },
+  { id: 'bank-global-3', title: 'Communication Skills', usedBySimulationGroups: [] },
+  { id: 'bank-global-4', title: 'Clinical Reasoning', usedBySimulationGroups: [] },
+  { id: 'bank-global-5', title: 'Patient Education', usedBySimulationGroups: [] },
+  { id: 'bank-global-6', title: 'Documentation Quality', usedBySimulationGroups: [] },
+  { id: 'bank-global-7', title: 'Professionalism', usedBySimulationGroups: [] },
+  { id: 'bank-global-8', title: 'Safety Considerations', usedBySimulationGroups: [] },
 ];
 
 /**
@@ -770,14 +775,14 @@ const mockGlobalQuestionBank: QuestionBankItem[] = [
  * These are available questions that can be added to specific patients
  */
 const mockPatientSpecificQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-patient-1', title: 'Pain Assessment Scale' },
-  { id: 'bank-patient-2', title: 'Allergy Verification' },
-  { id: 'bank-patient-3', title: 'Symptom Duration' },
-  { id: 'bank-patient-4', title: 'Previous Treatment History' },
-  { id: 'bank-patient-5', title: 'Lifestyle Factors' },
-  { id: 'bank-patient-6', title: 'Family Medical History' },
-  { id: 'bank-patient-7', title: 'Current Medications' },
-  { id: 'bank-patient-8', title: 'Treatment Goals' },
+  { id: 'bank-patient-1', title: 'Pain Assessment Scale', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-2', title: 'Allergy Verification', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-3', title: 'Symptom Duration', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-4', title: 'Previous Treatment History', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-5', title: 'Lifestyle Factors', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-6', title: 'Family Medical History', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-7', title: 'Current Medications', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-8', title: 'Treatment Goals', usedBySimulationGroups: [], usedByPatients: [] },
 ];
 
 /**
@@ -1033,6 +1038,7 @@ function getGlobalRubricQuestions(simulationGroupId: string): GlobalRubricQuesti
 
 /**
  * Add a new global rubric question
+ * Also updates the question bank to track this association
  * 
  * @param simulationGroupId - Simulation group ID
  * @param question - Question to add
@@ -1042,6 +1048,12 @@ function addGlobalRubricQuestion(simulationGroupId: string, question: GlobalRubr
     mockGlobalRubricQuestions[simulationGroupId] = [];
   }
   mockGlobalRubricQuestions[simulationGroupId].push(question);
+  
+  // Update question bank to track this association
+  const bankQuestion = mockGlobalQuestionBank.find(q => q.id === question.id);
+  if (bankQuestion && !bankQuestion.usedBySimulationGroups.includes(simulationGroupId)) {
+    bankQuestion.usedBySimulationGroups.push(simulationGroupId);
+  }
 }
 
 /**
@@ -1062,6 +1074,7 @@ function updateGlobalRubricQuestion(simulationGroupId: string, question: GlobalR
 
 /**
  * Delete a global rubric question
+ * Also updates the question bank to remove this association
  * 
  * @param simulationGroupId - Simulation group ID
  * @param questionId - Question ID to delete
@@ -1070,6 +1083,14 @@ function deleteGlobalRubricQuestion(simulationGroupId: string, questionId: strin
   const questions = mockGlobalRubricQuestions[simulationGroupId];
   if (questions) {
     mockGlobalRubricQuestions[simulationGroupId] = questions.filter(q => q.id !== questionId);
+    
+    // Update question bank to remove this association
+    const bankQuestion = mockGlobalQuestionBank.find(q => q.id === questionId);
+    if (bankQuestion) {
+      bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
+        groupId => groupId !== simulationGroupId
+      );
+    }
   }
 }
 
@@ -1150,6 +1171,7 @@ function getCaseSpecificQuestions(patientId: string): GlobalRubricQuestion[] {
 
 /**
  * Add a new case-specific question
+ * Also updates the question bank to track this association
  * 
  * @param patientId - Patient ID
  * @param question - Question to add
@@ -1159,6 +1181,18 @@ function addCaseSpecificQuestion(patientId: string, question: GlobalRubricQuesti
     mockCaseSpecificQuestions[patientId] = [];
   }
   mockCaseSpecificQuestions[patientId].push(question);
+  
+  // Update question bank to track this association
+  const bankQuestion = mockPatientSpecificQuestionBank.find(q => q.id === question.id);
+  if (bankQuestion && bankQuestion.usedByPatients && !bankQuestion.usedByPatients.includes(patientId)) {
+    bankQuestion.usedByPatients.push(patientId);
+    
+    // Also track the simulation group this patient belongs to
+    const patient = getPatient(patientId);
+    if (patient && !bankQuestion.usedBySimulationGroups.includes(patient.simulation_group_id)) {
+      bankQuestion.usedBySimulationGroups.push(patient.simulation_group_id);
+    }
+  }
 }
 
 /**
@@ -1179,6 +1213,7 @@ function updateCaseSpecificQuestion(patientId: string, question: GlobalRubricQue
 
 /**
  * Delete a case-specific question
+ * Also updates the question bank to remove this association
  * 
  * @param patientId - Patient ID
  * @param questionId - Question ID to delete
@@ -1187,6 +1222,35 @@ function deleteCaseSpecificQuestion(patientId: string, questionId: string): void
   const questions = mockCaseSpecificQuestions[patientId];
   if (questions) {
     mockCaseSpecificQuestions[patientId] = questions.filter(q => q.id !== questionId);
+    
+    // Update question bank to remove this association
+    const bankQuestion = mockPatientSpecificQuestionBank.find(q => q.id === questionId);
+    if (bankQuestion && bankQuestion.usedByPatients) {
+      bankQuestion.usedByPatients = bankQuestion.usedByPatients.filter(
+        pId => pId !== patientId
+      );
+      
+      // If no patients are using this question anymore, remove the simulation group association
+      const patient = getPatient(patientId);
+      if (patient && bankQuestion.usedByPatients.length === 0) {
+        bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
+          groupId => groupId !== patient.simulation_group_id
+        );
+      } else if (patient) {
+        // Check if any other patients in this simulation group are still using this question
+        const otherPatientsInGroup = getManageablePatients(patient.simulation_group_id)
+          .filter(p => p.id !== patientId);
+        const stillUsedInGroup = otherPatientsInGroup.some(p => 
+          bankQuestion.usedByPatients?.includes(p.id)
+        );
+        
+        if (!stillUsedInGroup) {
+          bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
+            groupId => groupId !== patient.simulation_group_id
+          );
+        }
+      }
+    }
   }
 }
 
@@ -1276,6 +1340,10 @@ function getPatientSpecificQuestionBank(): QuestionBankItem[] {
  * @param question - Question to add
  */
 function addToGlobalQuestionBank(question: QuestionBankItem): void {
+  // Ensure the question has the required tracking arrays
+  if (!question.usedBySimulationGroups) {
+    question.usedBySimulationGroups = [];
+  }
   mockGlobalQuestionBank.push(question);
 }
 
@@ -1285,6 +1353,13 @@ function addToGlobalQuestionBank(question: QuestionBankItem): void {
  * @param question - Question to add
  */
 function addToPatientSpecificQuestionBank(question: QuestionBankItem): void {
+  // Ensure the question has the required tracking arrays
+  if (!question.usedBySimulationGroups) {
+    question.usedBySimulationGroups = [];
+  }
+  if (!question.usedByPatients) {
+    question.usedByPatients = [];
+  }
   mockPatientSpecificQuestionBank.push(question);
 }
 
@@ -1312,6 +1387,42 @@ function updatePatientCaseSpecificQuestions(patientId: string, questionIds: Set<
   // The actual add/delete operations are handled by addCaseSpecificQuestion and deleteCaseSpecificQuestion
   // This method is here for consistency and future API integration
   console.log(`Updating patient ${patientId} case-specific questions:`, Array.from(questionIds));
+}
+
+/**
+ * Get simulation groups using a specific question
+ * 
+ * @param questionId - Question ID
+ * @param questionType - Type of question ('global' or 'patientSpecific')
+ * @returns Array of simulation group IDs using this question
+ */
+function getSimulationGroupsUsingQuestion(questionId: string, questionType: 'global' | 'patientSpecific' = 'global'): string[] {
+  const questionBank = questionType === 'global' ? mockGlobalQuestionBank : mockPatientSpecificQuestionBank;
+  const question = questionBank.find(q => q.id === questionId);
+  return question ? [...question.usedBySimulationGroups] : [];
+}
+
+/**
+ * Get patients using a specific patient-specific question
+ * 
+ * @param questionId - Question ID
+ * @returns Array of patient IDs using this question
+ */
+function getPatientsUsingQuestion(questionId: string): string[] {
+  const question = mockPatientSpecificQuestionBank.find(q => q.id === questionId);
+  return question && question.usedByPatients ? [...question.usedByPatients] : [];
+}
+
+/**
+ * Check if a question is used by any simulation group
+ * 
+ * @param questionId - Question ID
+ * @param questionType - Type of question ('global' or 'patientSpecific')
+ * @returns True if the question is used by at least one simulation group
+ */
+function isQuestionInUse(questionId: string, questionType: 'global' | 'patientSpecific' = 'global'): boolean {
+  const groups = getSimulationGroupsUsingQuestion(questionId, questionType);
+  return groups.length > 0;
 }
 
 /**
@@ -1356,5 +1467,8 @@ export const mockInstructorDataService: MockInstructorDataService = {
   addToGlobalQuestionBank,
   addToPatientSpecificQuestionBank,
   getPatientCaseSpecificQuestionIds,
-  updatePatientCaseSpecificQuestions
+  updatePatientCaseSpecificQuestions,
+  getSimulationGroupsUsingQuestion,
+  getPatientsUsingQuestion,
+  isQuestionInUse
 };
