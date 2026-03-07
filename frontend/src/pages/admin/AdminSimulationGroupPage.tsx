@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial } from '@/services/instructorService';
+import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem } from '@/services/instructorService';
 import { mockAdminDataService } from '@/services/adminService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode, HelpCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
@@ -578,9 +578,14 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-${addQuestionType}-${Date.now()}`;
-    const newBankQuestion = { 
+    const newBankQuestion: QuestionBankItem = { 
       id: newQuestionId, 
       title: question.title,
+      questionText: question.keyQuestion,
+      clinicalIntent: question.clinicalIntent,
+      evaluationCriteria: question.evaluationCriteria,
+      isMandatory: question.required,
+      isActive: true,
       usedBySimulationGroups: [],
       usedByPatients: addQuestionType === 'patientSpecific' ? [] : undefined
     };
@@ -594,23 +599,9 @@ function AdminSimulationGroupPage() {
       setPatientSpecificBankQuestions(mockInstructorDataService.getPatientSpecificQuestionBank());
     }
     
-    // For global questions, also add to global rubric
-    if (addQuestionType === 'global') {
-      const newGlobalRubricQuestion: GlobalRubricQuestion = {
-        id: newQuestionId,
-        title: question.title,
-        keyQuestion: question.keyQuestion,
-        clinicalIntent: question.clinicalIntent,
-        evaluationCriteria: question.evaluationCriteria,
-        required: question.required,
-      };
-      
-      mockInstructorDataService.addGlobalRubricQuestion(groupId || '1', newGlobalRubricQuestion);
-      setGlobalRubricQuestions(mockInstructorDataService.getGlobalRubricQuestions(groupId || '1'));
-      
-      // Automatically include it
-      setIncludedQuestionIds(prev => new Set([...prev, newQuestionId]));
-    }
+    // DO NOT automatically add to global rubric or checkmark
+    // The question is now in the question bank, but NOT included in the simulation group
+    // Instructor must explicitly checkmark it to include it
     
     console.log('Saved new question to bank:', addQuestionType, question);
   };
@@ -627,9 +618,14 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-patient-${Date.now()}`;
-    const newBankQuestion = { 
+    const newBankQuestion: QuestionBankItem = { 
       id: newQuestionId, 
       title: question.title,
+      questionText: question.keyQuestion,
+      clinicalIntent: question.clinicalIntent,
+      evaluationCriteria: question.evaluationCriteria,
+      isMandatory: question.required,
+      isActive: true,
       usedBySimulationGroups: [],
       usedByPatients: []
     };
@@ -650,30 +646,45 @@ function AdminSimulationGroupPage() {
     
     mockInstructorDataService.addCaseSpecificQuestion(question.patientId, newCaseQuestion);
     
+    // Update includedQuestionIds to checkmark this question for this patient
+    // Only update if we're currently viewing this patient in the question bank
+    if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank === question.patientId) {
+      setIncludedQuestionIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(newQuestionId);
+        return newSet;
+      });
+    }
+    
+    // Update case-specific questions if we're editing this patient
+    if (selectedPatientForEdit === question.patientId) {
+      setCaseSpecificQuestions(mockInstructorDataService.getCaseSpecificQuestions(question.patientId));
+    }
+    
     console.log('Saved new patient-specific question:', question);
   };
 
   /**
    * Handle toggle question inclusion in rubric
    */
-  const handleToggleQuestionInclusion = (questionId: string, bankQuestion: { id: string; title: string }, isChecked: boolean) => {
+  const handleToggleQuestionInclusion = (questionId: string, bankQuestion: QuestionBankItem, isChecked: boolean) => {
     const newSet = new Set(includedQuestionIds);
     
     if (isChecked) {
       newSet.add(questionId);
       
       // Add to global rubric if it's a global question
-      if (addQuestionType === 'global' || questionId.startsWith('bank-global-')) {
+      if (questionBankTab === 'global' || questionId.startsWith('bank-global-')) {
         // Check if already exists in rubric
         const existingQuestion = globalRubricQuestions.find(q => q.id === questionId);
         if (!existingQuestion) {
           const newGlobalRubricQuestion: GlobalRubricQuestion = {
             id: questionId,
             title: bankQuestion.title,
-            keyQuestion: '',
-            clinicalIntent: '',
-            evaluationCriteria: '',
-            required: false,
+            keyQuestion: bankQuestion.questionText,
+            clinicalIntent: bankQuestion.clinicalIntent,
+            evaluationCriteria: bankQuestion.evaluationCriteria,
+            required: bankQuestion.isMandatory,
           };
           
           mockInstructorDataService.addGlobalRubricQuestion(groupId || '1', newGlobalRubricQuestion);
@@ -682,6 +693,12 @@ function AdminSimulationGroupPage() {
       }
     } else {
       newSet.delete(questionId);
+      
+      // Remove from global rubric when unchecked
+      if (questionBankTab === 'global' || questionId.startsWith('bank-global-')) {
+        mockInstructorDataService.deleteGlobalRubricQuestion(groupId || '1', questionId);
+        setGlobalRubricQuestions(mockInstructorDataService.getGlobalRubricQuestions(groupId || '1'));
+      }
     }
     
     setIncludedQuestionIds(newSet);
@@ -842,10 +859,20 @@ function AdminSimulationGroupPage() {
           <Button
             onClick={() => {
               setActiveSection('questionBank');
-              // Reset question bank state when entering
-              if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank) {
+              
+              // Load included question IDs based on current tab
+              if (questionBankTab === 'global') {
+                // Get IDs of questions already in global rubric
+                const globalRubric = mockInstructorDataService.getGlobalRubricQuestions(groupId || '1');
+                const questionIds = new Set(globalRubric.map(q => q.id));
+                setIncludedQuestionIds(questionIds);
+              } else if (selectedPatientForQuestionBank) {
+                // Get IDs of questions already in patient's case-specific rubric
                 const questionIds = mockInstructorDataService.getPatientCaseSpecificQuestionIds(selectedPatientForQuestionBank);
                 setIncludedQuestionIds(questionIds);
+              } else {
+                // No patient selected, clear checkmarks
+                setIncludedQuestionIds(new Set());
               }
             }}
             variant="ghost"
@@ -1354,7 +1381,13 @@ function AdminSimulationGroupPage() {
                 {/* Tab Switcher */}
                 <div className="flex gap-2 border-b" style={{ borderColor: UI_COLORS.border.default }}>
                   <button
-                    onClick={() => setQuestionBankTab('global')}
+                    onClick={() => {
+                      setQuestionBankTab('global');
+                      // Load global rubric question IDs when switching to global tab
+                      const globalRubric = mockInstructorDataService.getGlobalRubricQuestions(groupId || '1');
+                      const questionIds = new Set(globalRubric.map(q => q.id));
+                      setIncludedQuestionIds(questionIds);
+                    }}
                     className="px-6 py-3 font-medium transition-colors border-b-2"
                     style={{
                       color: questionBankTab === 'global' ? SIMULATION_GROUP_COLOR_PALETTE[2] : UI_COLORS.text.body,
@@ -1366,7 +1399,16 @@ function AdminSimulationGroupPage() {
                     Global Questions
                   </button>
                   <button
-                    onClick={() => setQuestionBankTab('patientSpecific')}
+                    onClick={() => {
+                      setQuestionBankTab('patientSpecific');
+                      // Load patient-specific question IDs when switching to patient-specific tab
+                      if (selectedPatientForQuestionBank) {
+                        const questionIds = mockInstructorDataService.getPatientCaseSpecificQuestionIds(selectedPatientForQuestionBank);
+                        setIncludedQuestionIds(questionIds);
+                      } else {
+                        setIncludedQuestionIds(new Set());
+                      }
+                    }}
                     className="px-6 py-3 font-medium transition-colors border-b-2"
                     style={{
                       color: questionBankTab === 'patientSpecific' ? SIMULATION_GROUP_COLOR_PALETTE[2] : UI_COLORS.text.body,
@@ -1501,14 +1543,14 @@ function AdminSimulationGroupPage() {
                                     if (e.target.checked) {
                                       newSet.add(question.id);
                                       
-                                      // Add to patient's case-specific questions
+                                      // Add to patient's case-specific questions with full data
                                       const newCaseQuestion: GlobalRubricQuestion = {
                                         id: question.id,
                                         title: question.title,
-                                        keyQuestion: '',
-                                        clinicalIntent: '',
-                                        evaluationCriteria: '',
-                                        required: false,
+                                        keyQuestion: question.questionText,
+                                        clinicalIntent: question.clinicalIntent,
+                                        evaluationCriteria: question.evaluationCriteria,
+                                        required: question.isMandatory,
                                       };
                                       mockInstructorDataService.addCaseSpecificQuestion(selectedPatientForQuestionBank!, newCaseQuestion);
                                       
@@ -2344,26 +2386,32 @@ function AdminSimulationGroupPage() {
 
                             {/* Global Question List */}
                             <div className="space-y-2">
-                              {globalRubricQuestions.map((question, index) => (
-                                <div
-                                  key={question.id}
-                                  className="w-full text-left px-4 py-3 rounded-lg"
-                                  style={{
-                                    backgroundColor: UI_COLORS.background.tableHeader,
-                                    borderWidth: '1px',
-                                    borderStyle: 'solid',
-                                    borderColor: UI_COLORS.border.default,
-                                    opacity: 0.7,
-                                  }}
-                                >
-                                  <p className="text-sm font-medium mb-1" style={{ color: UI_COLORS.text.heading }}>
-                                    Q{index + 1} - {question.title}
-                                  </p>
-                                  <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>
-                                    [{question.required ? 'Required' : 'Optional'}]
-                                  </p>
-                                </div>
-                              ))}
+                              {(() => {
+                                // Get the patient's simulation group ID
+                                const patientSimGroupId = patientBeingEdited?.simulation_group_id || groupId || '1';
+                                // Load global rubric questions for the patient's simulation group
+                                const patientGlobalRubric = mockInstructorDataService.getGlobalRubricQuestions(patientSimGroupId);
+                                return patientGlobalRubric.map((question, index) => (
+                                  <div
+                                    key={question.id}
+                                    className="w-full text-left px-4 py-3 rounded-lg"
+                                    style={{
+                                      backgroundColor: UI_COLORS.background.tableHeader,
+                                      borderWidth: '1px',
+                                      borderStyle: 'solid',
+                                      borderColor: UI_COLORS.border.default,
+                                      opacity: 0.7,
+                                    }}
+                                  >
+                                    <p className="text-sm font-medium mb-1" style={{ color: UI_COLORS.text.heading }}>
+                                      Q{index + 1} - {question.title}
+                                    </p>
+                                    <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>
+                                      [{question.required ? 'Required' : 'Optional'}]
+                                    </p>
+                                  </div>
+                                ));
+                              })()}
                             </div>
                           </div>
                         </div>

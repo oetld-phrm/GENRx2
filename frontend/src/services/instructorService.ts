@@ -747,12 +747,22 @@ const mockCaseMaterials: Record<string, CaseMaterial[]> = {
 
 /**
  * Question Bank Item - represents a question in the question bank
+ * Maps to: question_bank table in DB
  */
 export interface QuestionBankItem {
-  id: string;
-  title: string;
-  usedBySimulationGroups: string[]; // Track which simulation groups are using this question
-  usedByPatients?: string[]; // Track which patients are using this question (for patient-specific questions)
+  id: string;                           // question_id
+  title: string;                        // title
+  questionText: string;                 // question_text (the key question)
+  clinicalIntent: string;               // clinical_intent
+  evaluationCriteria: string;           // evaluation_criteria
+  category?: string;                    // category
+  difficultyLevel?: string;             // difficulty_level
+  isMandatory: boolean;                 // is_mandatory (maps to 'required' in UI)
+  weight?: number;                      // weight
+  maxScore?: number;                    // max_score
+  isActive: boolean;                    // is_active
+  usedBySimulationGroups: string[];     // Track which simulation groups are using this question
+  usedByPatients?: string[];            // Track which patients are using this question (for patient-specific questions)
 }
 
 /**
@@ -760,14 +770,14 @@ export interface QuestionBankItem {
  * These are available questions that can be added to simulation groups
  */
 const mockGlobalQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-global-1', title: 'Patient History Assessment', usedBySimulationGroups: [] },
-  { id: 'bank-global-2', title: 'Medication Review', usedBySimulationGroups: [] },
-  { id: 'bank-global-3', title: 'Communication Skills', usedBySimulationGroups: [] },
-  { id: 'bank-global-4', title: 'Clinical Reasoning', usedBySimulationGroups: [] },
-  { id: 'bank-global-5', title: 'Patient Education', usedBySimulationGroups: [] },
-  { id: 'bank-global-6', title: 'Documentation Quality', usedBySimulationGroups: [] },
-  { id: 'bank-global-7', title: 'Professionalism', usedBySimulationGroups: [] },
-  { id: 'bank-global-8', title: 'Safety Considerations', usedBySimulationGroups: [] },
+  { id: 'bank-global-1', title: 'Patient History Assessment', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-2', title: 'Medication Review', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-3', title: 'Communication Skills', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-4', title: 'Clinical Reasoning', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-5', title: 'Patient Education', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-6', title: 'Documentation Quality', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-7', title: 'Professionalism', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-8', title: 'Safety Considerations', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
 ];
 
 /**
@@ -775,14 +785,14 @@ const mockGlobalQuestionBank: QuestionBankItem[] = [
  * These are available questions that can be added to specific patients
  */
 const mockPatientSpecificQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-patient-1', title: 'Pain Assessment Scale', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-2', title: 'Allergy Verification', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-3', title: 'Symptom Duration', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-4', title: 'Previous Treatment History', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-5', title: 'Lifestyle Factors', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-6', title: 'Family Medical History', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-7', title: 'Current Medications', usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-8', title: 'Treatment Goals', usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-1', title: 'Pain Assessment Scale', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-2', title: 'Allergy Verification', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-3', title: 'Symptom Duration', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-4', title: 'Previous Treatment History', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-5', title: 'Lifestyle Factors', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-6', title: 'Family Medical History', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-7', title: 'Current Medications', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-8', title: 'Treatment Goals', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
 ];
 
 /**
@@ -1047,6 +1057,14 @@ function addGlobalRubricQuestion(simulationGroupId: string, question: GlobalRubr
   if (!mockGlobalRubricQuestions[simulationGroupId]) {
     mockGlobalRubricQuestions[simulationGroupId] = [];
   }
+  
+  // Check if question already exists to prevent duplicates
+  const existingQuestion = mockGlobalRubricQuestions[simulationGroupId].find(q => q.id === question.id);
+  if (existingQuestion) {
+    console.log(`Question ${question.id} already exists in simulation group ${simulationGroupId}, skipping duplicate add`);
+    return;
+  }
+  
   mockGlobalRubricQuestions[simulationGroupId].push(question);
   
   // Update question bank to track this association
@@ -1180,6 +1198,14 @@ function addCaseSpecificQuestion(patientId: string, question: GlobalRubricQuesti
   if (!mockCaseSpecificQuestions[patientId]) {
     mockCaseSpecificQuestions[patientId] = [];
   }
+  
+  // Check if question already exists to prevent duplicates
+  const existingQuestion = mockCaseSpecificQuestions[patientId].find(q => q.id === question.id);
+  if (existingQuestion) {
+    console.log(`Question ${question.id} already exists for patient ${patientId}, skipping duplicate add`);
+    return;
+  }
+  
   mockCaseSpecificQuestions[patientId].push(question);
   
   // Update question bank to track this association
