@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
 import { mockDataService } from '@/services/studentService';
-import { ArrowLeft, FileText, User, Stethoscope, Flag, Eye, Menu, ChevronRight } from 'lucide-react';
+import { ArrowLeft, FileText, User, Stethoscope, Flag, Eye, Menu, ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import PatientInformationDialog from '@/components/PatientInformationDialog';
@@ -51,6 +51,9 @@ function ChatHistoryPage() {
 
   // State for content sidebar (physical assessment only)
   const [contentSidebarType, setContentSidebarType] = useState<'physical-assessment' | null>(null);
+
+  // State for patient information sidebar
+  const [isPatientInfoSidebarOpen, setIsPatientInfoSidebarOpen] = useState(false);
 
   // State for sidebar visibility
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
@@ -310,10 +313,10 @@ function ChatHistoryPage() {
               style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
-              onClick={() => setContentSidebarType('physical-assessment')}
+              onClick={() => setIsPatientInfoSidebarOpen(true)}
             >
-              <Stethoscope className="w-5 h-5 mr-2" />
-              Physical Assessment
+              <User className="w-5 h-5 mr-2" />
+              Patient Information
             </Button>
             <Button
               variant="outline"
@@ -321,10 +324,10 @@ function ChatHistoryPage() {
               style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
-              onClick={() => setIsPatientInfoOpen(true)}
+              onClick={() => setContentSidebarType('physical-assessment')}
             >
-              <User className="w-5 h-5 mr-2" />
-              Patient Information
+              <Stethoscope className="w-5 h-5 mr-2" />
+              Physical Assessment
             </Button>
             <Button
               variant="outline"
@@ -344,6 +347,54 @@ function ChatHistoryPage() {
               <Flag className="w-5 h-5 mr-2" />
               Report Issue
             </Button>
+          </div>
+        </aside>
+
+        {/* Patient Information Sidebar - Slides from right of notes sidebar */}
+        <aside 
+          className="flex flex-col transition-all duration-300 ease-in-out flex-shrink-0"
+          aria-hidden={!isPatientInfoSidebarOpen}
+          style={{ 
+            backgroundColor: UI_COLORS.background.white, 
+            borderRightWidth: isPatientInfoSidebarOpen ? '1px' : '0px', 
+            borderRightStyle: 'solid', 
+            borderRightColor: UI_COLORS.border.default,
+            width: isPatientInfoSidebarOpen ? '20rem' : '0rem',
+            minWidth: isPatientInfoSidebarOpen ? '20rem' : '0rem',
+            overflowY: isPatientInfoSidebarOpen ? 'auto' : 'hidden',
+            overflowX: 'hidden',
+            opacity: isPatientInfoSidebarOpen ? 1 : 0,
+            pointerEvents: isPatientInfoSidebarOpen ? 'auto' : 'none',
+          }}
+        >
+          {/* Header with close button */}
+          {isPatientInfoSidebarOpen && (
+            <div className="p-4 flex items-center justify-between flex-shrink-0" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+              <h2 className="font-semibold text-lg whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>
+                Patient Information
+              </h2>
+              <button
+                onClick={() => setIsPatientInfoSidebarOpen(false)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+                aria-label="Close patient information sidebar"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
+          {/* Content Area - Empty for now */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {isPatientInfoSidebarOpen && (
+              <div className="space-y-4">
+                <p className="text-sm" style={{ color: UI_COLORS.text.body }}>
+                  Patient information content will be displayed here.
+                </p>
+              </div>
+            )}
           </div>
         </aside>
 
