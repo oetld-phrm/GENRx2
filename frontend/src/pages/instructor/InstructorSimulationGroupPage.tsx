@@ -55,8 +55,10 @@ function InstructorSimulationGroupPage() {
   const [pendingQuestionIds, setPendingQuestionIds] = useState<Set<string>>(new Set());
   const [isAddQuestionDialogOpen, setIsAddQuestionDialogOpen] = useState(false);
   const [isAddPatientQuestionDialogOpen, setIsAddPatientQuestionDialogOpen] = useState(false);
-  const [addQuestionType, setAddQuestionType] = useState<'global' | 'patientSpecific'>('global');
+  const [addQuestionType] = useState<'global' | 'patientSpecific'>('global');
   const [selectedPatientForQuestionBank, setSelectedPatientForQuestionBank] = useState<string | null>(null);
+  const [globalQuestionSearchQuery, setGlobalQuestionSearchQuery] = useState('');
+  const [patientQuestionSearchQuery, setPatientQuestionSearchQuery] = useState('');
   
   // Pagination state for Question Bank
   const [globalPagination, setGlobalPagination] = useState({
@@ -83,6 +85,7 @@ function InstructorSimulationGroupPage() {
     selectedPatientForEdit ? mockInstructorDataService.getCaseSpecificQuestions(selectedPatientForEdit) : []
   );
   const [caseQuestionSearchQuery, setCaseQuestionSearchQuery] = useState('');
+  const [globalRubricSearchQuery, setGlobalRubricSearchQuery] = useState('');
   
   // Filter case questions based on search
   const filteredCaseQuestions = caseSpecificQuestions.filter(q =>
@@ -736,20 +739,28 @@ function InstructorSimulationGroupPage() {
   };
 
   // Get paginated questions for current view
+  const filteredGlobalQuestions = globalBankQuestions.filter(q =>
+    q.title.toLowerCase().includes(globalQuestionSearchQuery.toLowerCase())
+  );
+  
+  const filteredPatientQuestions = patientSpecificBankQuestions.filter(q =>
+    q.title.toLowerCase().includes(patientQuestionSearchQuery.toLowerCase())
+  );
+  
   const paginatedGlobalQuestions = getPaginatedQuestions(
-    globalBankQuestions,
+    filteredGlobalQuestions,
     globalPagination.currentPage,
     globalPagination.itemsPerPage
   );
 
   const paginatedPatientQuestions = getPaginatedQuestions(
-    patientSpecificBankQuestions,
+    filteredPatientQuestions,
     patientPagination.currentPage,
     patientPagination.itemsPerPage
   );
 
-  const globalTotalPages = getTotalPages(globalBankQuestions.length, globalPagination.itemsPerPage);
-  const patientTotalPages = getTotalPages(patientSpecificBankQuestions.length, patientPagination.itemsPerPage);
+  const globalTotalPages = getTotalPages(filteredGlobalQuestions.length, globalPagination.itemsPerPage);
+  const patientTotalPages = getTotalPages(filteredPatientQuestions.length, patientPagination.itemsPerPage);
 
   return (
     <PageContainer>
@@ -1853,30 +1864,27 @@ function InstructorSimulationGroupPage() {
                         Select which global questions should be included in this simulation group's rubric.
                       </p>
                       
-                      {/* Add New Global Question Button */}
-                      <Button
-                        onClick={() => {
-                          setAddQuestionType('global');
-                          setIsAddQuestionDialogOpen(true);
-                        }}
-                        className="w-full justify-start gap-2 py-3 h-auto font-medium transition-colors mb-4"
-                        style={{ 
-                          backgroundColor: UI_COLORS.button.primary, 
-                          color: UI_COLORS.button.text 
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
-                      >
-                        <Plus className="w-5 h-5" />
-                        Add New Global Question
-                      </Button>
+                      {/* Search Bar */}
+                      <div className="relative mb-4">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
+                        <Input
+                          type="text"
+                          placeholder="Search global questions..."
+                          value={globalQuestionSearchQuery}
+                          onChange={(e) => setGlobalQuestionSearchQuery(e.target.value)}
+                          className="pl-10"
+                          style={{
+                            borderColor: UI_COLORS.border.default,
+                          }}
+                        />
+                      </div>
                       
                       {/* Pagination Info */}
-                      {globalBankQuestions.length > 0 && (
+                      {filteredGlobalQuestions.length > 0 && (
                         <div className="flex items-center justify-between mb-3 text-sm" style={{ color: UI_COLORS.text.muted }}>
                           <span>
                             Showing {((globalPagination.currentPage - 1) * globalPagination.itemsPerPage) + 1}-
-                            {Math.min(globalPagination.currentPage * globalPagination.itemsPerPage, globalBankQuestions.length)} of {globalBankQuestions.length} questions
+                            {Math.min(globalPagination.currentPage * globalPagination.itemsPerPage, filteredGlobalQuestions.length)} of {filteredGlobalQuestions.length} questions
                           </span>
                         </div>
                       )}
@@ -2105,31 +2113,29 @@ function InstructorSimulationGroupPage() {
                         </select>
                       </div>
                       
-                      {/* Add New Patient-Specific Question Button */}
-                      <Button
-                        onClick={() => {
-                          setIsAddPatientQuestionDialogOpen(true);
-                        }}
-                        className="w-full justify-start gap-2 py-3 h-auto font-medium transition-colors mb-4"
-                        style={{ 
-                          backgroundColor: UI_COLORS.button.primary, 
-                          color: UI_COLORS.button.text 
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
-                      >
-                        <Plus className="w-5 h-5" />
-                        Add New Patient-Specific Question
-                      </Button>
+                      {/* Search Bar */}
+                      <div className="relative mb-4">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
+                        <Input
+                          type="text"
+                          placeholder="Search patient-specific questions..."
+                          value={patientQuestionSearchQuery}
+                          onChange={(e) => setPatientQuestionSearchQuery(e.target.value)}
+                          className="pl-10"
+                          style={{
+                            borderColor: UI_COLORS.border.default,
+                          }}
+                        />
+                      </div>
                       
                       {selectedPatientForQuestionBank ? (
                         <>
                           {/* Pagination Info */}
-                          {patientSpecificBankQuestions.length > 0 && (
+                          {filteredPatientQuestions.length > 0 && (
                             <div className="flex items-center justify-between mb-3 text-sm" style={{ color: UI_COLORS.text.muted }}>
                               <span>
                                 Showing {((patientPagination.currentPage - 1) * patientPagination.itemsPerPage) + 1}-
-                                {Math.min(patientPagination.currentPage * patientPagination.itemsPerPage, patientSpecificBankQuestions.length)} of {patientSpecificBankQuestions.length} questions
+                                {Math.min(patientPagination.currentPage * patientPagination.itemsPerPage, filteredPatientQuestions.length)} of {filteredPatientQuestions.length} questions
                               </span>
                             </div>
                           )}
@@ -2708,11 +2714,8 @@ Return valid JSON in exactly this structure:
                         />
                       </div>
 
-                      {/* RUBRIC Section */}
+                      {/* Local Patient Specific Questions Section */}
                       <div className="space-y-4">
-                        <h3 className="font-semibold text-lg" style={{ color: UI_COLORS.text.heading }}>
-                          RUBRIC
-                        </h3>
                         <p className="text-xs italic mb-4" style={{ color: UI_COLORS.text.muted }}>
                           Click on a Key Question entry to expand and edit it.
                         </p>
@@ -2926,41 +2929,152 @@ Return valid JSON in exactly this structure:
                       {/* Divider */}
                       <div className="my-8" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }} />
 
-                      {/* Global Rubric Section */}
+                      {/* Global Key Questions Section */}
                       <div className="space-y-4">
                         <h3 className="font-semibold text-lg" style={{ color: UI_COLORS.text.heading }}>
-                          GLOBAL RUBRIC
+                          GLOBAL KEY QUESTIONS
                         </h3>
                         <p className="text-xs italic mb-4" style={{ color: UI_COLORS.text.muted }}>
                           The following global questions are shown for reference to prevent redundancy. Edit global questions from the Global Rubric tab.
                         </p>
 
-                        <div className="space-y-2">
+                        {/* Search Bar for Global Questions */}
+                        <div className="relative mb-6">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
+                          <Input
+                            placeholder="Search Global Questions"
+                            value={globalRubricSearchQuery}
+                            onChange={(e) => setGlobalRubricSearchQuery(e.target.value)}
+                            className="pl-9 py-2 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                            style={{ 
+                              borderWidth: '1px', 
+                              borderStyle: 'solid', 
+                              borderColor: UI_COLORS.border.default,
+                              backgroundColor: UI_COLORS.background.white
+                            }}
+                          />
+                        </div>
+
+                        <Accordion type="single" collapsible className="space-y-2">
                           {(() => {
                             const patientSimGroupId = patientBeingEdited?.simulation_group_id || groupId || '1';
                             const patientGlobalRubric = mockInstructorDataService.getGlobalRubricQuestions(patientSimGroupId);
-                            return patientGlobalRubric.map((question, index) => (
-                              <div
-                                key={question.id}
-                                className="w-full text-left px-4 py-3 rounded-lg"
+                            const filteredGlobalRubric = patientGlobalRubric.filter(q =>
+                              q.title.toLowerCase().includes(globalRubricSearchQuery.toLowerCase())
+                            );
+                            return filteredGlobalRubric.map((question, index) => (
+                              <AccordionItem 
+                                key={question.id} 
+                                value={question.id}
                                 style={{
-                                  backgroundColor: UI_COLORS.background.tableHeader,
                                   borderWidth: '1px',
                                   borderStyle: 'solid',
                                   borderColor: UI_COLORS.border.default,
+                                  borderRadius: '0.5rem',
+                                  overflow: 'hidden',
                                   opacity: 0.7,
                                 }}
                               >
-                                <p className="text-sm font-medium mb-1" style={{ color: UI_COLORS.text.heading }}>
-                                  Q{index + 1} - {question.title}
-                                </p>
-                                <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>
-                                  {question.required ? 'Required' : 'Optional'}
-                                </p>
-                              </div>
+                                <AccordionTrigger 
+                                  className="px-4 hover:no-underline"
+                                  style={{ 
+                                    backgroundColor: UI_COLORS.background.tableHeader,
+                                    color: UI_COLORS.text.heading
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between w-full pr-4">
+                                    <span className="font-medium text-sm">
+                                      Q{index + 1} - {question.title}
+                                    </span>
+                                    <span className="text-xs" style={{ color: UI_COLORS.text.muted }}>
+                                      {question.required ? 'Required' : 'Optional'}
+                                    </span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent 
+                                  className="px-4 pb-4"
+                                  style={{ backgroundColor: UI_COLORS.background.white }}
+                                >
+                                  <div className="space-y-4 pt-4">
+                                    {/* Title */}
+                                    <div>
+                                      <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
+                                        Title
+                                      </label>
+                                      <div className="w-full px-3 py-3 rounded-lg text-base" style={{ 
+                                        borderWidth: '1px', 
+                                        borderStyle: 'solid', 
+                                        borderColor: UI_COLORS.border.default,
+                                        backgroundColor: UI_COLORS.background.hoverLight,
+                                        color: UI_COLORS.text.body
+                                      }}>
+                                        {question.title}
+                                      </div>
+                                    </div>
+
+                                    {/* Key Question */}
+                                    <div>
+                                      <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
+                                        Key Question
+                                      </label>
+                                      <div className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap" style={{ 
+                                        borderWidth: '1px', 
+                                        borderStyle: 'solid', 
+                                        borderColor: UI_COLORS.border.default,
+                                        backgroundColor: UI_COLORS.background.hoverLight,
+                                        color: UI_COLORS.text.body,
+                                        minHeight: '150px',
+                                      }}>
+                                        {question.keyQuestion}
+                                      </div>
+                                    </div>
+
+                                    {/* Clinical Intent */}
+                                    <div>
+                                      <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
+                                        Clinical Intent
+                                      </label>
+                                      <div className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap" style={{ 
+                                        borderWidth: '1px', 
+                                        borderStyle: 'solid', 
+                                        borderColor: UI_COLORS.border.default,
+                                        backgroundColor: UI_COLORS.background.hoverLight,
+                                        color: UI_COLORS.text.body,
+                                        minHeight: '100px',
+                                      }}>
+                                        {question.clinicalIntent}
+                                      </div>
+                                    </div>
+
+                                    {/* Evaluation Criteria */}
+                                    <div>
+                                      <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
+                                        Evaluation Criteria
+                                      </label>
+                                      <div className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap" style={{ 
+                                        borderWidth: '1px', 
+                                        borderStyle: 'solid', 
+                                        borderColor: UI_COLORS.border.default,
+                                        backgroundColor: UI_COLORS.background.hoverLight,
+                                        color: UI_COLORS.text.body,
+                                        minHeight: '100px',
+                                      }}>
+                                        {question.evaluationCriteria}
+                                      </div>
+                                    </div>
+
+                                    {/* Required/Optional Display */}
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>
+                                        {question.required ? 'Required for Case Completion' : 'Optional'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
                             ));
                           })()}
-                        </div>
+                        </Accordion>
                       </div>
                     </div>
                   )}

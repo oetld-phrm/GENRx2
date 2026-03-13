@@ -981,7 +981,7 @@ function getQuestionPerformanceScores(simulationGroupId: string): QuestionPerfor
  * @param patientId - Patient ID
  * @returns Array of score distribution buckets
  */
-function getScoreDistribution(simulationGroupId: string, patientId: string): ScoreDistributionBucket[] {
+function getScoreDistribution(patientId: string): ScoreDistributionBucket[] {
   // Deterministic mock distribution that varies by patient
   const seed = patientId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   
