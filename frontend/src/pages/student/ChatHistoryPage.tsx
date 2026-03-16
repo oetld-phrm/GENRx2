@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import PatientInformationDialog from '@/components/PatientInformationDialog';
 import ReportIssueDialog from '@/components/ReportIssueDialog';
 import AIDebriefDialog from '@/components/AIDebriefDialog';
+import { useAuth } from '@/App';
 
 /**
  * ChatHistoryPage Component

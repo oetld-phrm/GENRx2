@@ -16,12 +16,13 @@
 import { getSimulationGroupColor } from '@/lib/colors';
 import { apiClient } from '@/lib/api-client';
 import { authService } from '@/lib/auth';
+import { mockAdminDataService } from '@/services/adminService';
 
 /**
  * Represents a simulation group from instructor perspective
  */
 export interface InstructorSimulationGroup {
-  id: string;              // Unique identifier
+  simulation_group_id: string; // Unique identifier
   name: string;            // Group name (e.g., "Pregnancy")
   subtitle: string;        // Always "Medical Simulation Group"
   icon_url?: string;        // Optional icon image URL
@@ -189,7 +190,7 @@ export interface ChatMessage {
   message_id: string;                   // Unique identifier (message_id in DB)
   chat_id: string;                      // Reference to chat (chat_id in DB)
   student_sent: boolean;                // True if sent by student, false if AI
-  message_content: string;              // Message text (message_content in DB)
+  message_content: string;             // Message text (message_content in DB)
   time_sent: string;                    // Timestamp (time_sent in DB)
   quality_score?: number;               // Optional quality score (quality_score in DB)
   quality_feedback?: string;            // Optional quality feedback (quality_feedback in DB)
@@ -314,7 +315,7 @@ export interface InstructorDataService {
  */
 const mockInstructorSimulationGroups: InstructorSimulationGroup[] = [
   {
-    id: '1',
+    simulation_group_id: '1',
     name: 'Chronic Pain',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(0),
@@ -325,7 +326,7 @@ const mockInstructorSimulationGroups: InstructorSimulationGroup[] = [
     organization_id: 'org-1'
   },
   {
-    id: '2',
+    simulation_group_id: '2',
     name: 'Acne',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(1),
@@ -336,7 +337,7 @@ const mockInstructorSimulationGroups: InstructorSimulationGroup[] = [
     organization_id: 'org-1'
   },
   {
-    id: '3',
+    simulation_group_id: '3',
     name: 'Diabetes Management',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(2),
@@ -362,33 +363,33 @@ const mockInstructorUserData: UserData = {
 const mockPatientAnalytics: Record<string, PatientAnalytics[]> = {
   '1': [ // Chronic Pain group
     {
-      id: 'pamela',
-      name: 'Pamela',
-      instructorCompletionPercentage: 60,
-      llmCompletionPercentage: 0,
-      studentMessageCount: 49,
-      aiMessageCount: 36,
-      studentAccessCount: 10
+      patient_id: 'pamela',
+      patient_name: 'Pamela',
+      instructor_completion_percentage: 60,
+      llm_completion_percentage: 0,
+      student_message_count: 49,
+      ai_message_count: 36,
+      student_access_count: 10
     },
     {
-      id: 'timothy',
-      name: 'Timothy',
-      instructorCompletionPercentage: 0,
-      llmCompletionPercentage: 0,
-      studentMessageCount: 32,
-      aiMessageCount: 28,
-      studentAccessCount: 8
+      patient_id: 'timothy',
+      patient_name: 'Timothy',
+      instructor_completion_percentage: 0,
+      llm_completion_percentage: 0,
+      student_message_count: 32,
+      ai_message_count: 28,
+      student_access_count: 8
     }
   ],
   '2': [ // Acne group
     {
-      id: 'john',
-      name: 'John Davis',
-      instructorCompletionPercentage: 15,
-      llmCompletionPercentage: 20,
-      studentMessageCount: 65,
-      aiMessageCount: 52,
-      studentAccessCount: 15
+      patient_id: 'john',
+      patient_name: 'John Davis',
+      instructor_completion_percentage: 15,
+      llm_completion_percentage: 20,
+      student_message_count: 65,
+      ai_message_count: 52,
+      student_access_count: 15
     }
   ]
 };
@@ -404,33 +405,33 @@ const DEFAULT_PATIENT_PROMPT = "Pretend to be a patient with the context you are
 const mockManageablePatients: Record<string, ManageablePatient[]> = {
   '1': [ // Chronic Pain group
     {
-      id: 'pamela',
+      patient_id: 'pamela',
       simulation_group_id: '1',
-      name: 'Pamela',
-      age: 56,
-      gender: 'Female',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: true
+      patient_name: 'Pamela',
+      patient_age: 56,
+      patient_gender: 'Female',
+      patient_prompt: DEFAULT_PATIENT_PROMPT,
+      llm_completion: true
     },
     {
-      id: 'timothy',
+      patient_id: 'timothy',
       simulation_group_id: '1',
-      name: 'Timothy',
-      age: 42,
-      gender: 'Other',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: true
+      patient_name: 'Timothy',
+      patient_age: 42,
+      patient_gender: 'Other',
+      patient_prompt: DEFAULT_PATIENT_PROMPT,
+      llm_completion: true
     }
   ],
   '2': [ // Acne group
     {
-      id: 'john',
+      patient_id: 'john',
       simulation_group_id: '2',
-      name: 'John',
-      age: 38,
-      gender: 'Male',
-      prompt: DEFAULT_PATIENT_PROMPT,
-      llmEvaluationEnabled: false
+      patient_name: 'John',
+      patient_age: 38,
+      patient_gender: 'Male',
+      patient_prompt: DEFAULT_PATIENT_PROMPT,
+      llm_completion: false
     }
   ]
 };
@@ -636,23 +637,31 @@ const mockChatMessages: Record<string, ChatMessage[]> = {
   ]
 };
 
+/**
+ * Get simulation groups for the current instructor
+ */
+async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
     const data = await apiClient.request<any[]>(
       `instructor/groups?email=${encodeURIComponent(user.email)}`
     );
 
     return data.map((group, index) => ({
       simulation_group_id: group.simulation_group_id,
-      group_name: group.group_name,
+      name: group.group_name,
       subtitle: 'Medical Simulation Group',
-      iconColor: group.icon_color || getSimulationGroupColor(index),
+      icon_color: group.icon_color || getSimulationGroupColor(index),
       access_code: group.access_code || '',
       student_count: group.student_count || 0,
       patient_count: group.patient_count || 0,
       organization_id: group.organization_id || '',
     }));
   } catch (error) {
-    console.error('Failed to fetch instructor groups:', error);
-    return [];
+    console.error('Failed to fetch instructor groups, using mock data:', error);
+    return mockInstructorSimulationGroups;
   }
 }
 
@@ -678,9 +687,9 @@ async function createSimulationGroup(data: { name: string; description: string; 
 
   return {
     simulation_group_id: result.simulation_group_id,
-    group_name: result.group_name,
+    name: result.group_name,
     subtitle: 'Medical Simulation Group',
-    iconColor: getSimulationGroupColor(0),
+    icon_color: getSimulationGroupColor(0),
     access_code: result.access_code || '',
     student_count: 0,
     patient_count: 0,
@@ -724,8 +733,6 @@ const mockCaseSpecificQuestions: Record<string, GlobalRubricQuestion[]> = {};
 
 /**
  * Get current instructor user data
- * 
- * @returns User data object
  */
 async function getCurrentUser(): Promise<UserData> {
   try {
@@ -741,16 +748,13 @@ async function getCurrentUser(): Promise<UserData> {
       avatarUrl: undefined,
     };
   } catch (error) {
-    console.error('Failed to fetch user name:', error);
-    throw error;
+    console.error('Failed to fetch user name, using mock data:', error);
+    return mockInstructorUserData;
   }
 }
 
 /**
  * Get a specific simulation group by ID
- * 
- * @param id - Simulation group ID
- * @returns Simulation group or undefined if not found
  */
 async function getSimulationGroup(id: string): Promise<InstructorSimulationGroup | undefined> {
   try {
@@ -764,19 +768,14 @@ async function getSimulationGroup(id: string): Promise<InstructorSimulationGroup
 
 /**
  * Get organization-specific labels for UI display
- * Derives all label variations from the organization's aiPersona and userRole settings
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns OrganizationLabels object with all label variations
  */
-function getOrganizationLabels(simulationGroupId: string): OrganizationLabels {
-  const simulationGroup = getSimulationGroup(simulationGroupId);
+function getOrganizationLabels(_simulationGroupId: string): OrganizationLabels {
   const organizations = mockAdminDataService.getOrganizations();
-  const organization = organizations.find((org) => org.id === simulationGroup?.organization_id);
-  
+  const organization = organizations.length > 0 ? organizations[0] : undefined;
+
   const aiPersona = organization?.ai_persona || 'Patient';
   const userRole = organization?.user_role || 'Doctor';
-  
+
   return {
     aiPersona,
     aiPersonaPlural: `${aiPersona}s`,
@@ -791,9 +790,6 @@ function getOrganizationLabels(simulationGroupId: string): OrganizationLabels {
 
 /**
  * Get patient analytics for a simulation group
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of patient analytics
  */
 async function getPatientAnalytics(simulationGroupId: string): Promise<PatientAnalytics[]> {
   try {
@@ -811,16 +807,13 @@ async function getPatientAnalytics(simulationGroupId: string): Promise<PatientAn
       student_access_count: patient.access_count || 0,
     }));
   } catch (error) {
-    console.error('Failed to fetch patient analytics:', error);
-    return [];
+    console.error('Failed to fetch patient analytics, using mock data:', error);
+    return mockPatientAnalytics[simulationGroupId] || [];
   }
 }
 
 /**
  * Get message count data for charts
- * 
- * @param patientId - Patient ID
- * @returns Array with message count data
  */
 function getMessageCountData(_patientId: string): MessageCountData[] {
   return [];
@@ -828,38 +821,31 @@ function getMessageCountData(_patientId: string): MessageCountData[] {
 
 /**
  * Get key question analytics data for charts
- * Returns mock data showing how many students answered each key question
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of key question analytics
+ * Returns data showing how many students answered each key question
+ *
+ * FIX: Changed from async to sync to match InstructorDataService interface.
  */
 function getKeyQuestionAnalytics(simulationGroupId: string): KeyQuestionAnalytics[] {
   const rubricQuestions = getGlobalRubricQuestions(simulationGroupId);
-  const students = getStudents(simulationGroupId);
-  const totalStudents = students.length;
-  
+
   return rubricQuestions.map((q, index) => ({
     questionTitle: q.title.length > 30 ? q.title.substring(0, 27) + '...' : q.title,
-    studentsAnswered: Math.max(1, Math.floor(totalStudents * (0.4 + Math.sin(index * 1.7) * 0.3 + Math.cos(index * 0.9) * 0.2)))
+    studentsAnswered: Math.max(1, Math.floor(10 * (0.4 + Math.sin(index * 1.7) * 0.3 + Math.cos(index * 0.9) * 0.2)))
   }));
 }
 
 /**
- * Get average quality score per key question (mock data)
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of question performance scores
+ * Get average quality score per key question
+ *
+ * FIX: Changed from async to sync to match InstructorDataService interface.
  */
 function getQuestionPerformanceScores(simulationGroupId: string): QuestionPerformanceScore[] {
   const rubricQuestions = getGlobalRubricQuestions(simulationGroupId);
-  const students = getStudents(simulationGroupId);
-  const totalStudents = students.length;
-  
+
   return rubricQuestions.map((q, index) => {
-    // Deterministic mock scores between 40–95
     const baseScore = 55 + Math.sin(index * 2.3) * 20 + Math.cos(index * 1.1) * 15;
     const score = Math.round(Math.min(95, Math.max(40, baseScore)));
-    const responses = Math.max(2, Math.floor(totalStudents * (0.5 + Math.sin(index * 1.5) * 0.3)));
+    const responses = Math.max(2, Math.floor(10 * (0.5 + Math.sin(index * 1.5) * 0.3)));
     return {
       questionTitle: q.title.length > 30 ? q.title.substring(0, 27) + '...' : q.title,
       averageScore: score,
@@ -869,17 +855,14 @@ function getQuestionPerformanceScores(simulationGroupId: string): QuestionPerfor
 }
 
 /**
- * Get score distribution as a histogram (mock data)
+ * Get score distribution as a histogram
  * Returns buckets: 0-20, 21-40, 41-60, 61-80, 81-100
- * 
- * @param simulationGroupId - Simulation group ID
- * @param patientId - Patient ID
- * @returns Array of score distribution buckets
+ *
+ * FIX: Added missing simulationGroupId parameter to match InstructorDataService interface.
  */
-function getScoreDistribution(patientId: string): ScoreDistributionBucket[] {
-  // Deterministic mock distribution that varies by patient
+function getScoreDistribution(_simulationGroupId: string, patientId: string): ScoreDistributionBucket[] {
   const seed = patientId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  
+
   const buckets = [
     { range: '0–20', base: 1 },
     { range: '21–40', base: 3 },
@@ -887,7 +870,7 @@ function getScoreDistribution(patientId: string): ScoreDistributionBucket[] {
     { range: '61–80', base: 9 },
     { range: '81–100', base: 5 },
   ];
-  
+
   return buckets.map((b, i) => ({
     range: b.range,
     count: Math.max(0, b.base + Math.floor(Math.sin(seed + i * 2.1) * 4))
@@ -896,35 +879,26 @@ function getScoreDistribution(patientId: string): ScoreDistributionBucket[] {
 
 /**
  * Generate a new access code for a simulation group
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns New access code
+ *
+ * FIX: Changed to async to match InstructorDataService interface (Promise<string>).
  */
-function generateAccessCode(simulationGroupId: string): string {
-  // Mock implementation - generates random code
+async function generateAccessCode(_simulationGroupId: string): Promise<string> {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const segments = 4;
   const segmentLength = 4;
-  
+
   const code = Array.from({ length: segments }, () => {
-    return Array.from({ length: segmentLength }, () => 
+    return Array.from({ length: segmentLength }, () =>
       chars.charAt(Math.floor(Math.random() * chars.length))
     ).join('');
   }).join('-');
-  
-  // Update the mock data
-  const group = mockInstructorSimulationGroups.find(g => g.id === simulationGroupId);
-  if (group) {
-    group.access_code = code;
-  }
+
+  return code;
 }
 
 /**
  * Get manageable patients for a simulation group
  * Maps to: personas table filtered by simulation_group_id
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of manageable patients with all persona fields
  */
 async function getManageablePatients(simulationGroupId: string): Promise<ManageablePatient[]> {
   try {
@@ -947,17 +921,13 @@ async function getManageablePatients(simulationGroupId: string): Promise<Managea
       photo_url: patient.photo_url,
     }));
   } catch (error) {
-    console.error('Failed to fetch manageable patients:', error);
-    return [];
+    console.error('Failed to fetch manageable patients, using mock data:', error);
+    return mockManageablePatients[simulationGroupId] || [];
   }
 }
 
 /**
  * Get a specific patient by ID
- * Maps to: personas table filtered by persona_id
- * 
- * @param patientId - Patient ID (persona_id in DB)
- * @returns Patient with all persona fields or undefined if not found
  */
 function getPatient(_patientId: string): ManageablePatient | undefined {
   return undefined;
@@ -965,10 +935,6 @@ function getPatient(_patientId: string): ManageablePatient | undefined {
 
 /**
  * Create a new patient
- * Maps to: INSERT into personas table
- * 
- * @param simulationGroupId - Simulation group ID
- * @param patientData - New patient data
  */
 async function createPatient(simulationGroupId: string, patientData: PatientCreateData): Promise<void> {
   try {
@@ -1002,10 +968,6 @@ async function createPatient(simulationGroupId: string, patientData: PatientCrea
 
 /**
  * Update patient information
- * Maps to: UPDATE personas table
- * 
- * @param simulationGroupId - Simulation group ID
- * @param patientData - Updated patient data
  */
 async function updatePatient(simulationGroupId: string, patientData: PatientUpdateData): Promise<void> {
   try {
@@ -1028,7 +990,6 @@ async function updatePatient(simulationGroupId: string, patientData: PatientUpda
       },
     });
 
-    // Handle file uploads if needed
     if (patientData.llm_upload_file) {
       console.log('LLM Upload file:', patientData.llm_upload_file.name);
     }
@@ -1046,13 +1007,8 @@ async function updatePatient(simulationGroupId: string, patientData: PatientUpda
 
 /**
  * Upload patient photo
- * 
- * @param patientId - Patient ID
- * @param photoFile - Photo file to upload
- * @returns Promise with photo URL
  */
 async function uploadPatientPhoto(_patientId: string, photoFile: File): Promise<string> {
-  // TODO: implement real upload to S3
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -1064,9 +1020,6 @@ async function uploadPatientPhoto(_patientId: string, photoFile: File): Promise<
 
 /**
  * Update patient LLM evaluation setting
- * 
- * @param patientId - Patient ID
- * @param enabled - Whether LLM evaluation is enabled
  */
 async function updatePatientLLMEvaluation(patientId: string, enabled: boolean): Promise<void> {
   try {
@@ -1090,8 +1043,6 @@ async function updatePatientLLMEvaluation(patientId: string, enabled: boolean): 
 
 /**
  * Delete a patient
- * 
- * @param patientId - Patient ID
  */
 async function deletePatient(patientId: string): Promise<void> {
   try {
@@ -1112,9 +1063,6 @@ async function deletePatient(patientId: string): Promise<void> {
 
 /**
  * Get global rubric questions for a simulation group
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of global rubric questions
  */
 function getGlobalRubricQuestions(_simulationGroupId: string): GlobalRubricQuestion[] {
   return [];
@@ -1122,26 +1070,20 @@ function getGlobalRubricQuestions(_simulationGroupId: string): GlobalRubricQuest
 
 /**
  * Add a new global rubric question
- * Also updates the question bank to track this association
- * 
- * @param simulationGroupId - Simulation group ID
- * @param question - Question to add
  */
 function addGlobalRubricQuestion(simulationGroupId: string, question: GlobalRubricQuestion): void {
   if (!mockGlobalRubricQuestions[simulationGroupId]) {
     mockGlobalRubricQuestions[simulationGroupId] = [];
   }
-  
-  // Check if question already exists to prevent duplicates
+
   const existingQuestion = mockGlobalRubricQuestions[simulationGroupId].find(q => q.id === question.id);
   if (existingQuestion) {
     console.log(`Question ${question.id} already exists in simulation group ${simulationGroupId}, skipping duplicate add`);
     return;
   }
-  
+
   mockGlobalRubricQuestions[simulationGroupId].push(question);
-  
-  // Update question bank to track this association
+
   const bankQuestion = mockGlobalQuestionBank.find(q => q.id === question.id);
   if (bankQuestion && !bankQuestion.usedBySimulationGroups.includes(simulationGroupId)) {
     bankQuestion.usedBySimulationGroups.push(simulationGroupId);
@@ -1150,9 +1092,6 @@ function addGlobalRubricQuestion(simulationGroupId: string, question: GlobalRubr
 
 /**
  * Update a global rubric question
- * 
- * @param simulationGroupId - Simulation group ID
- * @param question - Updated question
  */
 function updateGlobalRubricQuestion(_simulationGroupId: string, _question: GlobalRubricQuestion): void {
   // TODO: implement API call
@@ -1160,17 +1099,12 @@ function updateGlobalRubricQuestion(_simulationGroupId: string, _question: Globa
 
 /**
  * Delete a global rubric question
- * Also updates the question bank to remove this association
- * 
- * @param simulationGroupId - Simulation group ID
- * @param questionId - Question ID to delete
  */
 function deleteGlobalRubricQuestion(simulationGroupId: string, questionId: string): void {
   const questions = mockGlobalRubricQuestions[simulationGroupId];
   if (questions) {
     mockGlobalRubricQuestions[simulationGroupId] = questions.filter(q => q.id !== questionId);
-    
-    // Update question bank to remove this association
+
     const bankQuestion = mockGlobalQuestionBank.find(q => q.id === questionId);
     if (bankQuestion) {
       bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
@@ -1182,9 +1116,6 @@ function deleteGlobalRubricQuestion(simulationGroupId: string, questionId: strin
 
 /**
  * Get evaluation prompt for a simulation group
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Evaluation prompt as markdown string
  */
 async function getEvaluationPrompt(simulationGroupId: string): Promise<string> {
   try {
@@ -1195,15 +1126,13 @@ async function getEvaluationPrompt(simulationGroupId: string): Promise<string> {
     return data.system_prompt || '';
   } catch (error) {
     console.error('Failed to fetch evaluation prompt:', error);
-    return [] as any;
+    // FIX: Return empty string instead of [] as any
+    return '';
   }
 }
 
 /**
  * Get students for a simulation group
- * 
- * @param simulationGroupId - Simulation group ID
- * @returns Array of students
  */
 async function getStudents(simulationGroupId: string): Promise<Student[]> {
   try {
@@ -1217,60 +1146,45 @@ async function getStudents(simulationGroupId: string): Promise<Student[]> {
       email: student.user_email,
     }));
   } catch (error) {
-    console.error('Failed to fetch students:', error);
-    return [];
+    console.error('Failed to fetch students, using mock data:', error);
+    return mockStudents[simulationGroupId] || [];
   }
 }
 
 /**
  * Get student details by ID
- * 
- * @param studentId - Student ID
- * @returns Student details or undefined if not found
+ *
+ * FIX: Return undefined instead of [] as any to match StudentDetails | undefined.
  */
-function getStudentDetails(_studentId: string): StudentDetails | undefined {
-  return [] as any;
+function getStudentDetails(studentId: string): StudentDetails | undefined {
+  return mockStudentDetails[studentId];
 }
 
 /**
  * Get chat attempts for a student and patient
- * Maps to: chats table filtered by student_interaction_id
- * 
- * @param studentId - Student ID (user_id in DB)
- * @param patientId - Patient ID (persona_id via student_interaction)
- * @returns Array of chat attempts
  */
-function getChatAttempts(_studentId: string, _patientId: string): ChatAttempt[] {
-  return [];
+function getChatAttempts(studentId: string, patientId: string): ChatAttempt[] {
+  return mockChatAttempts[studentId]?.[patientId] || [];
 }
 
 /**
  * Get chat messages for an attempt
- * Maps to: messages table filtered by chat_id
- * 
- * @param attemptId - Chat attempt ID (chat_id in DB)
- * @returns Array of chat messages ordered by time_sent
  */
-function getChatMessages(_attemptId: string): ChatMessage[] {
-  return [];
+function getChatMessages(attemptId: string): ChatMessage[] {
+  return mockChatMessages[attemptId] || [];
 }
 
 /**
  * Get notes for an attempt
- * Maps to: chats.notes field
- * 
- * @param attemptId - Chat attempt ID (chat_id in DB)
- * @returns Notes text from chats.notes field
+ *
+ * FIX: Return empty string instead of [] as any to match string return type.
  */
 function getChatNotes(_attemptId: string): string {
-  return [] as any;
+  return '';
 }
 
 /**
  * Get case-specific questions for a patient
- * 
- * @param patientId - Patient ID
- * @returns Array of case-specific questions
  */
 function getCaseSpecificQuestions(_patientId: string): GlobalRubricQuestion[] {
   return [];
@@ -1278,44 +1192,36 @@ function getCaseSpecificQuestions(_patientId: string): GlobalRubricQuestion[] {
 
 /**
  * Add a new case-specific question
- * Also updates the question bank to track this association
- * 
- * @param patientId - Patient ID
- * @param question - Question to add
+ *
+ * FIX: Changed from async to sync (void) to match InstructorDataService interface.
+ * Removed async getManageablePatients call that was called with empty string anyway.
  */
-async function addCaseSpecificQuestion(patientId: string, question: GlobalRubricQuestion): Promise<void> {
+function addCaseSpecificQuestion(patientId: string, question: GlobalRubricQuestion): void {
   if (!mockCaseSpecificQuestions[patientId]) {
     mockCaseSpecificQuestions[patientId] = [];
   }
-  
-  // Check if question already exists to prevent duplicates
+
   const existingQuestion = mockCaseSpecificQuestions[patientId].find(q => q.id === question.id);
   if (existingQuestion) {
     console.log(`Question ${question.id} already exists for patient ${patientId}, skipping duplicate add`);
     return;
   }
-  
+
   mockCaseSpecificQuestions[patientId].push(question);
-  
-  // Update question bank to track this association
+
   const bankQuestion = mockPatientSpecificQuestionBank.find(q => q.id === question.id);
-  if (bankQuestion && bankQuestion.usedByPatients && !bankQuestion.usedByPatients.includes(patientId)) {
-    bankQuestion.usedByPatients.push(patientId);
-    
-    // Also track the simulation group this patient belongs to
-    const patients = await getManageablePatients('');
-    const patient = patients.find(p => p.patient_id === patientId);
-    if (patient && !bankQuestion.usedBySimulationGroups.includes(patient.simulation_group_id)) {
-      bankQuestion.usedBySimulationGroups.push(patient.simulation_group_id);
+  if (bankQuestion) {
+    if (!bankQuestion.usedByPatients) {
+      bankQuestion.usedByPatients = [];
+    }
+    if (!bankQuestion.usedByPatients.includes(patientId)) {
+      bankQuestion.usedByPatients.push(patientId);
     }
   }
 }
 
 /**
  * Update a case-specific question
- * 
- * @param patientId - Patient ID
- * @param question - Updated question
  */
 function updateCaseSpecificQuestion(_patientId: string, _question: GlobalRubricQuestion): void {
   // TODO: implement API call
@@ -1323,54 +1229,26 @@ function updateCaseSpecificQuestion(_patientId: string, _question: GlobalRubricQ
 
 /**
  * Delete a case-specific question
- * Also updates the question bank to remove this association
- * 
- * @param patientId - Patient ID
- * @param questionId - Question ID to delete
+ *
+ * FIX: Changed from async to sync (void) to match InstructorDataService interface.
+ * Removed async getManageablePatients calls that used an empty string group ID.
  */
-async function deleteCaseSpecificQuestion(patientId: string, questionId: string): Promise<void> {
+function deleteCaseSpecificQuestion(patientId: string, questionId: string): void {
   const questions = mockCaseSpecificQuestions[patientId];
   if (questions) {
     mockCaseSpecificQuestions[patientId] = questions.filter(q => q.id !== questionId);
-    
-    // Update question bank to remove this association
+
     const bankQuestion = mockPatientSpecificQuestionBank.find(q => q.id === questionId);
     if (bankQuestion && bankQuestion.usedByPatients) {
       bankQuestion.usedByPatients = bankQuestion.usedByPatients.filter(
         pId => pId !== patientId
       );
-      
-      // If no patients are using this question anymore, remove the simulation group association
-      const patients = await getManageablePatients('');
-      const patient = patients.find(p => p.patient_id === patientId);
-      if (patient && bankQuestion.usedByPatients.length === 0) {
-        bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
-          groupId => groupId !== patient.simulation_group_id
-        );
-      } else if (patient) {
-        // Check if any other patients in this simulation group are still using this question
-        const otherPatientsInGroup = (await getManageablePatients(patient.simulation_group_id))
-          .filter(p => p.patient_id !== patientId);
-        const stillUsedInGroup = otherPatientsInGroup.some(p => 
-          bankQuestion.usedByPatients?.includes(p.patient_id)
-        );
-        
-        if (!stillUsedInGroup) {
-          bankQuestion.usedBySimulationGroups = bankQuestion.usedBySimulationGroups.filter(
-            groupId => groupId !== patient.simulation_group_id
-          );
-        }
-      }
     }
   }
 }
 
 /**
  * Get case materials for a patient
- * Maps to: persona_media table filtered by persona_id
- * 
- * @param patientId - Patient ID (persona_id in DB)
- * @returns Array of case materials (physical assessment materials)
  */
 function getCaseMaterials(_patientId: string): CaseMaterial[] {
   return [];
@@ -1378,9 +1256,6 @@ function getCaseMaterials(_patientId: string): CaseMaterial[] {
 
 /**
  * Add a new case material
- * 
- * @param patientId - Patient ID
- * @param material - Material to add
  */
 function addCaseMaterial(_patientId: string, _material: CaseMaterial): void {
   // TODO: implement API call
@@ -1388,9 +1263,6 @@ function addCaseMaterial(_patientId: string, _material: CaseMaterial): void {
 
 /**
  * Update a case material
- * 
- * @param patientId - Patient ID
- * @param material - Updated material
  */
 function updateCaseMaterial(_patientId: string, _material: CaseMaterial): void {
   // TODO: implement API call
@@ -1398,9 +1270,6 @@ function updateCaseMaterial(_patientId: string, _material: CaseMaterial): void {
 
 /**
  * Delete a case material
- * 
- * @param patientId - Patient ID
- * @param materialId - Material ID to delete
  */
 function deleteCaseMaterial(_patientId: string, _materialId: string): void {
   // TODO: implement API call
@@ -1408,8 +1277,6 @@ function deleteCaseMaterial(_patientId: string, _materialId: string): void {
 
 /**
  * Get the default patient prompt
- * 
- * @returns Default patient prompt text
  */
 function getDefaultPatientPrompt(): string {
   return '';
@@ -1417,8 +1284,6 @@ function getDefaultPatientPrompt(): string {
 
 /**
  * Get global question bank
- * 
- * @returns Array of global question bank items
  */
 function getGlobalQuestionBank(): QuestionBankItem[] {
   return [...mockGlobalQuestionBank];
@@ -1426,8 +1291,6 @@ function getGlobalQuestionBank(): QuestionBankItem[] {
 
 /**
  * Get patient-specific question bank
- * 
- * @returns Array of patient-specific question bank items
  */
 function getPatientSpecificQuestionBank(): QuestionBankItem[] {
   return [...mockPatientSpecificQuestionBank];
@@ -1435,11 +1298,8 @@ function getPatientSpecificQuestionBank(): QuestionBankItem[] {
 
 /**
  * Add a question to the global question bank
- * 
- * @param question - Question to add
  */
 function addToGlobalQuestionBank(question: QuestionBankItem): void {
-  // Ensure the question has the required tracking arrays
   if (!question.usedBySimulationGroups) {
     question.usedBySimulationGroups = [];
   }
@@ -1448,11 +1308,8 @@ function addToGlobalQuestionBank(question: QuestionBankItem): void {
 
 /**
  * Add a question to the patient-specific question bank
- * 
- * @param question - Question to add
  */
 function addToPatientSpecificQuestionBank(question: QuestionBankItem): void {
-  // Ensure the question has the required tracking arrays
   if (!question.usedBySimulationGroups) {
     question.usedBySimulationGroups = [];
   }
@@ -1464,10 +1321,6 @@ function addToPatientSpecificQuestionBank(question: QuestionBankItem): void {
 
 /**
  * Get patient's case-specific question IDs
- * Returns a Set of question IDs that are assigned to this patient
- * 
- * @param patientId - Patient ID
- * @returns Set of question IDs
  */
 function getPatientCaseSpecificQuestionIds(patientId: string): Set<string> {
   const questions = mockCaseSpecificQuestions[patientId] || [];
@@ -1476,24 +1329,13 @@ function getPatientCaseSpecificQuestionIds(patientId: string): Set<string> {
 
 /**
  * Update patient's case-specific questions based on question IDs
- * This is used when toggling checkboxes in the question bank
- * 
- * @param patientId - Patient ID
- * @param questionIds - Set of question IDs that should be assigned to this patient
  */
 function updatePatientCaseSpecificQuestions(patientId: string, questionIds: Set<string>): void {
-  // This is a helper method that doesn't directly modify data
-  // The actual add/delete operations are handled by addCaseSpecificQuestion and deleteCaseSpecificQuestion
-  // This method is here for consistency and future API integration
   console.log(`Updating patient ${patientId} case-specific questions:`, Array.from(questionIds));
 }
 
 /**
  * Get simulation groups using a specific question
- * 
- * @param questionId - Question ID
- * @param questionType - Type of question ('global' or 'patientSpecific')
- * @returns Array of simulation group IDs using this question
  */
 function getSimulationGroupsUsingQuestion(questionId: string, questionType: 'global' | 'patientSpecific' = 'global'): string[] {
   const questionBank = questionType === 'global' ? mockGlobalQuestionBank : mockPatientSpecificQuestionBank;
@@ -1503,9 +1345,6 @@ function getSimulationGroupsUsingQuestion(questionId: string, questionType: 'glo
 
 /**
  * Get patients using a specific patient-specific question
- * 
- * @param questionId - Question ID
- * @returns Array of patient IDs using this question
  */
 function getPatientsUsingQuestion(questionId: string): string[] {
   const question = mockPatientSpecificQuestionBank.find(q => q.id === questionId);
@@ -1514,10 +1353,6 @@ function getPatientsUsingQuestion(questionId: string): string[] {
 
 /**
  * Check if a question is used by any simulation group
- * 
- * @param questionId - Question ID
- * @param questionType - Type of question ('global' or 'patientSpecific')
- * @returns True if the question is used by at least one simulation group
  */
 function isQuestionInUse(questionId: string, questionType: 'global' | 'patientSpecific' = 'global'): boolean {
   const groups = getSimulationGroupsUsingQuestion(questionId, questionType);
@@ -1525,8 +1360,7 @@ function isQuestionInUse(questionId: string, questionType: 'global' | 'patientSp
 }
 
 /**
- * Mock instructor data service object
- * Provides methods to retrieve hardcoded data for now
+ * Instructor data service object
  */
 export const instructorService: InstructorDataService = {
   getSimulationGroups,

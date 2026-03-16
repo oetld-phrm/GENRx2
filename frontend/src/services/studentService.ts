@@ -13,7 +13,7 @@ import { authService } from '@/lib/auth';
  * Represents a medical simulation group that students can join
  */
 export interface SimulationGroup {
-  id: string;              // Unique identifier
+  simulation_group_id: string;              // Unique identifier
   name: string;            // Group name (e.g., "Chronic Pain")
   subtitle: string;        // Always "Medical Simulation Group"
   icon_url?: string;        // Optional icon image URL
@@ -36,12 +36,13 @@ export interface UserData {
  * Represents a patient in a simulation group
  */
 export interface Patient {
-  id: string;                    // Unique identifier
-  name: string;                  // Patient name
+  patient_id: string;            // Unique identifier
+  patient_name: string;          // Patient name
   avatarUrl?: string;            // Optional patient image URL
   debrief_status: 'not_started' | 'in_progress' | 'debrief_reached'; // Overall patient case status
   instructor_evaluation: string;  // Instructor evaluation status
 }
+
 
 /**
  * Represents a chat session
@@ -59,79 +60,51 @@ export interface Session {
  */
 const mockSimulationGroups: SimulationGroup[] = [
   {
-    id: '1',
+    simulation_group_id: '1',
     name: 'Chronic Pain',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(0)
   },
   {
-    id: '2',
+    simulation_group_id: '2',
     name: 'Acne',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(1)
   },
   {
-    id: '3',
+    simulation_group_id: '3',
     name: 'Diabetes Management',
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(2)
   }
 ];
 
-  /**
-   * Get patients for a simulation group
-   */
-  async getPatients(simulationGroupId: string): Promise<Patient[]> {
-    try {
-      const user = await authService.getCurrentUser();
-      if (!user) throw new Error('Not authenticated');
-
 /**
  * Hardcoded patient data for Phase 1
  */
 const mockPatients: Patient[] = [
   {
-    id: '1',
-    name: 'Pamela',
+    patient_id: '1',
+    patient_name: 'Pamela',
     avatarUrl: undefined, // Will display initials
     debrief_status: 'in_progress',
     instructor_evaluation: 'Incomplete'
   },
   {
-    id: '2',
-    name: 'Timothy',
+    patient_id: '2',
+    patient_name: 'Timothy',
     avatarUrl: undefined, // Will display initials
     debrief_status: 'debrief_reached',
     instructor_evaluation: 'Incomplete'
   },
   {
-    id: '3',
-    name: 'Sarah',
+    patient_id: '3',
+    patient_name: 'Sarah',
     avatarUrl: undefined, // Will display initials
     debrief_status: 'not_started',
     instructor_evaluation: 'Incomplete'
   }
 ];
-
-  /**
-   * Create a new session
-   */
-  async createSession(simulationGroupId: string, patientId: string, sessionName: string): Promise<Session | null> {
-    try {
-      const user = await authService.getCurrentUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const data = await apiClient.request<Session[]>(
-        `/student/create_session?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_name=${encodeURIComponent(sessionName)}`,
-        { method: 'POST' }
-      );
-
-      return data[0] || null;
-    } catch (error) {
-      console.error('Failed to create session:', error);
-      return null;
-    }
-  },
 
 /**
  * Represents a case material for physical assessment
@@ -477,6 +450,113 @@ function getChatHistoryMessages(chatId: string): StudentChatMessage[] {
 function getSavedNote(): string {
   return mockSavedNote;
 }
+
+/**
+ * Get simulation groups — calls API, falls back to mock
+ */
+async function getSimulationGroups(): Promise<SimulationGroup[]> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<SimulationGroup[]>(
+      `/student/simulation_groups?email=${encodeURIComponent(user.email)}`
+    );
+    return data.map((g, i) => ({
+      ...g,
+      subtitle: 'Medical Simulation Group',
+      icon_color: g.icon_color || getSimulationGroupColor(i),
+    }));
+  } catch (error) {
+    console.error('Failed to fetch simulation groups, using mock data:', error);
+    return mockSimulationGroups;
+  }
+}
+
+/**
+ * Get current user data
+ */
+async function getCurrentUser(): Promise<UserData | null> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) return null;
+    return { name: user.username || user.email, email: user.email };
+  } catch (error) {
+    console.error('Failed to get current user:', error);
+    return null;
+  }
+}
+
+/**
+ * Get patients for a simulation group
+ */
+async function getPatients(simulationGroupId: string): Promise<Patient[]> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<Patient[]>(
+      `/student/patients?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch patients, using mock data:', error);
+    return mockPatients;
+  }
+}
+
+/**
+ * Join a simulation group by access code
+ */
+async function joinGroup(accessCode: string): Promise<{ success: boolean }> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    await apiClient.request(
+      `/student/join_group?email=${encodeURIComponent(user.email)}&access_code=${encodeURIComponent(accessCode)}`,
+      { method: 'POST' }
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to join group:', error);
+    return { success: false };
+  }
+}
+
+/**
+ * Create a new session
+ */
+async function createSession(simulationGroupId: string, patientId: string, sessionName: string): Promise<Session | null> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<Session[]>(
+      `/student/create_session?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_name=${encodeURIComponent(sessionName)}`,
+      { method: 'POST' }
+    );
+
+    return data[0] || null;
+  } catch (error) {
+    console.error('Failed to create session:', error);
+    return null;
+  }
+}
+
+/**
+ * Student service — public API used by pages
+ */
+export const studentService = {
+  getSimulationGroups,
+  getCurrentUser,
+  getPatients,
+  joinGroup,
+  createSession,
+  getPatientDetail,
+  getChatHistory,
+  getKeyQuestionsCoverageData,
+};
 
 /**
  * Mock data service object

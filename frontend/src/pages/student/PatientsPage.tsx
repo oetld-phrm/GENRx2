@@ -31,7 +31,7 @@ function PatientsPage() {
           studentService.getCurrentUser(),
           groupId ? studentService.getPatients(groupId) : Promise.resolve([]),
         ]);
-        setUser(userData);
+        setUser(userData ?? { name: 'Unknown User' });
         setPatients(patientsData);
       } catch (error) {
         console.error('Failed to load patients data:', error);

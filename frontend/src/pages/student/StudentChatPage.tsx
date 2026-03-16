@@ -10,6 +10,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import PatientInformationDialog from '@/components/PatientInformationDialog';
 import ConfirmConcludeDialog from '@/components/ConfirmConcludeDialog';
 import ReportIssueDialog from '@/components/ReportIssueDialog';
+import { useAuth } from '@/App';
 
 /**
  * StudentChatPage Component

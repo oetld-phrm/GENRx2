@@ -12,6 +12,7 @@ interface DashboardHeaderProps {
   onStudentView?: () => void;
   onInstructorView?: () => void;
   showStudentViewButton?: boolean;
+  showInstructorViewButton?: boolean;
   onManageQuestionBank?: () => void;
   showManageQuestionBankButton?: boolean;
 }
@@ -23,7 +24,9 @@ function DashboardHeader({
   userAvatarUrl, 
   onSignOut,
   onStudentView,
+  onInstructorView,
   showStudentViewButton = false,
+  showInstructorViewButton = false,
   onManageQuestionBank,
   showManageQuestionBankButton = false
 }: DashboardHeaderProps) {
@@ -76,6 +79,18 @@ function DashboardHeader({
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
           >
             Student View
+          </Button>
+        )}
+        {showInstructorViewButton && onInstructorView && (
+          <Button
+            variant="default"
+            onClick={onInstructorView}
+            className="px-6 transition-colors"
+            style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
+          >
+            Instructor View
           </Button>
         )}
         <Button

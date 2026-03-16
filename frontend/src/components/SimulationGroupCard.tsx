@@ -42,7 +42,7 @@ function SimulationGroupCard({
         />
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-lg leading-tight mb-1" style={{ color: UI_COLORS.text.heading }}>
-            {group.group_name}
+            {group.name}
           </h3>
           {!showCounts && (
             <p className="text-sm" style={{ color: UI_COLORS.text.body }}>

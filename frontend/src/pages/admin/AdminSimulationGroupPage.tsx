@@ -3,11 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem } from '@/services/instructorService';
+import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient } from '@/services/instructorService';
 import { mockAdminDataService, type Instructor } from '@/services/adminService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
@@ -105,11 +105,15 @@ function AdminSimulationGroupPage() {
     q.title.toLowerCase().includes(rubricSearchQuery.toLowerCase())
   );
   
-  // Load data from instructor service
+  // State for async-loaded data
+  const [simulationGroup, setSimulationGroup] = useState<InstructorSimulationGroup | undefined>(undefined);
+  const [patientAnalytics, setPatientAnalytics] = useState<PatientAnalytics[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [manageablePatients, setManageablePatients] = useState<ManageablePatient[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load data from instructor service (sync)
   const user = mockAdminDataService.getCurrentUser();
-  const simulationGroup = mockInstructorDataService.getSimulationGroup(groupId || '1');
-  const patientAnalytics = mockInstructorDataService.getPatientAnalytics(groupId || '1');
-  const students = mockInstructorDataService.getStudents(groupId || '1');
   
   // Load instructors from admin service
   const [instructors, setInstructors] = useState<Instructor[]>(() => mockAdminDataService.getInstructors());
@@ -170,12 +174,12 @@ function AdminSimulationGroupPage() {
   const currentPatient = patientAnalytics.find(p => p.patient_id === selectedPatientId);
   const messageCountData = currentPatient 
     ? [
-        { name: 'Student Messages', value: currentPatient.studentMessageCount },
-        { name: 'AI Messages', value: currentPatient.aiMessageCount },
+        { name: 'Student Messages', value: currentPatient.student_message_count },
+        { name: 'AI Messages', value: currentPatient.ai_message_count },
       ]
     : [];
   const donutColors = [SIMULATION_GROUP_COLOR_PALETTE[2], SIMULATION_GROUP_COLOR_PALETTE[5]];
-  const totalMessages = currentPatient ? currentPatient.studentMessageCount + currentPatient.aiMessageCount : 0;
+  const totalMessages = currentPatient ? currentPatient.student_message_count + currentPatient.ai_message_count : 0;
   
   // Key question analytics (per patient)
   const keyQuestionAnalytics = currentPatient
@@ -187,7 +191,7 @@ function AdminSimulationGroupPage() {
   
   // Score distribution for current patient
   const scoreDistribution = currentPatient 
-    ? mockInstructorDataService.getScoreDistribution(groupId || '1', currentPatient.id)
+    ? mockInstructorDataService.getScoreDistribution(groupId || '1', currentPatient.patient_id)
     : [];
   
   // Fallback values
@@ -315,7 +319,7 @@ function AdminSimulationGroupPage() {
     }
   };
 
-  const handleLoadDefaultPrompt = () => {
+  const handleLoadDefaultPrompt = async () => {
     if (selectedPromptType === 'system') {
       setSystemPromptText('Pretend to be a patient with the context you are given. You are helping the pharmacist practice their skills interacting with a patient. Engage with the pharmacist by describing your symptoms to provide them hints on what condition(s) you have.');
     } else {
@@ -344,21 +348,22 @@ function AdminSimulationGroupPage() {
     if (selectedPatientForEdit && groupId) {
       if (selectedPatientForEdit === 'new') {
         mockInstructorDataService.createPatient(groupId, {
-          name: editPatientName,
-          age: parseInt(editPatientAge) || 0,
-          gender: editPatientGender,
-          prompt: editPatientPrompt,
+          patient_name: editPatientName,
+          patient_age: parseInt(editPatientAge) || 0,
+          patient_gender: editPatientGender,
+          patient_prompt: editPatientPrompt,
         });
       } else {
         mockInstructorDataService.updatePatient(groupId, {
-          id: selectedPatientForEdit,
-          name: editPatientName,
-          age: parseInt(editPatientAge) || 0,
-          gender: editPatientGender,
-          prompt: editPatientPrompt,
+          patient_id: selectedPatientForEdit,
+          patient_name: editPatientName,
+          patient_age: parseInt(editPatientAge) || 0,
+          patient_gender: editPatientGender,
+          patient_prompt: editPatientPrompt,
         });
       }
     }
+  };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -764,6 +769,16 @@ function AdminSimulationGroupPage() {
     );
   };
 
+  if (loading) {
+    return (
+      <PageContainer>
+        <div className="flex items-center justify-center h-full">
+          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+        </div>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       {/* Header */}
@@ -1051,14 +1066,14 @@ function AdminSimulationGroupPage() {
               {currentPatient && (
                 <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
                   <h3 className="text-xl font-semibold mb-6" style={{ color: UI_COLORS.text.heading }}>
-                    {currentPatient.name} Overview
+                    {currentPatient.patient_name} Overview
                   </h3>
 
                   <div className="grid grid-cols-3 gap-6 mb-8">
                     {[
-                      { value: currentPatient.studentMessageCount, label: 'Student Messages', colorIndex: 2 },
-                      { value: currentPatient.aiMessageCount, label: 'AI Messages', colorIndex: 5 },
-                      { value: currentPatient.studentAccessCount, label: 'Student Access Count', colorIndex: 4 },
+                      { value: currentPatient.student_message_count, label: 'Student Messages', colorIndex: 2 },
+                      { value: currentPatient.ai_message_count, label: 'AI Messages', colorIndex: 5 },
+                      { value: currentPatient.student_access_count, label: 'Student Access Count', colorIndex: 4 },
                     ].map(({ value, label, colorIndex }) => (
                       <div key={label} className="border rounded-xl p-5 text-center" style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
                         <p className="text-2xl font-bold" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[colorIndex] }}>{value}</p>
@@ -1070,7 +1085,7 @@ function AdminSimulationGroupPage() {
                   {keyQuestionAnalytics.length > 0 && (
                     <div className="mt-8">
                       <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Key Questions — Students Answered</h4>
-                      <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>Number of students who answered each key question for {currentPatient.name}</p>
+                      <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>Number of students who answered each key question for {currentPatient.patient_name}</p>
                       <ResponsiveContainer width="100%" height={Math.max(250, keyQuestionAnalytics.length * 50)}>
                         <BarChart data={keyQuestionAnalytics} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
@@ -1104,7 +1119,7 @@ function AdminSimulationGroupPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Score Distribution</h4>
-                        <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>Distribution of student scores for {currentPatient.name}</p>
+                        <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>Distribution of student scores for {currentPatient.patient_name}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <label className="text-sm font-medium whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>Time Period:</label>
@@ -1161,10 +1176,10 @@ function AdminSimulationGroupPage() {
                 </div>
 
                 {filteredPatients.map((patient) => (
-                  <div key={patient.id} className="grid grid-cols-[2fr_1fr_1fr_2fr_2fr] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.name}</div>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.age}</div>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.gender}</div>
+                  <div key={patient.patient_id} className="grid grid-cols-[2fr_1fr_1fr_2fr_2fr] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
+                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_name}</div>
+                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_age}</div>
+                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_gender}</div>
                     <div>
                       <button
                         type="button"
@@ -1172,9 +1187,9 @@ function AdminSimulationGroupPage() {
                         aria-checked={patient.llm_completion}
                         onClick={() => handleToggleLLMEvaluation(patient.patient_id, patient.llm_completion)}
                         className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                        style={{ backgroundColor: patient.llmEvaluationEnabled ? UI_COLORS.toggle.active : UI_COLORS.toggle.inactive }}
+                        style={{ backgroundColor: patient.llm_completion ? UI_COLORS.toggle.active : UI_COLORS.toggle.inactive }}
                       >
-                        <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: patient.llmEvaluationEnabled ? 'translateX(22px)' : 'translateX(2px)' }} />
+                        <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: patient.llm_completion ? 'translateX(22px)' : 'translateX(2px)' }} />
                       </button>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1403,7 +1418,7 @@ function AdminSimulationGroupPage() {
                         >
                           <option value="">-- Select a patient --</option>
                           {manageablePatients.map((patient) => (
-                            <option key={patient.id} value={patient.id}>{patient.name}</option>
+                            <option key={patient.patient_id} value={patient.patient_id}>{patient.patient_name}</option>
                           ))}
                         </select>
                       </div>
@@ -1699,7 +1714,7 @@ function AdminSimulationGroupPage() {
                       </h3>
 
                       <div className="flex items-center gap-4">
-                        <UserAvatar name={editPatientName || 'P'} imageUrl={patientBeingEdited?.photoUrl} size="large" />
+                        <UserAvatar name={editPatientName || 'P'} imageUrl={patientBeingEdited?.photo_url} size="large" />
                         <label className="cursor-pointer">
                           <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
                           <div className="p-3 rounded-full transition-colors" style={{ backgroundColor: UI_COLORS.background.tableHeader, color: UI_COLORS.text.body }}>

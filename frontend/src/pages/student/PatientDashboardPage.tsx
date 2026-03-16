@@ -7,6 +7,7 @@ import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useState } from 'react';
 import { useAuth } from '@/App';
+import { studentService } from '@/services/studentService';
 
 /**
  * PatientDashboardPage Component
@@ -24,19 +25,19 @@ function PatientDashboardPage() {
   const [showAllAttempts, setShowAllAttempts] = useState(false);
   
   // Load patient data from mock data service
-  const patient = mockDataService.getPatientDetail(patientId);
+  const patient = studentService.getPatientDetail(patientId);
 
   // Load chat history from mock data service
-  const chatHistory = mockDataService.getChatHistory();
+  const chatHistory = studentService.getChatHistory();
 
   // Load key questions coverage data from mock data service
-  const allKeyQuestionsCoverageData = mockDataService.getKeyQuestionsCoverageData();
+  const allKeyQuestionsCoverageData = studentService.getKeyQuestionsCoverageData();
 
   // Check if there are any chats
   const hasChats = chatHistory.length > 0;
   
   // Check if there's any coverage data
-  const hasCoverageData = allKeyQuestionsCoverageData.some(d => d.coverage > 0);
+  const hasCoverageData = allKeyQuestionsCoverageData.some((d: { coverage: number; }) => d.coverage > 0);
 
   // Show only last 5 attempts by default
   const displayedCoverageData = showAllAttempts 

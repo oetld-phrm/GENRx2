@@ -6,8 +6,8 @@ import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { mockAdminDataService } from '@/services/adminService';
-import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
-import { UI_COLORS } from '@/lib/colors';
+import { instructorService, mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
 
 /**
@@ -83,12 +83,13 @@ function AdminOrganizationPage() {
       console.log('Creating group with data:', data);
 
       // Create new group object
+      const tempId = `group-${Date.now()}`;
       const newGroup: InstructorSimulationGroup = {
-        id: `group-${Date.now()}`,
+        simulation_group_id: tempId,
         name: data.name,
         subtitle: 'Medical Simulation Group',
         icon_color: getSimulationGroupColor(groups.length),
-        access_code: mockInstructorDataService.generateAccessCode(`group-${Date.now()}`),
+        access_code: await mockInstructorDataService.generateAccessCode(tempId),
         student_count: 0,
         instructor_count: data.instructors.split(',').map(i => i.trim()).filter(i => i).length,
         patient_count: 0,
@@ -120,7 +121,7 @@ function AdminOrganizationPage() {
   const handleDeleteGroup = (groupId: string) => {
     try {
       const group = groups.find(g => g.simulation_group_id === groupId);
-      const groupName = group ? group.group_name : 'this simulation group';
+      const groupName = group ? group.name : 'this simulation group';
       
       // Show confirmation alert
       const confirmed = window.confirm(`Are you sure you want to delete ${groupName}? This action cannot be undone.`);
@@ -145,6 +146,16 @@ function AdminOrganizationPage() {
       console.error('Error navigating to question bank:', error);
     }
   };
+
+  if (loading) {
+    return (
+      <PageContainer>
+        <div className="flex items-center justify-center h-full">
+          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

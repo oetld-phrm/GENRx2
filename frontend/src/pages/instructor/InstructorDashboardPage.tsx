@@ -4,8 +4,9 @@ import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialogInstructor from '@/components/CreateSimulationGroupDialogInstructor';
-import { mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { instructorService, mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor } from '@/lib/colors';
+import { useAuth } from '@/App';
 
 /**
  * InstructorDashboardPage Component
@@ -66,25 +67,26 @@ function InstructorDashboardPage() {
     }
   };
 
-  const handleCreateGroupSubmit = (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => {
+  const handleCreateGroupSubmit = async (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => {
     try {
       console.log('Creating group with data:', data);
 
+      const tempId = `group-${Date.now()}`;
       // Create new group object
       const newGroup: InstructorSimulationGroup = {
-        id: `group-${Date.now()}`, // Temporary ID until backend provides one
+        simulation_group_id: tempId, // Temporary ID until backend provides one
         name: data.name,
         subtitle: 'Medical Simulation Group',
         icon_color: getSimulationGroupColor(groups.length), // Use next color in palette
-        access_code: mockInstructorDataService.generateAccessCode(`group-${Date.now()}`),
+        access_code: await mockInstructorDataService.generateAccessCode(tempId),
         student_count: 0,
         instructor_count: 0,
         patient_count: 0,
         organization_id: ''
       };
 
-      // Add the real group from backend to state
-      setGroups(prevGroups => [...prevGroups, createdGroup]);
+      // Add the new group to state
+      setGroups(prevGroups => [...prevGroups, newGroup]);
 
       // Close the dialog
       setIsCreateDialogOpen(false);

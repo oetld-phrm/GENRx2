@@ -3,14 +3,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData } from '@/services/instructorService';
+import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, HelpCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { useAuth } from '@/App';
 
 /**
  * InstructorSimulationGroupPage Component
@@ -185,15 +186,15 @@ function InstructorSimulationGroupPage() {
   
   // Key question analytics (per patient)
   const keyQuestionAnalytics = currentPatient
-    ? mockInstructorDataService.getKeyQuestionAnalytics(groupId || '1')
+    ? instructorService.getKeyQuestionAnalytics(groupId || '1')
     : [];
   
   // Question performance scores
-  const questionPerformanceScores = mockInstructorDataService.getQuestionPerformanceScores(groupId || '1');
+  const questionPerformanceScores = instructorService.getQuestionPerformanceScores(groupId || '1');
   
   // Score distribution for current patient
   const scoreDistribution = currentPatient 
-    ? mockInstructorDataService.getScoreDistribution(groupId || '1', currentPatient.id)
+    ? instructorService.getScoreDistribution(groupId || '1', currentPatient.id)
     : [];
   
   // Fallback values
@@ -303,11 +304,11 @@ function InstructorSimulationGroupPage() {
       setCaseSpecificQuestions(questions);
       
       // Initialize includedQuestionIds with the patient's current questions
-      const questionIds = mockInstructorDataService.getPatientCaseSpecificQuestionIds(patientId);
+      const questionIds = instructorService.getPatientCaseSpecificQuestionIds(patientId);
       setIncludedQuestionIds(questionIds);
       setPendingQuestionIds(new Set(questionIds));
       
-      const materials = mockInstructorDataService.getCaseMaterials(patientId);
+      const materials = instructorService.getCaseMaterials(patientId);
       setCaseMaterials(materials);
       setSelectedMaterialId(materials[0]?.id || '');
       
@@ -653,18 +654,18 @@ function InstructorSimulationGroupPage() {
               evaluationCriteria: bankQ.evaluationCriteria,
               required: bankQ.isMandatory,
             };
-            mockInstructorDataService.addCaseSpecificQuestion(selectedPatientForQuestionBank, newCaseQuestion);
+            instructorService.addCaseSpecificQuestion(selectedPatientForQuestionBank, newCaseQuestion);
             if (selectedPatientForEdit === selectedPatientForQuestionBank) {
-              setCaseSpecificQuestions(mockInstructorDataService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
+              setCaseSpecificQuestions(instructorService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
             }
           }
         }
       });
       includedQuestionIds.forEach(id => {
         if (!pendingQuestionIds.has(id)) {
-          mockInstructorDataService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);
+          instructorService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);
           if (selectedPatientForEdit === selectedPatientForQuestionBank) {
-            setCaseSpecificQuestions(mockInstructorDataService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
+            setCaseSpecificQuestions(instructorService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
           }
         }
       });
@@ -759,6 +760,16 @@ function InstructorSimulationGroupPage() {
 
   const globalTotalPages = getTotalPages(filteredGlobalQuestions.length, globalPagination.itemsPerPage);
   const patientTotalPages = getTotalPages(filteredPatientQuestions.length, patientPagination.itemsPerPage);
+
+  if (loading) {
+    return (
+      <PageContainer>
+        <div className="flex items-center justify-center h-full">
+          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -1064,7 +1075,7 @@ function InstructorSimulationGroupPage() {
                       Number of students who answered each global key question across all personas
                     </p>
                     {(() => {
-                      const globalKeyQuestionData = mockInstructorDataService.getKeyQuestionAnalytics(groupId || '1');
+                      const globalKeyQuestionData = instructorService.getKeyQuestionAnalytics(groupId || '1');
                       return globalKeyQuestionData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={Math.max(250, globalKeyQuestionData.length * 50)}>
                           <BarChart
@@ -2135,7 +2146,7 @@ function InstructorSimulationGroupPage() {
                             // Reset pagination when changing patient
                             setPatientPagination({ currentPage: 1, itemsPerPage: patientPagination.itemsPerPage });
                             if (patientId) {
-                              const questionIds = mockInstructorDataService.getPatientCaseSpecificQuestionIds(patientId);
+                              const questionIds = instructorService.getPatientCaseSpecificQuestionIds(patientId);
                               setIncludedQuestionIds(questionIds);
                               setPendingQuestionIds(new Set(questionIds));
                             } else {
@@ -2933,7 +2944,7 @@ Return valid JSON in exactly this structure:
                                     <Button
                                       onClick={() => {
                                         if (selectedPatientForEdit) {
-                                          mockInstructorDataService.updateCaseSpecificQuestion(selectedPatientForEdit, question);
+                                          instructorService.updateCaseSpecificQuestion(selectedPatientForEdit, question);
                                         }
                                       }}
                                       className="px-8 py-3 text-base font-medium transition-colors"
@@ -2949,7 +2960,7 @@ Return valid JSON in exactly this structure:
                                     <Button
                                       onClick={() => {
                                         if (selectedPatientForEdit) {
-                                          mockInstructorDataService.deleteCaseSpecificQuestion(selectedPatientForEdit, question.id);
+                                          instructorService.deleteCaseSpecificQuestion(selectedPatientForEdit, question.id);
                                           setCaseSpecificQuestions(caseSpecificQuestions.filter(q => q.id !== question.id));
                                         }
                                       }}
@@ -3004,7 +3015,7 @@ Return valid JSON in exactly this structure:
                         <Accordion type="single" collapsible className="space-y-2">
                           {(() => {
                             const patientSimGroupId = patientBeingEdited?.simulation_group_id || groupId || '1';
-                            const patientGlobalRubric = mockInstructorDataService.getGlobalRubricQuestions(patientSimGroupId);
+                            const patientGlobalRubric = instructorService.getGlobalRubricQuestions(patientSimGroupId);
                             const filteredGlobalRubric = patientGlobalRubric.filter(q =>
                               q.title.toLowerCase().includes(globalRubricSearchQuery.toLowerCase())
                             );
@@ -3378,7 +3389,7 @@ Return valid JSON in exactly this structure:
                                     <Button
                                       onClick={() => {
                                         if (selectedPatientForEdit) {
-                                          mockInstructorDataService.deleteCaseMaterial(selectedPatientForEdit, material.id);
+                                          instructorService.deleteCaseMaterial(selectedPatientForEdit, material.id);
                                           setCaseMaterials(caseMaterials.filter(m => m.id !== material.id));
                                         }
                                       }}
