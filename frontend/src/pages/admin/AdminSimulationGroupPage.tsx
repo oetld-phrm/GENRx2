@@ -225,11 +225,11 @@ function AdminSimulationGroupPage() {
     navigate('/student');
   };
 
-  const handleGenerateAccessCode = () => {
+  const handleGenerateAccessCode = async () => {
     if (groupId) {
-      const newCode = mockInstructorDataService.generateAccessCode(groupId);
+      const newCode = await instructorService.generateAccessCode(groupId);
       console.log('Generated new access code:', newCode);
-      navigate(`/admin/organization/${organizationId}/group/${groupId}`, { replace: true });
+      setSimulationGroup(prev => prev ? { ...prev, access_code: newCode } : prev);
     }
   };
 

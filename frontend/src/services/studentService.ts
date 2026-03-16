@@ -514,7 +514,7 @@ async function joinGroup(accessCode: string): Promise<{ success: boolean }> {
     if (!user) throw new Error('Not authenticated');
 
     await apiClient.request(
-      `/student/join_group?email=${encodeURIComponent(user.email)}&access_code=${encodeURIComponent(accessCode)}`,
+      `/student/enroll_student?student_email=${encodeURIComponent(user.email)}&group_access_code=${encodeURIComponent(accessCode)}`,
       { method: 'POST' }
     );
     return { success: true };
@@ -545,6 +545,25 @@ async function createSession(simulationGroupId: string, patientId: string, sessi
 }
 
 /**
+ * Send a message and get the AI response via text generation
+ */
+async function sendMessage(
+  simulationGroupId: string,
+  patientId: string,
+  sessionId: string,
+  messageContent: string
+): Promise<{ llm_output: string; session_name?: string }> {
+  const result = await apiClient.request<{ llm_output: string; session_name?: string }>(
+    `/student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: 'POST',
+      body: { message_content: messageContent },
+    }
+  );
+  return result;
+}
+
+/**
  * Student service — public API used by pages
  */
 export const studentService = {
@@ -553,6 +572,7 @@ export const studentService = {
   getPatients,
   joinGroup,
   createSession,
+  sendMessage,
   getPatientDetail,
   getChatHistory,
   getKeyQuestionsCoverageData,

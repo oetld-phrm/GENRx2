@@ -6,8 +6,8 @@ import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { mockAdminDataService } from '@/services/adminService';
-import { instructorService, mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
-import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
+import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
 
 /**
@@ -82,26 +82,15 @@ function AdminOrganizationPage() {
     try {
       console.log('Creating group with data:', data);
 
-      // Create new group object
-      const tempId = `group-${Date.now()}`;
-      const newGroup: InstructorSimulationGroup = {
-        simulation_group_id: tempId,
+      const newGroup = await instructorService.createSimulationGroup({
         name: data.name,
-        subtitle: 'Medical Simulation Group',
-        icon_color: getSimulationGroupColor(groups.length),
-        access_code: await mockInstructorDataService.generateAccessCode(tempId),
-        student_count: 0,
-        instructor_count: data.instructors.split(',').map(i => i.trim()).filter(i => i).length,
-        patient_count: 0,
-        organization_id: ''
-      };
+        description: data.description,
+        active: data.active,
+        enableVoice: data.enableVoice,
+      });
 
       // Add to state
       setGroups(prevGroups => [...prevGroups, newGroup]);
-
-      // Future: Call API to create group
-      // const createdGroup = await api.createGroup(data);
-      // setGroups(prevGroups => [...prevGroups, createdGroup]);
     } catch (error) {
       console.error('Error creating group:', error);
       // TODO: Show error toast to user

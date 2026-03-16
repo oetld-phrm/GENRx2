@@ -655,7 +655,7 @@ async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
       name: group.group_name,
       subtitle: 'Medical Simulation Group',
       icon_color: group.icon_color || getSimulationGroupColor(index),
-      access_code: group.access_code || '',
+      access_code: group.group_access_code || '',
       student_count: group.student_count || 0,
       patient_count: group.patient_count || 0,
       organization_id: group.organization_id || '',
@@ -691,7 +691,7 @@ async function createSimulationGroup(data: { name: string; description: string; 
     name: result.group_name,
     subtitle: 'Medical Simulation Group',
     icon_color: getSimulationGroupColor(0),
-    access_code: result.access_code || '',
+    access_code: result.group_access_code || '',
     student_count: 0,
     patient_count: 0,
     organization_id: result.organization_id || '',
@@ -883,18 +883,12 @@ function getScoreDistribution(_simulationGroupId: string, patientId: string): Sc
  *
  * FIX: Changed to async to match InstructorDataService interface (Promise<string>).
  */
-async function generateAccessCode(_simulationGroupId: string): Promise<string> {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const segments = 4;
-  const segmentLength = 4;
-
-  const code = Array.from({ length: segments }, () => {
-    return Array.from({ length: segmentLength }, () =>
-      chars.charAt(Math.floor(Math.random() * chars.length))
-    ).join('');
-  }).join('-');
-
-  return code;
+async function generateAccessCode(simulationGroupId: string): Promise<string> {
+  const result = await apiClient.request<{ access_code: string }>(
+    `instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulationGroupId)}`,
+    { method: 'PUT' }
+  );
+  return result.access_code;
 }
 
 /**

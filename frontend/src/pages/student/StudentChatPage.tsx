@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
 import { mockDataService, type StudentChatMessage as Message } from '@/services/studentService';
+import { studentService } from '@/services/studentService';
 import { ArrowLeft, Mic, Send, FileText, User, CheckCircle, X, Menu, Stethoscope, Flag, ChevronRight, ChevronLeft } from 'lucide-react';
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -73,8 +74,22 @@ function StudentChatPage() {
   // State for chat
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
+  const [isAiResponding, setIsAiResponding] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatId = `chat-${groupId}-${patientId}`; // Mock chat ID
+
+  // Create a session on mount so we have a session_id for text generation
+  useEffect(() => {
+    if (!groupId || !patientId) return;
+    let cancelled = false;
+    studentService.createSession(groupId, patientId, `Session ${Date.now()}`).then((session) => {
+      if (!cancelled && session) {
+        setSessionId(session.session_id);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [groupId, patientId]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -128,8 +143,8 @@ function StudentChatPage() {
   /**
    * Handle sending a message
    */
-  const handleSendMessage = () => {
-    if (!inputMessage.trim()) return;
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || !groupId || !patientId || !sessionId || isAiResponding) return;
 
     // Create student message
     const studentMessage: Message = {
@@ -141,19 +156,34 @@ function StudentChatPage() {
     };
 
     setMessages((prev) => [...prev, studentMessage]);
+    const messageText = inputMessage;
     setInputMessage('');
+    setIsAiResponding(true);
 
-    // Simulate AI response after a delay (remove when backend is ready)
-    setTimeout(() => {
+    try {
+      const response = await studentService.sendMessage(groupId, patientId, sessionId, messageText);
+
       const aiMessage: Message = {
         message_id: `msg-${Date.now()}`,
         chat_id: chatId,
         student_sent: false,
-        message_content: 'Thank you for your question. I\'m the AI patient simulation.',
+        message_content: response.llm_output,
         time_sent: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, aiMessage]);
-    }, 1000);
+    } catch (error) {
+      console.error('Failed to get AI response:', error);
+      const errorMessage: Message = {
+        message_id: `msg-${Date.now()}`,
+        chat_id: chatId,
+        student_sent: false,
+        message_content: 'Sorry, something went wrong. Please try again.',
+        time_sent: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsAiResponding(false);
+    }
   };
 
   /**
@@ -559,7 +589,7 @@ function StudentChatPage() {
                   onMouseEnter={(e) => !inputMessage.trim() ? null : e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
                   aria-label="Send message"
-                  disabled={!inputMessage.trim()}
+                  disabled={!inputMessage.trim() || isAiResponding || !sessionId}
                 >
                   <Send className="w-4 h-4" />
                 </button>
