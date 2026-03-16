@@ -825,6 +825,142 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "Internal server error" });
         }
         break;
+      // ── Organization CRUD ──────────────────────────────────────────────
+      case "GET /admin/organizations":
+        try {
+          const orgs = await sqlConnectionTableCreator`
+            SELECT * FROM "organizations" ORDER BY created_at DESC;
+          `;
+          response.body = JSON.stringify(orgs);
+        } catch (err) {
+          response.statusCode = 500;
+          console.log(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "GET /admin/organization":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.organization_id
+        ) {
+          try {
+            const { organization_id } = event.queryStringParameters;
+            const org = await sqlConnectionTableCreator`
+              SELECT * FROM "organizations"
+              WHERE organization_id = ${organization_id};
+            `;
+            if (org.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Organization not found" });
+            } else {
+              response.body = JSON.stringify(org[0]);
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "organization_id is required" });
+        }
+        break;
+      case "POST /admin/create_organization":
+        if (event.body) {
+          try {
+            const { name, description, type, ai_persona, user_role, icon_color, system_prompt } = JSON.parse(event.body);
+            if (!name || !name.trim()) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({ error: "name is required" });
+              break;
+            }
+            const newOrg = await sqlConnectionTableCreator`
+              INSERT INTO "organizations" (name, description, type, ai_persona, user_role, icon_color, system_prompt)
+              VALUES (
+                ${name},
+                ${description || null},
+                ${type || null},
+                ${ai_persona || 'Patient'},
+                ${user_role || 'Student'},
+                ${icon_color || '#03045E'},
+                ${system_prompt || null}
+              )
+              RETURNING *;
+            `;
+            response.statusCode = 201;
+            response.body = JSON.stringify(newOrg[0]);
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "Request body is required" });
+        }
+        break;
+      case "PUT /admin/update_organization":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.organization_id &&
+          event.body
+        ) {
+          try {
+            const { organization_id } = event.queryStringParameters;
+            const { name, description, type, ai_persona, user_role, icon_color, system_prompt } = JSON.parse(event.body);
+
+            const updated = await sqlConnectionTableCreator`
+              UPDATE "organizations"
+              SET
+                name = COALESCE(${name || null}, name),
+                description = COALESCE(${description || null}, description),
+                type = COALESCE(${type || null}, type),
+                ai_persona = COALESCE(${ai_persona || null}, ai_persona),
+                user_role = COALESCE(${user_role || null}, user_role),
+                icon_color = COALESCE(${icon_color || null}, icon_color),
+                system_prompt = COALESCE(${system_prompt || null}, system_prompt)
+              WHERE organization_id = ${organization_id}
+              RETURNING *;
+            `;
+
+            if (updated.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Organization not found" });
+            } else {
+              response.body = JSON.stringify(updated[0]);
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "organization_id and request body are required" });
+        }
+        break;
+      case "DELETE /admin/delete_organization":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.organization_id
+        ) {
+          try {
+            const { organization_id } = event.queryStringParameters;
+            await sqlConnectionTableCreator`
+              DELETE FROM "organizations"
+              WHERE organization_id = ${organization_id};
+            `;
+            response.body = JSON.stringify({ message: "Organization deleted successfully." });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "organization_id is required" });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

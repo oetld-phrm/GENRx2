@@ -6,9 +6,10 @@ import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { mockAdminDataService } from '@/services/adminService';
-import { instructorService, mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
+import * as adminApi from '@/services/adminApiService';
 
 /**
  * AdminOrganizationPage Component
@@ -80,31 +81,41 @@ function AdminOrganizationPage() {
 
   const handleCreateGroupSubmit = async (data: { name: string; description: string; instructors: string; systemPrompt: string; active: boolean; enableVoice: boolean }) => {
     try {
-      console.log('Creating group with data:', data);
+      const created = await adminApi.createSimulationGroup({
+        group_name: data.name,
+        group_description: data.description,
+        group_access_code: Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+        group_student_access: data.active,
+        system_prompt: data.systemPrompt || '',
+        instructor_voice_enabled: data.enableVoice,
+      });
 
-      // Create new group object
-      const tempId = `group-${Date.now()}`;
+      // Enroll any specified instructors
+      const instructorEmails = data.instructors.split(',').map(i => i.trim()).filter(i => i);
+      for (const email of instructorEmails) {
+        try {
+          await adminApi.addInstructorToGroup(created.simulation_group_id, email);
+        } catch (err) {
+          console.error(`Failed to enroll instructor ${email}:`, err);
+        }
+      }
+
+      // Map API response to frontend type and add to state
       const newGroup: InstructorSimulationGroup = {
-        simulation_group_id: tempId,
-        name: data.name,
+        simulation_group_id: created.simulation_group_id,
+        name: created.group_name,
         subtitle: 'Medical Simulation Group',
         icon_color: getSimulationGroupColor(groups.length),
-        access_code: await mockInstructorDataService.generateAccessCode(tempId),
+        access_code: created.group_access_code || '',
         student_count: 0,
-        instructor_count: data.instructors.split(',').map(i => i.trim()).filter(i => i).length,
+        instructor_count: instructorEmails.length,
         patient_count: 0,
-        organization_id: ''
+        organization_id: created.organization_id || '',
       };
-
-      // Add to state
       setGroups(prevGroups => [...prevGroups, newGroup]);
-
-      // Future: Call API to create group
-      // const createdGroup = await api.createGroup(data);
-      // setGroups(prevGroups => [...prevGroups, createdGroup]);
     } catch (error) {
       console.error('Error creating group:', error);
-      // TODO: Show error toast to user
+      alert('Failed to create simulation group. Please try again.');
     }
   };
 
@@ -118,22 +129,20 @@ function AdminOrganizationPage() {
     }
   };
 
-  const handleDeleteGroup = (groupId: string) => {
+  const handleDeleteGroup = async (groupId: string) => {
     try {
       const group = groups.find(g => g.simulation_group_id === groupId);
       const groupName = group ? group.name : 'this simulation group';
       
-      // Show confirmation alert
       const confirmed = window.confirm(`Are you sure you want to delete ${groupName}? This action cannot be undone.`);
       
       if (confirmed) {
-        console.log(`Delete group: ${groupId}`);
-        // Remove from state
+        await adminApi.deleteSimulationGroup(groupId);
         setGroups(prevGroups => prevGroups.filter(g => g.simulation_group_id !== groupId));
-        // Future: Call API to delete group
       }
     } catch (error) {
       console.error('Error deleting group:', error);
+      alert('Failed to delete simulation group. Please try again.');
     }
   };
 

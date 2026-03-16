@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
 import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient } from '@/services/instructorService';
-import { mockAdminDataService, type Instructor } from '@/services/adminService';
+import { mockAdminDataService } from '@/services/adminService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useEffect, useState } from 'react';
@@ -12,7 +12,9 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
 import { AddInstructorDialog } from '@/components/AddInstructorDialog';
+
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import * as adminApi from '@/services/adminApiService';
 
 /**
  * AdminSimulationGroupPage Component
@@ -115,8 +117,9 @@ function AdminSimulationGroupPage() {
   // Load data from instructor service (sync)
   const user = mockAdminDataService.getCurrentUser();
   
-  // Load instructors from admin service
-  const [instructors, setInstructors] = useState<Instructor[]>(() => mockAdminDataService.getInstructors());
+  // Load instructors from API (real backend)
+  const [instructors, setInstructors] = useState<adminApi.AdminInstructor[]>([]);
+  const [instructorsLoading, setInstructorsLoading] = useState(false);
   
   // Get organization details
   const organizations = mockAdminDataService.getOrganizations();
@@ -166,6 +169,20 @@ function AdminSimulationGroupPage() {
 
     loadData();
   }, [groupId]);
+
+  // Load instructors from real API when section is active
+  useEffect(() => {
+    if (activeSection === 'instructors' && groupId) {
+      setInstructorsLoading(true);
+      adminApi.getGroupInstructors(groupId)
+        .then(setInstructors)
+        .catch((err) => {
+          console.error('Failed to load group instructors:', err);
+          setInstructors([]);
+        })
+        .finally(() => setInstructorsLoading(false));
+    }
+  }, [activeSection, groupId]);
   
   // State for selected patient (for analytics tabs)
   const [selectedPatientId, setSelectedPatientId] = useState<string>('overview');
@@ -209,9 +226,11 @@ function AdminSimulationGroupPage() {
   );
 
   // Filter instructors based on search query
-  const filteredInstructors = instructors.filter(instructor =>
-    instructor.name.toLowerCase().includes(instructorSearchQuery.toLowerCase())
-  );
+  const filteredInstructors = instructors.filter(instructor => {
+    const fullName = `${instructor.first_name} ${instructor.last_name}`.toLowerCase();
+    return fullName.includes(instructorSearchQuery.toLowerCase()) ||
+           instructor.user_email.toLowerCase().includes(instructorSearchQuery.toLowerCase());
+  });
 
   const handleSignOut = () => {
     navigate('/login');
@@ -302,20 +321,33 @@ function AdminSimulationGroupPage() {
     setIsAddInstructorDialogOpen(true);
   };
 
-  const handleAddInstructorSubmit = (email: string, name: string) => {
-    const newInstructor: Instructor = {
-      id: `inst-${Date.now()}`,
-      name: name,
-      email: email,
-      date_joined: new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
-    };
-    setInstructors(prev => [...prev, newInstructor]);
+  const handleAddInstructorSubmit = async (email: string, _name: string) => {
+    if (!groupId) return;
+    try {
+      // Elevate to instructor role (if needed) + enroll in this group
+      await adminApi.addInstructorToGroup(groupId, email);
+      // Refresh the instructor list from the API
+      const updated = await adminApi.getGroupInstructors(groupId);
+      setInstructors(updated);
+    } catch (err) {
+      console.error('Failed to add instructor:', err);
+      alert('Failed to add instructor. Please check the email and try again.');
+    }
   };
 
-  const handleRemoveInstructor = (instructorId: string) => {
-    const instructor = instructors.find(i => i.id === instructorId);
-    if (instructor && confirm(`Are you sure you want to remove ${instructor.name}?`)) {
-      setInstructors(prev => prev.filter(i => i.id !== instructorId));
+  const handleRemoveInstructor = async (instructorEmail: string) => {
+    if (!groupId) return;
+    const instructor = instructors.find(i => i.user_email === instructorEmail);
+    const displayName = instructor ? `${instructor.first_name} ${instructor.last_name}` : instructorEmail;
+    if (confirm(`Are you sure you want to remove ${displayName} from this group?`)) {
+      try {
+        await adminApi.removeInstructorFromGroup(groupId, instructorEmail);
+        const updated = await adminApi.getGroupInstructors(groupId);
+        setInstructors(updated);
+      } catch (err) {
+        console.error('Failed to remove instructor:', err);
+        alert('Failed to remove instructor. Please try again.');
+      }
     }
   };
 
@@ -1305,28 +1337,38 @@ function AdminSimulationGroupPage() {
               </div>
 
               <div className="border rounded-lg overflow-hidden" style={{ borderColor: UI_COLORS.border.default }}>
-                <div className="grid grid-cols-[2fr_3fr_2fr_auto] gap-4 px-6 py-4" style={{ backgroundColor: UI_COLORS.background.tableHeader }}>
-                  {['Instructor Name', 'Email Address', 'Date Joined', 'Actions'].map(h => (
+                <div className="grid grid-cols-[2fr_3fr_auto] gap-4 px-6 py-4" style={{ backgroundColor: UI_COLORS.background.tableHeader }}>
+                  {['Instructor Name', 'Email Address', 'Actions'].map(h => (
                     <div key={h} className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>{h}</div>
                   ))}
                 </div>
-                {filteredInstructors.map((instructor) => (
-                  <div key={instructor.id} className="grid grid-cols-[2fr_3fr_2fr_auto] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{instructor.name}</div>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{instructor.email}</div>
-                    <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{instructor.date_joined}</div>
-                    <div>
-                      <button
-                        onClick={() => handleRemoveInstructor(instructor.id)}
-                        className="p-2 rounded-md hover:bg-gray-100 transition-colors"
-                        style={{ border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
-                        aria-label="Remove instructor"
-                      >
-                        <Trash2 className="w-5 h-5" style={{ color: UI_COLORS.status.error }} />
-                      </button>
-                    </div>
+                {instructorsLoading ? (
+                  <div className="px-6 py-8 text-center" style={{ color: UI_COLORS.text.muted }}>
+                    Loading instructors...
                   </div>
-                ))}
+                ) : filteredInstructors.length === 0 ? (
+                  <div className="px-6 py-8 text-center" style={{ color: UI_COLORS.text.muted }}>
+                    {instructorSearchQuery ? 'No instructors match your search.' : 'No instructors assigned to this group yet.'}
+                  </div>
+                ) : (
+                  filteredInstructors.map((instructor) => (
+                    <div key={instructor.user_email} className="grid grid-cols-[2fr_3fr_auto] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
+                      <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{instructor.first_name} {instructor.last_name}</div>
+                      <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{instructor.user_email}</div>
+                      <div>
+                        <button
+                          onClick={() => handleRemoveInstructor(instructor.user_email)}
+                          className="p-2 rounded-md hover:bg-gray-100 transition-colors"
+                          style={{ border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
+                          aria-label="Remove instructor from group"
+                          title="Remove from group"
+                        >
+                          <Trash2 className="w-5 h-5" style={{ color: UI_COLORS.status.error }} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
