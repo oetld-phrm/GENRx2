@@ -2,8 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { mockDataService, type StudentChatMessage as Message } from '@/services/studentService';
-import { studentService } from '@/services/studentService';
+import { studentService, type StudentChatMessage as Message, type PatientDetail, type StudentCaseMaterial, type PatientFile } from '@/services/studentService';
 import { ArrowLeft, Mic, Send, FileText, User, CheckCircle, X, Menu, Stethoscope, Flag, ChevronRight, ChevronLeft } from 'lucide-react';
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -26,14 +25,28 @@ function StudentChatPage() {
   const { user: authUser } = useAuth();
   const user = { name: authUser?.email || 'Student', avatarUrl: undefined };
   
-  // Load patient data from mock data service
-  const patient = mockDataService.getPatientDetail(patientId);
+  // Patient data, case materials, and patient files loaded from API
+  const [patient, setPatient] = useState<PatientDetail>({ id: patientId, name: 'Loading...', age: 0, gender: '' });
+  const [caseMaterials, setCaseMaterials] = useState<StudentCaseMaterial[]>([]);
+  const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
 
-  // Load case materials from mock data service
-  const caseMaterials = mockDataService.getCaseMaterials();
+  // Fetch patient detail, case materials, and patient files from real API
+  useEffect(() => {
+    if (!groupId || !patientId) return;
+    let cancelled = false;
 
-  // Load patient files from mock data service
-  const patientFiles = mockDataService.getPatientFiles();
+    studentService.fetchPatientDetail(groupId, patientId).then((data) => {
+      if (!cancelled) setPatient(data);
+    });
+    studentService.fetchCaseMaterials(groupId, patientId).then((data) => {
+      if (!cancelled) setCaseMaterials(data);
+    });
+    studentService.fetchPatientFiles(groupId, patientId).then((data) => {
+      if (!cancelled) setPatientFiles(data);
+    });
+
+    return () => { cancelled = true; };
+  }, [groupId, patientId]);
 
   // State for dialogs
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
@@ -140,8 +153,16 @@ function StudentChatPage() {
     // API call to save issue report with full chat history
   };
 
+  // Ref to hold the cancel function for an in-flight streaming request
+  const cancelStreamRef = useRef<(() => void) | null>(null);
+
+  // Clean up any in-flight stream on unmount
+  useEffect(() => {
+    return () => { cancelStreamRef.current?.(); };
+  }, []);
+
   /**
-   * Handle sending a message
+   * Handle sending a message — uses AppSync streaming for real-time chunks
    */
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !groupId || !patientId || !sessionId || isAiResponding) return;
@@ -160,28 +181,67 @@ function StudentChatPage() {
     setInputMessage('');
     setIsAiResponding(true);
 
-    try {
-      const response = await studentService.sendMessage(groupId, patientId, sessionId, messageText);
+    // Create a placeholder AI message that will be progressively filled
+    const aiMessageId = `msg-${Date.now() + 1}`;
+    const aiMessage: Message = {
+      message_id: aiMessageId,
+      chat_id: chatId,
+      student_sent: false,
+      message_content: '',
+      time_sent: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, aiMessage]);
 
-      const aiMessage: Message = {
-        message_id: `msg-${Date.now()}`,
-        chat_id: chatId,
-        student_sent: false,
-        message_content: response.llm_output,
-        time_sent: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+    try {
+      const cancel = await studentService.sendMessageStreaming(
+        groupId, patientId, sessionId, messageText,
+        {
+          onChunk: (text) => {
+            // Append chunk to the AI message in-place
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === aiMessageId
+                  ? { ...m, message_content: m.message_content + text }
+                  : m
+              )
+            );
+          },
+          onDone: (fullText) => {
+            // Finalize with the complete text (in case chunks were missed)
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === aiMessageId
+                  ? { ...m, message_content: fullText || m.message_content }
+                  : m
+              )
+            );
+            setIsAiResponding(false);
+            cancelStreamRef.current = null;
+          },
+          onError: (error) => {
+            console.error('Streaming error:', error);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === aiMessageId
+                  ? { ...m, message_content: m.message_content || 'Sorry, something went wrong. Please try again.' }
+                  : m
+              )
+            );
+            setIsAiResponding(false);
+            cancelStreamRef.current = null;
+          },
+        },
+      );
+      cancelStreamRef.current = cancel;
     } catch (error) {
-      console.error('Failed to get AI response:', error);
-      const errorMessage: Message = {
-        message_id: `msg-${Date.now()}`,
-        chat_id: chatId,
-        student_sent: false,
-        message_content: 'Sorry, something went wrong. Please try again.',
-        time_sent: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
+      console.error('Failed to start streaming:', error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.message_id === aiMessageId
+            ? { ...m, message_content: 'Sorry, something went wrong. Please try again.' }
+            : m
+        )
+      );
       setIsAiResponding(false);
     }
   };
