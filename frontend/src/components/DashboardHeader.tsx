@@ -12,7 +12,8 @@ interface DashboardHeaderProps {
   onStudentView?: () => void;
   onInstructorView?: () => void;
   showStudentViewButton?: boolean;
-  showInstructorViewButton?: boolean;
+  onManageQuestionBank?: () => void;
+  showManageQuestionBankButton?: boolean;
 }
 
 function DashboardHeader({ 
@@ -22,9 +23,9 @@ function DashboardHeader({
   userAvatarUrl, 
   onSignOut,
   onStudentView,
-  onInstructorView,
   showStudentViewButton = false,
-  showInstructorViewButton = false
+  onManageQuestionBank,
+  showManageQuestionBankButton = false
 }: DashboardHeaderProps) {
   const [, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -53,16 +54,16 @@ function DashboardHeader({
       </div>
 
       <div className="flex items-center gap-3">
-        {showInstructorViewButton && onInstructorView && (
+        {showManageQuestionBankButton && onManageQuestionBank && (
           <Button
             variant="default"
-            onClick={onInstructorView}
+            onClick={onManageQuestionBank}
             className="px-6 transition-colors"
             style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
           >
-            Instructor View
+            Manage Question Bank
           </Button>
         )}
         {showStudentViewButton && onStudentView && (

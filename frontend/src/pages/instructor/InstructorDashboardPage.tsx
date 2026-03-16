@@ -4,8 +4,8 @@ import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialogInstructor from '@/components/CreateSimulationGroupDialogInstructor';
-import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
-import { useAuth } from '@/App';
+import { mockInstructorDataService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { getSimulationGroupColor } from '@/lib/colors';
 
 /**
  * InstructorDashboardPage Component
@@ -66,12 +66,22 @@ function InstructorDashboardPage() {
     }
   };
 
-  const handleCreateGroupSubmit = async (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => {
+  const handleCreateGroupSubmit = (data: { name: string; description: string; active: boolean; enableVoice: boolean }) => {
     try {
       console.log('Creating group with data:', data);
 
-      // Call the real API via instructorService
-      const createdGroup = await instructorService.createSimulationGroup(data);
+      // Create new group object
+      const newGroup: InstructorSimulationGroup = {
+        id: `group-${Date.now()}`, // Temporary ID until backend provides one
+        name: data.name,
+        subtitle: 'Medical Simulation Group',
+        icon_color: getSimulationGroupColor(groups.length), // Use next color in palette
+        access_code: mockInstructorDataService.generateAccessCode(`group-${Date.now()}`),
+        student_count: 0,
+        instructor_count: 0,
+        patient_count: 0,
+        organization_id: ''
+      };
 
       // Add the real group from backend to state
       setGroups(prevGroups => [...prevGroups, createdGroup]);

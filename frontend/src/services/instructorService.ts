@@ -21,16 +21,16 @@ import { authService } from '@/lib/auth';
  * Represents a simulation group from instructor perspective
  */
 export interface InstructorSimulationGroup {
-  simulation_group_id: string;  // Unique identifier
-  group_name: string;           // Group name (e.g., "Pregnancy")
-  subtitle: string;             // Always "Medical Simulation Group"
-  iconUrl?: string;             // Optional icon image URL
-  iconColor?: string;           // Fallback color for avatar (hex format)
-  access_code: string;          // Access code for students to join
-  student_count: number;        // Number of students in the group
-  instructor_count?: number;    // Number of instructors in the group
-  patient_count: number;        // Number of patients in the group
-  organization_id: string;      // Reference to parent organization
+  id: string;              // Unique identifier
+  name: string;            // Group name (e.g., "Pregnancy")
+  subtitle: string;        // Always "Medical Simulation Group"
+  icon_url?: string;        // Optional icon image URL
+  icon_color?: string;      // Fallback color for avatar (hex format)
+  access_code: string;      // Access code for students to join
+  student_count: number;    // Number of students in the group
+  instructor_count?: number; // Number of instructors in the group
+  patient_count: number;    // Number of patients in the group
+  organization_id: string;  // Reference to parent organization
 }
 
 /**
@@ -75,6 +75,31 @@ export interface MessageCountData {
   name: string;                         // Label (e.g., "Messages")
   'Student Messages': number;           // Student message count
   'AI Messages': number;                // AI message count
+}
+
+/**
+ * Represents key question analytics data for charts
+ */
+export interface KeyQuestionAnalytics {
+  questionTitle: string;                // Title of the key question
+  studentsAnswered: number;             // Number of students who answered
+}
+
+/**
+ * Represents average quality score per key question
+ */
+export interface QuestionPerformanceScore {
+  questionTitle: string;                // Title of the key question
+  averageScore: number;                 // Average quality score (0-100)
+  totalResponses: number;               // Total number of student responses
+}
+
+/**
+ * Represents a bucket in a score distribution histogram
+ */
+export interface ScoreDistributionBucket {
+  range: string;                        // Score range label (e.g., "0-20")
+  count: number;                        // Number of students in this range
 }
 
 /**
@@ -279,15 +304,337 @@ export interface InstructorDataService {
   getSimulationGroupsUsingQuestion: (questionId: string, questionType?: 'global' | 'patientSpecific') => string[];
   getPatientsUsingQuestion: (questionId: string) => string[];
   isQuestionInUse: (questionId: string, questionType?: 'global' | 'patientSpecific') => boolean;
+  getKeyQuestionAnalytics: (simulationGroupId: string) => KeyQuestionAnalytics[];
+  getQuestionPerformanceScores: (simulationGroupId: string) => QuestionPerformanceScore[];
+  getScoreDistribution: (simulationGroupId: string, patientId: string) => ScoreDistributionBucket[];
 }
 
 /**
  * Hardcoded simulation groups for instructors
  */
-async function getSimulationGroups(): Promise<InstructorSimulationGroup[]> {
-  try {
-    const user = await authService.getCurrentUser();
-    if (!user?.email) throw new Error('Not authenticated');
+const mockInstructorSimulationGroups: InstructorSimulationGroup[] = [
+  {
+    id: '1',
+    name: 'Chronic Pain',
+    subtitle: 'Medical Simulation Group',
+    icon_color: getSimulationGroupColor(0),
+    access_code: 'NB3W-PI3I-Q2EH-WPA3',
+    student_count: 20,
+    instructor_count: 5,
+    patient_count: 2,
+    organization_id: 'org-1'
+  },
+  {
+    id: '2',
+    name: 'Acne',
+    subtitle: 'Medical Simulation Group',
+    icon_color: getSimulationGroupColor(1),
+    access_code: 'XY7Z-AB2C-DE4F-GH8I',
+    student_count: 18,
+    instructor_count: 3,
+    patient_count: 3,
+    organization_id: 'org-1'
+  },
+  {
+    id: '3',
+    name: 'Diabetes Management',
+    subtitle: 'Medical Simulation Group',
+    icon_color: getSimulationGroupColor(2),
+    access_code: 'PQ9R-ST1U-VW3X-YZ5A',
+    student_count: 32,
+    instructor_count: 4,
+    patient_count: 2,
+    organization_id: 'org-2'
+  }
+];
+
+/**
+ * Hardcoded user data for instructor
+ */
+const mockInstructorUserData: UserData = {
+  name: 'Dr. Sarah Johnson',
+  avatarUrl: undefined // Will display initials
+};
+
+/**
+ * Hardcoded patient analytics data
+ */
+const mockPatientAnalytics: Record<string, PatientAnalytics[]> = {
+  '1': [ // Chronic Pain group
+    {
+      id: 'pamela',
+      name: 'Pamela',
+      instructorCompletionPercentage: 60,
+      llmCompletionPercentage: 0,
+      studentMessageCount: 49,
+      aiMessageCount: 36,
+      studentAccessCount: 10
+    },
+    {
+      id: 'timothy',
+      name: 'Timothy',
+      instructorCompletionPercentage: 0,
+      llmCompletionPercentage: 0,
+      studentMessageCount: 32,
+      aiMessageCount: 28,
+      studentAccessCount: 8
+    }
+  ],
+  '2': [ // Acne group
+    {
+      id: 'john',
+      name: 'John Davis',
+      instructorCompletionPercentage: 15,
+      llmCompletionPercentage: 20,
+      studentMessageCount: 65,
+      aiMessageCount: 52,
+      studentAccessCount: 15
+    }
+  ]
+};
+
+/**
+ * Default patient prompt for all patients
+ */
+const DEFAULT_PATIENT_PROMPT = "Pretend to be a patient with the context you are given. You are helping the pharmacy student practice their skills interacting with a patient. Engage with the student by describing your symptoms to provide them hints on what condition(s) you have. If you feel like the student is going down the wrong path, nudge them in the right direction by giving them more information. This is to help the student identify the proper diagnosis of the patient you are pretending to be.";
+
+/**
+ * Hardcoded manageable patients data
+ */
+const mockManageablePatients: Record<string, ManageablePatient[]> = {
+  '1': [ // Chronic Pain group
+    {
+      id: 'pamela',
+      simulation_group_id: '1',
+      name: 'Pamela',
+      age: 56,
+      gender: 'Female',
+      prompt: DEFAULT_PATIENT_PROMPT,
+      llmEvaluationEnabled: true
+    },
+    {
+      id: 'timothy',
+      simulation_group_id: '1',
+      name: 'Timothy',
+      age: 42,
+      gender: 'Other',
+      prompt: DEFAULT_PATIENT_PROMPT,
+      llmEvaluationEnabled: true
+    }
+  ],
+  '2': [ // Acne group
+    {
+      id: 'john',
+      simulation_group_id: '2',
+      name: 'John',
+      age: 38,
+      gender: 'Male',
+      prompt: DEFAULT_PATIENT_PROMPT,
+      llmEvaluationEnabled: false
+    }
+  ]
+};
+
+/**
+ * Hardcoded students data
+ */
+const mockStudents: Record<string, Student[]> = {
+  '1': [ // Chronic Pain group
+    {
+      id: 'student-1',
+      name: 'Student 1',
+      email: 'student1@example.com'
+    },
+    {
+      id: 'student-2',
+      name: 'Student 2',
+      email: 'student2@example.com'
+    },
+    {
+      id: 'student-3',
+      name: 'Student 3',
+      email: 'student3@example.com'
+    },
+    {
+      id: 'student-4',
+      name: 'Student 4',
+      email: 'student4@example.com'
+    },
+    {
+      id: 'student-5',
+      name: 'Student 5',
+      email: 'student5@example.com'
+    }
+  ],
+  '2': [ // Acne group
+    {
+      id: 'student-6',
+      name: 'Student 6',
+      email: 'student6@example.com'
+    },
+    {
+      id: 'student-7',
+      name: 'Student 7',
+      email: 'student7@example.com'
+    }
+  ]
+};
+
+/**
+ * Hardcoded student details data
+ */
+const mockStudentDetails: Record<string, StudentDetails> = {
+  'student-1': {
+    id: 'student-1',
+    name: 'Student 1',
+    email: 'student1@example.com',
+    groupName: 'Chronic Pain',
+    casesAttempted: 4,
+    caseCompletionRate: 50
+  },
+  'student-2': {
+    id: 'student-2',
+    name: 'Student 2',
+    email: 'student2@example.com',
+    groupName: 'Chronic Pain',
+    casesAttempted: 3,
+    caseCompletionRate: 67
+  },
+  'student-3': {
+    id: 'student-3',
+    name: 'Student 3',
+    email: 'student3@example.com',
+    groupName: 'Chronic Pain',
+    casesAttempted: 2,
+    caseCompletionRate: 100
+  },
+  'student-4': {
+    id: 'student-4',
+    name: 'Student 4',
+    email: 'student4@example.com',
+    groupName: 'Chronic Pain',
+    casesAttempted: 5,
+    caseCompletionRate: 80
+  },
+  'student-5': {
+    id: 'student-5',
+    name: 'Student 5',
+    email: 'student5@example.com',
+    groupName: 'Chronic Pain',
+    casesAttempted: 1,
+    caseCompletionRate: 0
+  }
+};
+
+/**
+ * Hardcoded chat attempts data (per student per patient)
+ */
+const mockChatAttempts: Record<string, Record<string, ChatAttempt[]>> = {
+  'student-1': {
+    'pamela': [
+      {
+        id: 'attempt-1',
+        student_interaction_id: 'interaction-1',
+        attemptNumber: 4,
+        date: 'Feb 19, 2026',
+        completionStatus: 'In Progress',
+        score: null
+      },
+      {
+        id: 'attempt-2',
+        student_interaction_id: 'interaction-1',
+        attemptNumber: 3,
+        date: 'Feb 18, 2026',
+        completionStatus: 'Complete',
+        score: 67
+      },
+      {
+        id: 'attempt-3',
+        student_interaction_id: 'interaction-1',
+        attemptNumber: 2,
+        date: 'Feb 14, 2026',
+        completionStatus: 'Complete',
+        score: 88
+      },
+      {
+        id: 'attempt-4',
+        student_interaction_id: 'interaction-1',
+        attemptNumber: 1,
+        date: 'Jan 27, 2026',
+        completionStatus: 'In Progress',
+        score: null
+      }
+    ],
+    'timothy': [
+      {
+        id: 'attempt-5',
+        student_interaction_id: 'interaction-2',
+        attemptNumber: 2,
+        date: 'Feb 20, 2026',
+        completionStatus: 'Complete',
+        score: 75
+      },
+      {
+        id: 'attempt-6',
+        student_interaction_id: 'interaction-2',
+        attemptNumber: 1,
+        date: 'Feb 10, 2026',
+        completionStatus: 'Complete',
+        score: 82
+      }
+    ]
+  }
+};
+
+/**
+ * Hardcoded chat messages data (per attempt)
+ */
+const mockChatMessages: Record<string, ChatMessage[]> = {
+  'attempt-2': [
+    {
+      message_id: 'msg-1',
+      chat_id: 'attempt-2',
+      student_sent: false,
+      message_content: "Hello there! I'm Pamela, nice to meet you. I've been feeling really unwell lately, and I'm worried about these chest pains I've been having for the last week. They're quite uncomfortable and I'm not sure what's causing them. Do you think it could be related to my heart?",
+      time_sent: '10:00 AM'
+    },
+    {
+      message_id: 'msg-2',
+      chat_id: 'attempt-2',
+      student_sent: true,
+      message_content: "Yes it's possible, can you please tell me a little bit about your medical history?",
+      time_sent: '10:01 AM'
+    },
+    {
+      message_id: 'msg-3',
+      chat_id: 'attempt-2',
+      student_sent: false,
+      message_content: "I have a history of hypertension, which I've had for about 4 years now. I've also had a total abdominal hysterectomy, and I've been experiencing dyspnea, or shortness of breath, lately. Oh, and I've had a peptic ulcer in the past, which is why I've been taking over-the-counter non-steroidal anti-inflammatory drugs. Could any of these things be contributing to my chest pains?",
+      time_sent: '10:02 AM'
+    },
+    {
+      message_id: 'msg-4',
+      chat_id: 'attempt-2',
+      student_sent: true,
+      message_content: "What medications are you taking?",
+      time_sent: '10:03 AM'
+    },
+    {
+      message_id: 'msg-5',
+      chat_id: 'attempt-2',
+      student_sent: false,
+      message_content: "I'm not currently taking any prescription medications, but I do take ibuprofen (Advil) occasionally for headaches. I've also been taking NSAIDs regularly, which I know can irritate my stomach and make my peptic ulcer symptoms worse. I'm worried that maybe my medication use is related to my chest pains, but I'm not sure. Do you think that's possible?",
+      time_sent: '10:04 AM'
+    },
+    {
+      message_id: 'msg-6',
+      chat_id: 'attempt-2',
+      student_sent: true,
+      message_content: "Tell me more about how the pain feels",
+      time_sent: '10:05 AM'
+    }
+  ]
+};
 
     const data = await apiClient.request<any[]>(
       `instructor/groups?email=${encodeURIComponent(user.email)}`
@@ -346,14 +693,14 @@ async function createSimulationGroup(data: { name: string; description: string; 
  * These are available questions that can be added to simulation groups
  */
 const mockGlobalQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-global-1', title: 'Patient History Assessment', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-2', title: 'Medication Review', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-3', title: 'Communication Skills', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-4', title: 'Clinical Reasoning', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-5', title: 'Patient Education', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-6', title: 'Documentation Quality', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-7', title: 'Professionalism', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
-  { id: 'bank-global-8', title: 'Safety Considerations', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-1', title: 'Patient History Assessment', questionText: 'Ask the patient about their complete medical history, including past diagnoses, surgeries, and hospitalizations.', clinicalIntent: 'Evaluates the student\'s ability to systematically gather a comprehensive patient history to inform clinical decision-making.', evaluationCriteria: 'Student should attempt to identify:\n• Past medical conditions and diagnoses\n• Previous surgeries or hospitalizations\n• Relevant family history\n• Social history (smoking, alcohol, occupation)', isMandatory: true, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-2', title: 'Medication Review', questionText: 'Review the patient\'s current medications, including dosages, frequency, and adherence.', clinicalIntent: 'Assesses the student\'s ability to identify potential drug interactions, duplications, and adherence issues.', evaluationCriteria: 'Student should attempt to identify:\n• All current prescription medications\n• OTC medications and supplements\n• Dosage and frequency for each\n• Adherence patterns and barriers', isMandatory: true, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-3', title: 'Communication Skills', questionText: 'Demonstrate effective communication techniques including active listening, empathy, and clear explanations.', clinicalIntent: 'Evaluates the student\'s ability to build rapport and communicate effectively with patients from diverse backgrounds.', evaluationCriteria: 'Student should demonstrate:\n• Active listening and appropriate responses\n• Use of open-ended questions\n• Empathetic and non-judgmental tone\n• Clear, jargon-free explanations', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-4', title: 'Clinical Reasoning', questionText: 'Apply clinical reasoning to formulate a differential diagnosis based on the patient\'s presentation.', clinicalIntent: 'Assesses the student\'s ability to synthesize patient information and apply pharmacological knowledge to clinical scenarios.', evaluationCriteria: 'Student should demonstrate:\n• Systematic approach to problem identification\n• Consideration of multiple diagnoses\n• Evidence-based reasoning\n• Appropriate prioritization of concerns', isMandatory: true, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-5', title: 'Patient Education', questionText: 'Provide appropriate patient education about their condition, treatment options, and self-management strategies.', clinicalIntent: 'Evaluates the student\'s ability to educate patients in an understandable and actionable manner.', evaluationCriteria: 'Student should:\n• Explain the condition in lay terms\n• Discuss treatment options and rationale\n• Provide self-management strategies\n• Verify patient understanding (teach-back)', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-6', title: 'Documentation Quality', questionText: 'Ensure accurate and complete documentation of the patient encounter.', clinicalIntent: 'Assesses the student\'s ability to maintain thorough clinical records that support continuity of care.', evaluationCriteria: 'Student should document:\n• Chief complaint and HPI\n• Relevant findings from assessment\n• Clinical decisions and rationale\n• Follow-up plan and recommendations', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-7', title: 'Professionalism', questionText: 'Demonstrate professional behavior, including respect for patient autonomy, confidentiality, and ethical practice.', clinicalIntent: 'Evaluates the student\'s adherence to professional standards and ethical guidelines in patient interactions.', evaluationCriteria: 'Student should demonstrate:\n• Respect for patient autonomy and preferences\n• Maintenance of confidentiality\n• Professional demeanor and appearance\n• Ethical decision-making', isMandatory: false, isActive: true, usedBySimulationGroups: [] },
+  { id: 'bank-global-8', title: 'Safety Considerations', questionText: 'Identify and address potential safety concerns, including drug interactions, contraindications, and adverse effects.', clinicalIntent: 'Assesses the student\'s ability to prioritize patient safety and identify potential risks in the treatment plan.', evaluationCriteria: 'Student should identify:\n• Potential drug-drug interactions\n• Contraindications based on patient history\n• Common and serious adverse effects\n• Appropriate monitoring parameters', isMandatory: true, isActive: true, usedBySimulationGroups: [] },
 ];
 
 /**
@@ -361,14 +708,14 @@ const mockGlobalQuestionBank: QuestionBankItem[] = [
  * These are available questions that can be added to specific patients
  */
 const mockPatientSpecificQuestionBank: QuestionBankItem[] = [
-  { id: 'bank-patient-1', title: 'Pain Assessment Scale', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-2', title: 'Allergy Verification', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-3', title: 'Symptom Duration', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-4', title: 'Previous Treatment History', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-5', title: 'Lifestyle Factors', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-6', title: 'Family Medical History', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-7', title: 'Current Medications', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
-  { id: 'bank-patient-8', title: 'Treatment Goals', questionText: '', clinicalIntent: '', evaluationCriteria: '', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-1', title: 'Pain Assessment Scale', questionText: 'Use a validated pain assessment scale to evaluate the patient\'s current pain level, location, and quality.', clinicalIntent: 'Evaluates the student\'s ability to systematically assess pain using standardized tools.', evaluationCriteria: 'Student should assess:\n• Pain intensity (0-10 scale)\n• Pain location and radiation\n• Quality of pain (sharp, dull, burning)\n• Impact on daily activities', isMandatory: true, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-2', title: 'Allergy Verification', questionText: 'Verify the patient\'s allergy history, including drug allergies, food allergies, and environmental allergens.', clinicalIntent: 'Assesses the student\'s diligence in confirming allergy information to prevent adverse reactions.', evaluationCriteria: 'Student should verify:\n• Known drug allergies and reaction types\n• Food and environmental allergies\n• Severity of previous reactions\n• Cross-reactivity considerations', isMandatory: true, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-3', title: 'Symptom Duration', questionText: 'Determine the onset, duration, and progression of the patient\'s primary symptoms.', clinicalIntent: 'Evaluates the student\'s ability to establish a clear timeline for symptom development.', evaluationCriteria: 'Student should determine:\n• When symptoms first appeared\n• Whether symptoms are acute or chronic\n• Progression pattern over time\n• Any triggering or precipitating events', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-4', title: 'Previous Treatment History', questionText: 'Inquire about previous treatments tried for the current condition, including their effectiveness.', clinicalIntent: 'Assesses the student\'s ability to gather treatment history to avoid repeating ineffective therapies.', evaluationCriteria: 'Student should identify:\n• Previous medications tried and outcomes\n• Non-pharmacological treatments attempted\n• Reasons for discontinuation\n• Patient preferences and concerns', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-5', title: 'Lifestyle Factors', questionText: 'Assess relevant lifestyle factors including diet, exercise, sleep patterns, and stress levels.', clinicalIntent: 'Evaluates the student\'s ability to identify modifiable lifestyle factors that impact the patient\'s condition.', evaluationCriteria: 'Student should assess:\n• Dietary habits and nutritional status\n• Physical activity level\n• Sleep quality and patterns\n• Stress and coping mechanisms', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-6', title: 'Family Medical History', questionText: 'Gather a comprehensive family medical history to identify hereditary risk factors.', clinicalIntent: 'Assesses the student\'s ability to identify genetic and familial predispositions relevant to the patient\'s care.', evaluationCriteria: 'Student should identify:\n• First-degree relatives with relevant conditions\n• Age of onset for family conditions\n• Hereditary patterns or genetic conditions\n• Impact on patient\'s risk profile', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-7', title: 'Current Medications', questionText: 'Review all current medications including prescription, OTC, herbal supplements, and vitamins.', clinicalIntent: 'Evaluates the student\'s thoroughness in identifying all substances the patient is currently taking.', evaluationCriteria: 'Student should identify:\n• All prescription medications with doses\n• OTC medications used regularly\n• Herbal supplements and vitamins\n• Recreational substance use if applicable', isMandatory: true, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
+  { id: 'bank-patient-8', title: 'Treatment Goals', questionText: 'Discuss and establish shared treatment goals with the patient based on their values and preferences.', clinicalIntent: 'Assesses the student\'s ability to practice patient-centered care by incorporating patient preferences into the treatment plan.', evaluationCriteria: 'Student should:\n• Explore patient expectations and goals\n• Discuss realistic treatment outcomes\n• Align treatment plan with patient values\n• Establish measurable treatment endpoints', isMandatory: false, isActive: true, usedBySimulationGroups: [], usedByPatients: [] },
 ];
 
 // Mock data structures for questions
@@ -422,10 +769,13 @@ async function getSimulationGroup(id: string): Promise<InstructorSimulationGroup
  * @param simulationGroupId - Simulation group ID
  * @returns OrganizationLabels object with all label variations
  */
-function getOrganizationLabels(_simulationGroupId: string): OrganizationLabels {
-  // TODO: Implement with real organization data
-  const aiPersona = 'Patient';
-  const userRole = 'Doctor';
+function getOrganizationLabels(simulationGroupId: string): OrganizationLabels {
+  const simulationGroup = getSimulationGroup(simulationGroupId);
+  const organizations = mockAdminDataService.getOrganizations();
+  const organization = organizations.find((org) => org.id === simulationGroup?.organization_id);
+  
+  const aiPersona = organization?.ai_persona || 'Patient';
+  const userRole = organization?.user_role || 'Doctor';
   
   return {
     aiPersona,
@@ -477,36 +827,95 @@ function getMessageCountData(_patientId: string): MessageCountData[] {
 }
 
 /**
+ * Get key question analytics data for charts
+ * Returns mock data showing how many students answered each key question
+ * 
+ * @param simulationGroupId - Simulation group ID
+ * @returns Array of key question analytics
+ */
+function getKeyQuestionAnalytics(simulationGroupId: string): KeyQuestionAnalytics[] {
+  const rubricQuestions = getGlobalRubricQuestions(simulationGroupId);
+  const students = getStudents(simulationGroupId);
+  const totalStudents = students.length;
+  
+  return rubricQuestions.map((q, index) => ({
+    questionTitle: q.title.length > 30 ? q.title.substring(0, 27) + '...' : q.title,
+    studentsAnswered: Math.max(1, Math.floor(totalStudents * (0.4 + Math.sin(index * 1.7) * 0.3 + Math.cos(index * 0.9) * 0.2)))
+  }));
+}
+
+/**
+ * Get average quality score per key question (mock data)
+ * 
+ * @param simulationGroupId - Simulation group ID
+ * @returns Array of question performance scores
+ */
+function getQuestionPerformanceScores(simulationGroupId: string): QuestionPerformanceScore[] {
+  const rubricQuestions = getGlobalRubricQuestions(simulationGroupId);
+  const students = getStudents(simulationGroupId);
+  const totalStudents = students.length;
+  
+  return rubricQuestions.map((q, index) => {
+    // Deterministic mock scores between 40–95
+    const baseScore = 55 + Math.sin(index * 2.3) * 20 + Math.cos(index * 1.1) * 15;
+    const score = Math.round(Math.min(95, Math.max(40, baseScore)));
+    const responses = Math.max(2, Math.floor(totalStudents * (0.5 + Math.sin(index * 1.5) * 0.3)));
+    return {
+      questionTitle: q.title.length > 30 ? q.title.substring(0, 27) + '...' : q.title,
+      averageScore: score,
+      totalResponses: responses
+    };
+  });
+}
+
+/**
+ * Get score distribution as a histogram (mock data)
+ * Returns buckets: 0-20, 21-40, 41-60, 61-80, 81-100
+ * 
+ * @param simulationGroupId - Simulation group ID
+ * @param patientId - Patient ID
+ * @returns Array of score distribution buckets
+ */
+function getScoreDistribution(patientId: string): ScoreDistributionBucket[] {
+  // Deterministic mock distribution that varies by patient
+  const seed = patientId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  
+  const buckets = [
+    { range: '0–20', base: 1 },
+    { range: '21–40', base: 3 },
+    { range: '41–60', base: 7 },
+    { range: '61–80', base: 9 },
+    { range: '81–100', base: 5 },
+  ];
+  
+  return buckets.map((b, i) => ({
+    range: b.range,
+    count: Math.max(0, b.base + Math.floor(Math.sin(seed + i * 2.1) * 4))
+  }));
+}
+
+/**
  * Generate a new access code for a simulation group
  * 
  * @param simulationGroupId - Simulation group ID
  * @returns New access code
  */
-async function generateAccessCode(simulationGroupId: string): Promise<string> {
-  try {
-    const user = await authService.getCurrentUser();
-    if (!user?.email) throw new Error('Not authenticated');
-
-    const data = await apiClient.request<{ access_code: string }>(
-      `instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulationGroupId)}&instructor_email=${encodeURIComponent(user.email)}`,
-      { method: 'POST' }
-    );
-
-    return data.access_code;
-  } catch (error) {
-    console.error('Failed to generate access code:', error);
-    // Fallback to mock implementation
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const segments = 4;
-    const segmentLength = 4;
-    
-    const code = Array.from({ length: segments }, () => {
-      return Array.from({ length: segmentLength }, () => 
-        chars.charAt(Math.floor(Math.random() * chars.length))
-      ).join('');
-    }).join('-');
-    
-    return code;
+function generateAccessCode(simulationGroupId: string): string {
+  // Mock implementation - generates random code
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const segments = 4;
+  const segmentLength = 4;
+  
+  const code = Array.from({ length: segments }, () => {
+    return Array.from({ length: segmentLength }, () => 
+      chars.charAt(Math.floor(Math.random() * chars.length))
+    ).join('');
+  }).join('-');
+  
+  // Update the mock data
+  const group = mockInstructorSimulationGroups.find(g => g.id === simulationGroupId);
+  if (group) {
+    group.access_code = code;
   }
 }
 
@@ -1162,7 +1571,10 @@ export const instructorService: InstructorDataService = {
   updatePatientCaseSpecificQuestions,
   getSimulationGroupsUsingQuestion,
   getPatientsUsingQuestion,
-  isQuestionInUse
+  isQuestionInUse,
+  getKeyQuestionAnalytics,
+  getQuestionPerformanceScores,
+  getScoreDistribution
 };
 
 // Keep backward-compatible export
