@@ -154,7 +154,6 @@ exports.handler = async (event) => {
         if (
           event.queryStringParameters != null &&
           event.queryStringParameters.group_name &&
-          event.queryStringParameters.group_access_code &&
           event.queryStringParameters.group_description &&
           event.queryStringParameters.group_student_access &&
           event.body
@@ -163,7 +162,6 @@ exports.handler = async (event) => {
             console.log("simulation group creation start");
             const {
               group_name,
-              group_access_code,
               group_description,
               group_student_access,
               empathy_enabled,
@@ -172,6 +170,13 @@ exports.handler = async (event) => {
             } = event.queryStringParameters;
 
             const { system_prompt } = JSON.parse(event.body);
+
+            // Auto-generate access code server-side (XXXX-XXXX format)
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            let group_access_code = "";
+            for (let i = 0; i < 4; i++) group_access_code += chars.charAt(Math.floor(Math.random() * chars.length));
+            group_access_code += "-";
+            for (let i = 0; i < 4; i++) group_access_code += chars.charAt(Math.floor(Math.random() * chars.length));
 
             // Insert new simulation group into simulation_groups table
             const newSimulationGroup = await sqlConnectionTableCreator`

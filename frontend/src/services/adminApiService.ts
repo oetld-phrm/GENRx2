@@ -187,7 +187,6 @@ export async function removeInstructorFromGroup(
 export async function createSimulationGroup(params: {
   group_name: string;
   group_description: string;
-  group_access_code: string;
   group_student_access: boolean;
   system_prompt: string;
   empathy_enabled?: boolean;
@@ -196,7 +195,6 @@ export async function createSimulationGroup(params: {
 }): Promise<AdminSimulationGroup> {
   const queryParams = new URLSearchParams({
     group_name: params.group_name,
-    group_access_code: params.group_access_code,
     group_description: params.group_description,
     group_student_access: String(params.group_student_access),
     ...(params.empathy_enabled !== undefined && { empathy_enabled: String(params.empathy_enabled) }),
