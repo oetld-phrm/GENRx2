@@ -2,7 +2,7 @@ const { initializeConnection } = require("./libadmin.js");
 
 let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT } = process.env;
 
-// SQL conneciton from global variable at libadmin.js
+// SQL connection from global variable at libadmin.js
 let sqlConnectionTableCreator = global.sqlConnectionTableCreator;
 
 exports.handler = async (event) => {
@@ -825,6 +825,226 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "Internal server error" });
         }
         break;
+      // ================================================================
+      // QUESTION BANK CRUD
+      // ================================================================
+      case "GET /admin/question_bank":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.organization_id
+        ) {
+          try {
+            const { organization_id } = event.queryStringParameters;
+
+            const questions = await sqlConnectionTableCreator`
+              SELECT *
+              FROM "question_bank"
+              WHERE organization_id = ${organization_id}
+              ORDER BY created_at DESC;
+            `;
+
+            response.body = JSON.stringify(questions);
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "organization_id is required",
+          });
+        }
+        break;
+
+      case "POST /admin/question_bank":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.organization_id &&
+          event.queryStringParameters.created_by &&
+          event.body
+        ) {
+          try {
+            const { organization_id, created_by } =
+              event.queryStringParameters;
+            const {
+              title,
+              question_text,
+              evaluation_criteria,
+              category,
+              tags,
+              difficulty_level,
+              is_mandatory,
+              weight,
+              max_score,
+              is_active,
+            } = JSON.parse(event.body);
+
+            if (!title || !question_text) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({
+                error: "title and question_text are required",
+              });
+              break;
+            }
+
+            const newQuestion = await sqlConnectionTableCreator`
+              INSERT INTO "question_bank" (
+                question_id,
+                organization_id,
+                created_by,
+                title,
+                question_text,
+                evaluation_criteria,
+                category,
+                tags,
+                difficulty_level,
+                is_mandatory,
+                weight,
+                max_score,
+                is_active,
+                created_at
+              )
+              VALUES (
+                uuid_generate_v4(),
+                ${organization_id},
+                ${created_by},
+                ${title},
+                ${question_text},
+                ${evaluation_criteria || null},
+                ${category || null},
+                ${tags || []},
+                ${difficulty_level || null},
+                ${is_mandatory != null ? is_mandatory : false},
+                ${weight != null ? weight : 1.0},
+                ${max_score != null ? max_score : 10},
+                ${is_active != null ? is_active : true},
+                CURRENT_TIMESTAMP
+              )
+              RETURNING *;
+            `;
+
+            response.statusCode = 201;
+            response.body = JSON.stringify(newQuestion[0]);
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error:
+              "organization_id, created_by, and request body are required",
+          });
+        }
+        break;
+
+      case "PUT /admin/question_bank":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.question_id &&
+          event.body
+        ) {
+          try {
+            const { question_id } = event.queryStringParameters;
+            const {
+              title,
+              question_text,
+              evaluation_criteria,
+              category,
+              tags,
+              difficulty_level,
+              is_mandatory,
+              weight,
+              max_score,
+              is_active,
+            } = JSON.parse(event.body);
+
+            // Build SET clause dynamically so only provided fields are updated
+            const updates = {};
+            if (title !== undefined) updates.title = title;
+            if (question_text !== undefined) updates.question_text = question_text;
+            if (evaluation_criteria !== undefined) updates.evaluation_criteria = evaluation_criteria;
+            if (category !== undefined) updates.category = category;
+            if (tags !== undefined) updates.tags = tags;
+            if (difficulty_level !== undefined) updates.difficulty_level = difficulty_level;
+            if (is_mandatory !== undefined) updates.is_mandatory = is_mandatory;
+            if (weight !== undefined) updates.weight = weight;
+            if (max_score !== undefined) updates.max_score = max_score;
+            if (is_active !== undefined) updates.is_active = is_active;
+
+            if (Object.keys(updates).length === 0) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({
+                error: "At least one field to update is required",
+              });
+              break;
+            }
+
+            const updated = await sqlConnectionTableCreator`
+              UPDATE "question_bank"
+              SET ${sqlConnectionTableCreator(updates)}
+              WHERE question_id = ${question_id}
+              RETURNING *;
+            `;
+
+            if (updated.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Question not found" });
+            } else {
+              response.body = JSON.stringify(updated[0]);
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "question_id and request body are required",
+          });
+        }
+        break;
+
+      case "DELETE /admin/question_bank":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.question_id
+        ) {
+          try {
+            const { question_id } = event.queryStringParameters;
+
+            // CASCADE on FK will handle simulation_group_questions and question_interactions
+            const deleted = await sqlConnectionTableCreator`
+              DELETE FROM "question_bank"
+              WHERE question_id = ${question_id}
+              RETURNING question_id;
+            `;
+
+            if (deleted.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Question not found" });
+            } else {
+              response.body = JSON.stringify({
+                message: "Question deleted successfully",
+                question_id: deleted[0].question_id,
+              });
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "question_id is required",
+          });
+        }
+        break;
+
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }
