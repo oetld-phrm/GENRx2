@@ -93,7 +93,6 @@ function AdminOrganizationPage() {
       const created = await adminApi.createSimulationGroup({
         group_name: data.name,
         group_description: data.description,
-        group_access_code: Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
         group_student_access: data.active,
         system_prompt: data.systemPrompt || '',
         instructor_voice_enabled: data.enableVoice,
