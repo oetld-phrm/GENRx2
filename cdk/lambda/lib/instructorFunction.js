@@ -1479,6 +1479,284 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify({ error: "instructor_email query parameter and request body are required" });
         }
         break;
+      case "GET /instructor/question_bank":
+        try {
+          const data = await sqlConnection`
+            SELECT * FROM "question_bank" ORDER BY created_at DESC;
+          `;
+          response.statusCode = 200;
+          response.body = JSON.stringify(data);
+        } catch (err) {
+          response.statusCode = 500;
+          console.error(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "GET /instructor/simulation_group_questions":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          const { simulation_group_id } = event.queryStringParameters;
+          const persona_id = event.queryStringParameters.persona_id || null;
+
+          try {
+            let data;
+            if (persona_id) {
+              data = await sqlConnection`
+                SELECT sgq.*, qb.question_text, qb.category
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND sgq.persona_id = ${persona_id}
+                ORDER BY sgq."order" ASC;
+              `;
+            } else {
+              data = await sqlConnection`
+                SELECT sgq.*, qb.question_text, qb.category
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                ORDER BY sgq."order" ASC;
+              `;
+            }
+            response.statusCode = 200;
+            response.body = JSON.stringify(data);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "simulation_group_id is required",
+          });
+        }
+        break;
+      case "POST /instructor/simulation_group_questions":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id &&
+          event.queryStringParameters.question_id &&
+          event.queryStringParameters.persona_id
+        ) {
+          const { simulation_group_id, question_id, persona_id } =
+            event.queryStringParameters;
+          const body = event.body ? JSON.parse(event.body) : {};
+          const weight_override = body.weight_override ?? null;
+          const max_score_override = body.max_score_override ?? null;
+          const order = body.order ?? null;
+
+          try {
+            // Resolve the instructor's user_id for added_by
+            const userResult = await sqlConnection`
+              SELECT user_id FROM "users" WHERE user_email = ${userEmailAttribute} LIMIT 1;
+            `;
+            const addedBy = userResult.length > 0 ? userResult[0].user_id : null;
+
+            const data = await sqlConnection`
+              INSERT INTO "simulation_group_questions" (
+                group_question_id,
+                simulation_group_id,
+                question_id,
+                persona_id,
+                weight_override,
+                max_score_override,
+                "order",
+                added_by,
+                added_at
+              )
+              VALUES (
+                uuid_generate_v4(),
+                ${simulation_group_id},
+                ${question_id},
+                ${persona_id},
+                ${weight_override},
+                ${max_score_override},
+                ${order},
+                ${addedBy},
+                CURRENT_TIMESTAMP
+              )
+              RETURNING *;
+            `;
+            response.statusCode = 201;
+            response.body = JSON.stringify(data[0]);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error:
+              "simulation_group_id, question_id, and persona_id are required",
+          });
+        }
+        break;
+      case "DELETE /instructor/simulation_group_questions":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.group_question_id
+        ) {
+          const { group_question_id } =
+            event.queryStringParameters;
+
+          try {
+            // Check if this is a global (persona_id IS NULL) assignment
+            const existing = await sqlConnection`
+              SELECT persona_id FROM "simulation_group_questions"
+              WHERE group_question_id = ${group_question_id};
+            `;
+
+            if (existing.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({
+                error: "Assignment not found",
+              });
+              break;
+            }
+
+            if (existing[0].persona_id === null) {
+              response.statusCode = 403;
+              response.body = JSON.stringify({
+                error: "Cannot delete a global question assignment. Only patient-specific assignments can be removed by instructors.",
+              });
+              break;
+            }
+
+            await sqlConnection`
+              DELETE FROM "simulation_group_questions"
+              WHERE group_question_id = ${group_question_id};
+            `;
+
+            response.statusCode = 200;
+            response.body = JSON.stringify({
+              message: "Question unassigned successfully",
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "group_question_id is required",
+          });
+        }
+        break;
+      case "PUT /instructor/simulation_group_questions":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.group_question_id
+        ) {
+          const { group_question_id } =
+            event.queryStringParameters;
+          const body = event.body ? JSON.parse(event.body) : {};
+
+          try {
+            // Check if this is a global (persona_id IS NULL) assignment
+            const existing = await sqlConnection`
+              SELECT persona_id FROM "simulation_group_questions"
+              WHERE group_question_id = ${group_question_id};
+            `;
+
+            if (existing.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({
+                error: "Assignment not found",
+              });
+              break;
+            }
+
+            if (existing[0].persona_id === null) {
+              response.statusCode = 403;
+              response.body = JSON.stringify({
+                error: "Cannot modify a global question assignment. Only patient-specific assignments can be updated by instructors.",
+              });
+              break;
+            }
+
+            const data = await sqlConnection`
+              UPDATE "simulation_group_questions"
+              SET
+                weight_override = COALESCE(${body.weight_override ?? null}, weight_override),
+                max_score_override = COALESCE(${body.max_score_override ?? null}, max_score_override),
+                "order" = COALESCE(${body.order ?? null}, "order")
+              WHERE group_question_id = ${group_question_id}
+              RETURNING *;
+            `;
+
+            response.statusCode = 200;
+            response.body = JSON.stringify(data[0]);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "group_question_id is required",
+          });
+        }
+        break;
+      case "GET /instructor/question_interactions":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          const { simulation_group_id } = event.queryStringParameters;
+          const persona_id = event.queryStringParameters.persona_id || null;
+          const student_email = event.queryStringParameters.student_email || null;
+
+          try {
+            let data;
+            if (persona_id && student_email) {
+              data = await sqlConnection`
+                SELECT qi.*
+                FROM "question_interactions" qi
+                JOIN "debriefs" d ON qi.debrief_id = d.debrief_id
+                JOIN "users" u ON d.student_id = u.user_id
+                WHERE d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                  AND u.user_email = ${student_email}
+                ORDER BY qi.created_at DESC;
+              `;
+            } else if (persona_id) {
+              data = await sqlConnection`
+                SELECT qi.*
+                FROM "question_interactions" qi
+                JOIN "debriefs" d ON qi.debrief_id = d.debrief_id
+                WHERE d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                ORDER BY qi.created_at DESC;
+              `;
+            } else {
+              data = await sqlConnection`
+                SELECT qi.*
+                FROM "question_interactions" qi
+                JOIN "debriefs" d ON qi.debrief_id = d.debrief_id
+                WHERE d.simulation_group_id = ${simulation_group_id}
+                ORDER BY qi.created_at DESC;
+              `;
+            }
+            response.statusCode = 200;
+            response.body = JSON.stringify(data);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "simulation_group_id is required",
+          });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

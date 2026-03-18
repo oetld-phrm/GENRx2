@@ -959,7 +959,7 @@ exports.handler = async (event, context) => {
             // Update the session name
             const updateResult = await sqlConnection`
                 UPDATE "chats"
-                SET session_name = ${session_name}
+                SET chat_name = ${session_name}
                 WHERE chat_id = ${session_id}
                 RETURNING *;
               `;

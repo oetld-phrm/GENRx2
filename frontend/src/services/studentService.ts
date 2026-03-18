@@ -8,6 +8,7 @@
 import { getSimulationGroupColor } from '@/lib/colors';
 import { apiClient } from '@/lib/api-client';
 import { authService } from '@/lib/auth';
+import { subscribeToTextStream, type TextStreamEvent } from '@/lib/appsync-client';
 
 /**
  * Represents a medical simulation group that students can join
@@ -48,9 +49,9 @@ export interface Patient {
  * Represents a chat session
  */
 export interface Session {
-  session_id: string;
+  chat_id: string;
   student_interaction_id: string;
-  session_name: string;
+  chat_name: string;
   last_accessed: string;
   notes?: string;
 }
@@ -389,24 +390,156 @@ const mockChatHistoryMessages: StudentChatMessage[] = [
 const mockSavedNote = 'Patient reports chest pain with pressure-like sensation. Need to check ECG results and vital signs. Considering cardiac workup.';
 
 /**
- * Get case materials for student views
+ * Get case materials for student views (sync mock fallback)
  */
 function getCaseMaterials(): StudentCaseMaterial[] {
   return mockCaseMaterials;
 }
 
 /**
- * Get patient files
+ * Get patient files (sync mock fallback)
  */
 function getPatientFiles(): PatientFile[] {
   return mockPatientFiles;
 }
 
 /**
- * Get patient detail by ID
+ * Get patient detail by ID (sync mock fallback)
  */
 function getPatientDetail(patientId: string | undefined): PatientDetail {
   return getMockPatientDetail(patientId);
+}
+
+/**
+ * Fetch patient detail from the API.
+ * Uses /student/simulation_group_page to get persona data, then picks the matching patient.
+ */
+async function fetchPatientDetail(simulationGroupId: string, patientId: string): Promise<PatientDetail> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // First try to get files to obtain profile picture
+    let profilePictureUrl: string | undefined;
+    try {
+      const filesData = await apiClient.request<{
+        profile_picture_url?: string | null;
+      }>(
+        `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+      );
+      profilePictureUrl = filesData.profile_picture_url ?? undefined;
+    } catch {
+      // Profile picture is optional
+    }
+
+    const data = await apiClient.request<Array<{
+      persona_id: string;
+      persona_name: string;
+      persona_age: number;
+      persona_gender: string;
+    }>>(
+      `/student/simulation_group_page?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    );
+
+    const persona = data.find(p => p.persona_id === patientId);
+    if (persona) {
+      return {
+        id: patientId,
+        name: persona.persona_name,
+        age: persona.persona_age,
+        gender: persona.persona_gender,
+        imageUrl: profilePictureUrl,
+        avatarUrl: profilePictureUrl,
+      };
+    }
+  } catch (error) {
+    console.error('Failed to fetch patient detail, using mock data:', error);
+  }
+  return getMockPatientDetail(patientId);
+}
+
+/**
+ * Response shape from /student/get_all_files
+ */
+interface GetAllFilesResponse {
+  document_files: Record<string, { url: string; metadata: string | null }>;
+  info_files: Record<string, { url: string; metadata: string | null }>;
+  answer_key_files: Record<string, { url: string; metadata: string | null }>;
+  profile_picture_url: string | null;
+}
+
+/**
+ * Fetch patient files from the API via /student/get_all_files.
+ * Maps document_files + info_files into PatientFile[].
+ */
+async function fetchPatientFiles(simulationGroupId: string, patientId: string): Promise<PatientFile[]> {
+  try {
+    const data = await apiClient.request<GetAllFilesResponse>(
+      `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+    );
+
+    const files: PatientFile[] = [];
+    let idx = 1;
+
+    for (const [filename, info] of Object.entries(data.document_files ?? {})) {
+      files.push({ id: String(idx++), filename, description: info.metadata ?? 'No description available' });
+    }
+    for (const [filename, info] of Object.entries(data.info_files ?? {})) {
+      files.push({ id: String(idx++), filename, description: info.metadata ?? 'No description available' });
+    }
+
+    return files.length > 0 ? files : mockPatientFiles;
+  } catch (error) {
+    console.error('Failed to fetch patient files, using mock data:', error);
+    return mockPatientFiles;
+  }
+}
+
+/**
+ * Fetch case materials from the API via /student/get_all_files.
+ * Maps the different file categories into StudentCaseMaterial[].
+ */
+async function fetchCaseMaterials(simulationGroupId: string, patientId: string): Promise<StudentCaseMaterial[]> {
+  try {
+    const data = await apiClient.request<GetAllFilesResponse>(
+      `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+    );
+
+    const materials: StudentCaseMaterial[] = [];
+    let idx = 1;
+
+    const inferType = (filename: string): StudentCaseMaterial['type'] => {
+      const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) return 'image';
+      if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return 'video';
+      if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) return 'audio';
+      return 'document';
+    };
+
+    for (const [filename, info] of Object.entries(data.document_files ?? {})) {
+      materials.push({
+        id: String(idx++),
+        title: filename,
+        description: info.metadata ?? '',
+        type: inferType(filename),
+        group: 'Documents',
+      });
+    }
+    for (const [filename, info] of Object.entries(data.info_files ?? {})) {
+      materials.push({
+        id: String(idx++),
+        title: filename,
+        description: info.metadata ?? '',
+        type: inferType(filename),
+        group: 'Patient Information',
+      });
+    }
+
+    return materials.length > 0 ? materials : mockCaseMaterials;
+  } catch (error) {
+    console.error('Failed to fetch case materials, using mock data:', error);
+    return mockCaseMaterials;
+  }
 }
 
 /**
@@ -514,7 +647,7 @@ async function joinGroup(accessCode: string): Promise<{ success: boolean }> {
     if (!user) throw new Error('Not authenticated');
 
     await apiClient.request(
-      `/student/join_group?email=${encodeURIComponent(user.email)}&access_code=${encodeURIComponent(accessCode)}`,
+      `/student/enroll_student?student_email=${encodeURIComponent(user.email)}&group_access_code=${encodeURIComponent(accessCode)}`,
       { method: 'POST' }
     );
     return { success: true };
@@ -545,6 +678,90 @@ async function createSession(simulationGroupId: string, patientId: string, sessi
 }
 
 /**
+ * Send a message and get the AI response via text generation
+ */
+async function sendMessage(
+  simulationGroupId: string,
+  patientId: string,
+  sessionId: string,
+  messageContent: string
+): Promise<{ llm_output: string; session_name?: string }> {
+  const result = await apiClient.request<{ llm_output: string; session_name?: string }>(
+    `/student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: 'POST',
+      body: { message_content: messageContent },
+    }
+  );
+  return result;
+}
+
+/**
+ * Send a message with real-time streaming via AppSync subscription.
+ *
+ * 1. Subscribes to onTextStream(sessionId) to receive chunks
+ * 2. Fires the REST POST with stream=true to trigger backend generation
+ * 3. Calls onChunk for each text chunk, onDone when complete
+ *
+ * Returns a cancel function to tear down the subscription early.
+ */
+async function sendMessageStreaming(
+  simulationGroupId: string,
+  patientId: string,
+  sessionId: string,
+  messageContent: string,
+  callbacks: {
+    onChunk: (text: string) => void;
+    onDone: (fullText: string) => void;
+    onError: (error: Error) => void;
+  },
+): Promise<() => void> {
+  let unsubscribe: (() => void) | null = null;
+
+  try {
+    // Step 1: subscribe before triggering generation
+    unsubscribe = await subscribeToTextStream(sessionId, (event: TextStreamEvent) => {
+      switch (event.type) {
+        case 'chunk':
+          callbacks.onChunk(event.content);
+          break;
+        case 'end':
+          callbacks.onDone(event.content);
+          // Clean up subscription after completion
+          if (unsubscribe) unsubscribe();
+          break;
+        case 'error':
+          callbacks.onError(new Error(event.content));
+          if (unsubscribe) unsubscribe();
+          break;
+        // 'start' and 'empathy' are informational — ignore for now
+      }
+    });
+
+    // Step 2: fire the REST call with stream=true to kick off generation
+    apiClient.request(
+      `/student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}&stream=true`,
+      {
+        method: 'POST',
+        body: { message_content: messageContent },
+      },
+    ).catch((err) => {
+      callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+      if (unsubscribe) unsubscribe();
+    });
+
+    return () => { if (unsubscribe) unsubscribe(); };
+  } catch (err) {
+    // Subscription setup failed — fall back to non-streaming
+    console.warn('Streaming subscription failed, falling back to non-streaming:', err);
+    sendMessage(simulationGroupId, patientId, sessionId, messageContent)
+      .then((res) => callbacks.onDone(res.llm_output))
+      .catch((e) => callbacks.onError(e instanceof Error ? e : new Error(String(e))));
+    return () => {};
+  }
+}
+
+/**
  * Student service — public API used by pages
  */
 export const studentService = {
@@ -553,9 +770,14 @@ export const studentService = {
   getPatients,
   joinGroup,
   createSession,
+  sendMessage,
+  sendMessageStreaming,
   getPatientDetail,
   getChatHistory,
   getKeyQuestionsCoverageData,
+  fetchPatientDetail,
+  fetchPatientFiles,
+  fetchCaseMaterials,
 };
 
 /**

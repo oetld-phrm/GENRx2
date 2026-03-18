@@ -274,7 +274,8 @@ export interface InstructorDataService {
   getPatient: (patientId: string) => ManageablePatient | undefined;
   createPatient: (simulationGroupId: string, patientData: PatientCreateData) => Promise<void>;
   updatePatient: (simulationGroupId: string, patientData: PatientUpdateData) => Promise<void>;
-  uploadPatientPhoto: (patientId: string, photoFile: File) => Promise<string>;
+  uploadPatientPhoto: (simulationGroupId: string, patientId: string, photoFile: File) => Promise<string>;
+  uploadPatientFile: (simulationGroupId: string, patientId: string, file: File, folderType: 'documents' | 'info' | 'answer_key') => Promise<void>;
   updatePatientLLMEvaluation: (patientId: string, enabled: boolean) => Promise<void>;
   deletePatient: (patientId: string) => Promise<void>;
   getGlobalRubricQuestions: (simulationGroupId: string) => GlobalRubricQuestion[];
@@ -883,18 +884,12 @@ function getScoreDistribution(_simulationGroupId: string, patientId: string): Sc
  *
  * FIX: Changed to async to match InstructorDataService interface (Promise<string>).
  */
-async function generateAccessCode(_simulationGroupId: string): Promise<string> {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const segments = 4;
-  const segmentLength = 4;
-
-  const code = Array.from({ length: segments }, () => {
-    return Array.from({ length: segmentLength }, () =>
-      chars.charAt(Math.floor(Math.random() * chars.length))
-    ).join('');
-  }).join('-');
-
-  return code;
+async function generateAccessCode(simulationGroupId: string): Promise<string> {
+  const result = await apiClient.request<{ access_code: string }>(
+    `instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulationGroupId)}`,
+    { method: 'PUT' }
+  );
+  return result.access_code;
 }
 
 /**
@@ -1005,13 +1000,13 @@ async function updatePatient(simulationGroupId: string, patientData: PatientUpda
     });
 
     if (patientData.llm_upload_file) {
-      console.log('LLM Upload file:', patientData.llm_upload_file.name);
+      await uploadFileToS3(simulationGroupId, patientData.patient_id, patientData.llm_upload_file, 'documents');
     }
     if (patientData.patient_info_file) {
-      console.log('Patient Info file:', patientData.patient_info_file.name);
+      await uploadFileToS3(simulationGroupId, patientData.patient_id, patientData.patient_info_file, 'info');
     }
     if (patientData.answer_key_file) {
-      console.log('Answer Key file:', patientData.answer_key_file.name);
+      await uploadFileToS3(simulationGroupId, patientData.patient_id, patientData.answer_key_file, 'answer_key');
     }
   } catch (error) {
     console.error('Failed to update patient:', error);
@@ -1020,16 +1015,56 @@ async function updatePatient(simulationGroupId: string, patientData: PatientUpda
 }
 
 /**
+ * Get a presigned URL and upload a file to S3
+ */
+async function uploadFileToS3(
+  simulationGroupId: string,
+  patientId: string,
+  file: File,
+  folderType: 'documents' | 'info' | 'answer_key' | 'profile_picture'
+): Promise<void> {
+  const lastDot = file.name.lastIndexOf('.');
+  const fileName = lastDot > 0 ? file.name.substring(0, lastDot) : file.name;
+  const fileType = lastDot > 0 ? file.name.substring(lastDot + 1).toLowerCase() : '';
+
+  const queryParams = new URLSearchParams({
+    simulation_group_id: simulationGroupId,
+    patient_id: patientId,
+    patient_name: patientId,
+    file_name: fileName,
+    file_type: fileType,
+    folder_type: folderType,
+  });
+
+  const data = await apiClient.request<{ presignedurl: string }>(
+    `instructor/generate_presigned_url?${queryParams.toString()}`
+  );
+
+  await fetch(data.presignedurl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+}
+
+/**
+ * Upload a patient file (document, info, or answer key) to S3
+ */
+async function uploadPatientFile(
+  simulationGroupId: string,
+  patientId: string,
+  file: File,
+  folderType: 'documents' | 'info' | 'answer_key'
+): Promise<void> {
+  await uploadFileToS3(simulationGroupId, patientId, file, folderType);
+}
+
+/**
  * Upload patient photo
  */
-async function uploadPatientPhoto(_patientId: string, photoFile: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      resolve(reader.result as string);
-    };
-    reader.readAsDataURL(photoFile);
-  });
+async function uploadPatientPhoto(simulationGroupId: string, patientId: string, photoFile: File): Promise<string> {
+  await uploadFileToS3(simulationGroupId, patientId, photoFile, 'profile_picture');
+  return '';
 }
 
 /**
@@ -1390,6 +1425,7 @@ export const instructorService: InstructorDataService = {
   createPatient,
   updatePatient,
   uploadPatientPhoto,
+  uploadPatientFile,
   updatePatientLLMEvaluation,
   deletePatient,
   getGlobalRubricQuestions,
