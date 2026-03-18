@@ -347,13 +347,14 @@ function InstructorSimulationGroupPage() {
   const handleSavePatientChanges = async () => {
     if (selectedPatientForEdit && groupId) {
       if (selectedPatientForEdit === 'new') {
-        // Create new patient
-        instructorService.createPatient(groupId, {
+        // Create new patient and get the real persona_id
+        const newPersonaId = await instructorService.createPatient(groupId, {
           patient_name: editPatientName,
           patient_age: parseInt(editPatientAge) || 0,
           patient_gender: editPatientGender,
           patient_prompt: editPatientPrompt,
         });
+        setSelectedPatientForEdit(newPersonaId);
       } else {
         // Update existing patient
         instructorService.updatePatient(groupId, {
@@ -367,6 +368,44 @@ function InstructorSimulationGroupPage() {
       setManageablePatients(await instructorService.getManageablePatients(groupId));
       handleBackFromEditPatient();
     }
+  };
+
+  /**
+   * Auto-save a new patient before allowing file uploads or other tabs.
+   * Returns the real persona_id, or null if save failed.
+   */
+  const autoSaveNewPatient = async (): Promise<string | null> => {
+    if (selectedPatientForEdit !== 'new' || !groupId) return selectedPatientForEdit;
+    if (!editPatientName.trim()) {
+      alert('Please enter a patient name before proceeding.');
+      return null;
+    }
+    try {
+      const newPersonaId = await instructorService.createPatient(groupId, {
+        patient_name: editPatientName,
+        patient_age: parseInt(editPatientAge) || 0,
+        patient_gender: editPatientGender,
+        patient_prompt: editPatientPrompt,
+      });
+      setSelectedPatientForEdit(newPersonaId);
+      setManageablePatients(await instructorService.getManageablePatients(groupId));
+      return newPersonaId;
+    } catch (error) {
+      console.error('Failed to auto-save new patient:', error);
+      alert('Failed to save patient. Please try again.');
+      return null;
+    }
+  };
+
+  /**
+   * Handle tab switch with auto-save for new patients
+   */
+  const handleEditPatientTabSwitch = async (tab: 'info' | 'questions' | 'materials') => {
+    if (tab !== 'info' && selectedPatientForEdit === 'new') {
+      const savedId = await autoSaveNewPatient();
+      if (!savedId) return; // Stay on info tab if save failed
+    }
+    setEditPatientTab(tab);
   };
 
   /**
@@ -2493,7 +2532,7 @@ Return valid JSON in exactly this structure:
                 
                 <nav className="flex-1 px-3 space-y-1">
                   <button
-                    onClick={() => setEditPatientTab('info')}
+                    onClick={() => handleEditPatientTabSwitch('info')}
                     className="w-full text-left px-4 py-3 rounded-lg font-medium transition-colors"
                     style={{
                       backgroundColor: editPatientTab === 'info' ? UI_COLORS.background.tableHeader : 'transparent',
@@ -2505,7 +2544,7 @@ Return valid JSON in exactly this structure:
                     Patient Information
                   </button>
                   <button
-                    onClick={() => setEditPatientTab('questions')}
+                    onClick={() => handleEditPatientTabSwitch('questions')}
                     className="w-full text-left px-4 py-3 rounded-lg font-medium transition-colors"
                     style={{
                       backgroundColor: editPatientTab === 'questions' ? UI_COLORS.background.tableHeader : 'transparent',
@@ -2517,7 +2556,7 @@ Return valid JSON in exactly this structure:
                     Case-specific Key Questions
                   </button>
                   <button
-                    onClick={() => setEditPatientTab('materials')}
+                    onClick={() => handleEditPatientTabSwitch('materials')}
                     className="w-full text-left px-4 py-3 rounded-lg font-medium transition-colors"
                     style={{
                       backgroundColor: editPatientTab === 'materials' ? UI_COLORS.background.tableHeader : 'transparent',

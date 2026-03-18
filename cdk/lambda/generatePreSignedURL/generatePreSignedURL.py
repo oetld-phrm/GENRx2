@@ -34,7 +34,7 @@ def lambda_handler(event, context):
         }
 
     simulation_group_id = query_params.get("simulation_group_id", "")
-    persona_id = query_params.get("persona_id", "")
+    persona_id = query_params.get("patient_id", "")
     file_type = query_params.get("file_type", "")
     file_name = query_params.get("file_name", "")
     folder_type = query_params.get("folder_type", "")

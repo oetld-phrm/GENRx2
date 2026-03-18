@@ -6,7 +6,7 @@ import DashboardHeader from '@/components/DashboardHeader';
 import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { mockAdminDataService, mockOrganizations } from '@/services/adminService';
-import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
+import { type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
 import * as adminApi from '@/services/adminApiService';
