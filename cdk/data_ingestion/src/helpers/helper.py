@@ -61,7 +61,7 @@ def get_vectorstore(
 def store_group_data(
     bucket: str, 
     group: str, 
-    patient_id: str, 
+    persona_id: str, 
     vectorstore_config_dict: Dict[str, str], 
     embeddings: BedrockEmbeddings,
     connection
@@ -101,7 +101,7 @@ def store_group_data(
     process_documents(
         bucket=bucket,
         group=group,
-        patient_id=patient_id,
+        persona_id=persona_id,
         vectorstore=vectorstore,
         embeddings=embeddings,
         record_manager=record_manager,
