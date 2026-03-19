@@ -871,7 +871,7 @@ exports.handler = async (event, context) => {
 
             // Step 3: Insert enrollment into enrolments table
             const enrollmentResult = await sqlConnection`
-                  INSERT INTO "enrollments" (enrollment_id, user_id, simulation_group_id, enrollment_type, time_enroled)
+                  INSERT INTO "enrollments" (enrollment_id, user_id, simulation_group_id, enrollment_type, time_enrolled)
                   VALUES (uuid_generate_v4(), ${user_id}, ${simulation_group_id}, 'student', CURRENT_TIMESTAMP)
                   ON CONFLICT (simulation_group_id, user_id) DO NOTHING
                   RETURNING enrollment_id;

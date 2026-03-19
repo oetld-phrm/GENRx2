@@ -593,7 +593,7 @@ async function getSimulationGroups(): Promise<SimulationGroup[]> {
     if (!user) throw new Error('Not authenticated');
 
     const data = await apiClient.request<SimulationGroup[]>(
-      `student/simulation_groups?email=${encodeURIComponent(user.email)}`
+      `student/simulation_group?email=${encodeURIComponent(user.email)}`
     );
     return data.map((g, i) => ({
       ...g,
