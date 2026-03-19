@@ -1,6 +1,6 @@
 from typing import Dict
 
-from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_core.retrievers import VectorStoreRetriever
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_classic.chains import create_history_aware_retriever
 
