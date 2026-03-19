@@ -1049,7 +1049,7 @@ export class ApiServiceStack extends cdk.Stack {
       {
         parameterName: `/${id}/GenRx/EmbeddingModelId`,
         description: "Parameter containing the Embedding Model ID",
-        stringValue: "cohere.embed-v4:0",
+        stringValue: "amazon.titan-embed-text-v2:0",
       }
     );
 
@@ -1232,9 +1232,10 @@ export class ApiServiceStack extends cdk.Stack {
         "arn:aws:bedrock:" +
           this.region +
           "::foundation-model/meta.llama3-70b-instruct-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0",
+        "arn:aws:bedrock:" +
+          this.region +
+          "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*`,
         `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });
