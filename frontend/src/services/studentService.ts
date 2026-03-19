@@ -602,13 +602,22 @@ async function fetchMessages(sessionId: string): Promise<StudentChatMessage[]> {
 
     if (!Array.isArray(data)) return [];
 
-    return data.map((msg) => ({
+    const mapped = data.map((msg) => ({
       message_id: msg.message_id,
       chat_id: msg.chat_id,
       sender_type: (msg.sender_type as 'student' | 'ai' | 'system') || 'ai',
       message_content: msg.message_content,
       sent_at: msg.sent_at,
     }));
+
+    // Deduplicate by sender_type + message_content (backend may insert the same message twice with different IDs)
+    const seen = new Set<string>();
+    return mapped.filter((msg) => {
+      const key = `${msg.sender_type}::${msg.message_content.trim()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch (error) {
     console.error('Failed to fetch messages:', error);
     return [];
@@ -839,6 +848,26 @@ async function sendMessageStreaming(
   }
 }
 
+async function deleteSession(
+  simulationGroupId: string,
+  patientId: string,
+  sessionId: string
+): Promise<boolean> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    await apiClient.request(
+      `student/delete_session?session_id=${encodeURIComponent(sessionId)}&email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}`,
+      { method: 'DELETE' }
+    );
+    return true;
+  } catch (error) {
+    console.error('Failed to delete session:', error);
+    return false;
+  }
+}
+
 /**
  * Student service — public API used by pages
  */
@@ -848,6 +877,7 @@ export const studentService = {
   getPatients,
   joinGroup,
   createSession,
+  deleteSession,
   sendMessage,
   sendMessageStreaming,
   getPatientDetail,

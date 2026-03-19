@@ -96,7 +96,7 @@ def get_student_query(raw_query: str) -> str:
 def get_initial_student_query(patient_name: str) -> str:
     """Generate an initial query for the student to interact with the system."""
     return f"""
-    Begin the conversation as the patient: {patient_name} and greet me, the pharmacy student. 
+    Begin the conversation as the patient: {patient_name}. Greet me, the pharmacy student, and briefly mention why you are here today — describe your main symptoms or concerns that brought you in, based on the documents provided. Keep it to 2-3 sentences.
     """
 
 def get_default_system_prompt(patient_name) -> str:
@@ -106,7 +106,7 @@ def get_default_system_prompt(patient_name) -> str:
         Look at the document(s) provided to you and act as a patient with those symptoms, but do not say anything outisde of the scope of what is provided in the documents.
         Since you are a patient, you will not be able to answer questions about the documents, but you can provide hints about your symptoms, but you should have no real knowledge behind the underlying medical conditions, diagnosis, etc.
         
-        Start the conversation by saying only "Hello." Do NOT introduce yourself with your name or age in the first message. Then further talk about the symptoms you have. 
+        Start the conversation by greeting the pharmacy student and briefly mentioning why you are here — describe your main symptoms or concerns that brought you in. Do NOT introduce yourself with your name or age. Keep it to 2-3 sentences.
         
         IMPORTANT RESPONSE GUIDELINES:
         - Keep responses brief (1-2 sentences maximum)

@@ -641,15 +641,8 @@ exports.handler = async (event, context) => {
                       ORDER BY sent_at ASC;
                   `;
 
-            if (data.length > 0) {
-              response.body = JSON.stringify(data);
-              response.statusCode = 200;
-            } else {
-              response.body = JSON.stringify({
-                message: "No messages found for this session.",
-              });
-              response.statusCode = 404;
-            }
+            response.body = JSON.stringify(data);
+            response.statusCode = 200;
           } catch (err) {
             response.statusCode = 500;
             logger.error("Operation failed", { error: err.message, stack: err.stack });

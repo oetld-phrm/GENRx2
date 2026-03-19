@@ -92,6 +92,11 @@ function StudentChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatId = `chat-${groupId}-${patientId}`; // Mock chat ID
 
+  // Guard to prevent duplicate session creation (React StrictMode double-mount)
+  const sessionCreationRef = useRef(false);
+  // Ref to track if AI greeting has been triggered
+  const greetingTriggeredRef = useRef(false);
+
   // Create a session on mount (new chat) or use existing session ID from route
   useEffect(() => {
     if (!groupId || !patientId) return;
@@ -105,10 +110,11 @@ function StudentChatPage() {
           setMessages(msgs);
         }
       });
-    } else {
-      // New chat — create a fresh session
+    } else if (!sessionCreationRef.current) {
+      // New chat — create a fresh session (guarded against StrictMode double-mount)
+      sessionCreationRef.current = true;
       studentService.createSession(groupId, patientId, `Session ${Date.now()}`).then((session) => {
-        if (!cancelled && session) {
+        if (session) {
           setSessionId(session.chat_id);
         }
       });
@@ -121,6 +127,83 @@ function StudentChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Trigger AI greeting when a new session is created (not a resumed chat)
+  useEffect(() => {
+    if (!sessionId || !groupId || !patientId || routeChatId || greetingTriggeredRef.current) return;
+    greetingTriggeredRef.current = true;
+
+    setIsAiResponding(true);
+    const aiGreetingId = `msg-greeting-${Date.now()}`;
+    let greetingAdded = false;
+
+    studentService.sendMessageStreaming(
+      groupId, patientId, sessionId, '',
+      {
+        onChunk: (text) => {
+          if (!greetingAdded) {
+            greetingAdded = true;
+            setMessages([{
+              message_id: aiGreetingId,
+              chat_id: chatId,
+              sender_type: 'ai',
+              message_content: text,
+              sent_at: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === aiGreetingId
+                  ? { ...m, message_content: m.message_content + text }
+                  : m
+              )
+            );
+          }
+        },
+        onDone: (fullText) => {
+          if (!greetingAdded) {
+            setMessages([{
+              message_id: aiGreetingId,
+              chat_id: chatId,
+              sender_type: 'ai',
+              message_content: fullText || 'Hello! How can I help you today?',
+              sent_at: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === aiGreetingId
+                  ? { ...m, message_content: fullText || m.message_content }
+                  : m
+              )
+            );
+          }
+          setIsAiResponding(false);
+        },
+        onError: (error) => {
+          console.error('AI greeting error:', error);
+          setMessages([{
+            message_id: aiGreetingId,
+            chat_id: chatId,
+            sender_type: 'ai',
+            message_content: 'Hello! How can I help you today?',
+            sent_at: new Date().toISOString(),
+          }]);
+          setIsAiResponding(false);
+        },
+      },
+    ).catch((err) => {
+      console.error('AI greeting streaming failed:', err);
+      setMessages([{
+        message_id: aiGreetingId,
+        chat_id: chatId,
+        sender_type: 'ai',
+        message_content: 'Hello! How can I help you today?',
+        sent_at: new Date().toISOString(),
+      }]);
+      setIsAiResponding(false);
+    });
+  }, [sessionId]);
 
   // Memoize grouped case materials to avoid recomputing on every render
   const groupedCaseMaterials = useMemo(() => {
@@ -595,8 +678,30 @@ function StudentChatPage() {
           {/* Chat Messages Area */}
           <div className="flex-1 overflow-y-auto p-6">
             {messages.length === 0 ? (
-              <div className="flex items-center justify-center h-full" style={{ color: UI_COLORS.text.light }}>
-                <p>Start a conversation with the AI patient...</p>
+              <div className="flex items-center justify-center h-full">
+                {isAiResponding ? (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0">
+                      <UserAvatar
+                        name={patient.name}
+                        imageUrl={patient.imageUrl}
+                        size="small"
+                      />
+                    </div>
+                    <div
+                      className="rounded-lg rounded-bl-none px-4 py-3"
+                      style={{ backgroundColor: UI_COLORS.background.hoverLight }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: UI_COLORS.text.muted, animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: UI_COLORS.text.muted, animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: UI_COLORS.text.muted, animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ color: UI_COLORS.text.light }}>Start a conversation with the AI patient...</p>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

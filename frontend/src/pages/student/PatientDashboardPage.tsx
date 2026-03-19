@@ -2,7 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useState, useEffect } from 'react';
@@ -89,6 +89,20 @@ function PatientDashboardPage() {
     } else {
       // Navigate to active chat page with existing session ID
       navigate(`/patients/${groupId}/${patientId}/chat/${chatId}`);
+    }
+  };
+
+  /**
+   * Handle delete session
+   */
+  const handleDeleteSession = async (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation(); // Prevent row click navigation
+    if (!groupId || !patientId) return;
+    if (!window.confirm('Are you sure you want to delete this session?')) return;
+
+    const success = await studentService.deleteSession(groupId, patientId, chatId);
+    if (success) {
+      setChatHistory((prev) => prev.filter((c) => c.id !== chatId));
     }
   };
 
@@ -308,6 +322,7 @@ function PatientDashboardPage() {
                     <tr>
                       <th className="px-6 py-3 text-left font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>Name</th>
                       <th className="px-6 py-3 text-center font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>Chat Completion Status</th>
+                      <th className="px-6 py-3 text-center font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -322,6 +337,18 @@ function PatientDashboardPage() {
                       >
                         <td className="px-6 py-4" style={{ color: UI_COLORS.text.heading }}>{chat.name}</td>
                         <td className="px-6 py-4 text-center" style={{ color: UI_COLORS.text.body }}>{chat.completionStatus}</td>
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={(e) => handleDeleteSession(e, chat.id)}
+                            className="p-2 rounded-lg transition-colors inline-flex items-center justify-center"
+                            style={{ backgroundColor: 'transparent', color: UI_COLORS.text.muted, border: 'none', cursor: 'pointer' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = UI_COLORS.background.hoverLight; e.currentTarget.style.color = '#ef4444'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = UI_COLORS.text.muted; }}
+                            aria-label={`Delete session ${chat.name}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
