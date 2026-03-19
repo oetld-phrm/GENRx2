@@ -199,8 +199,10 @@ def get_response(
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
-    # Save the student's message to the database
-    save_message_to_db(session_id, student_user_id, 'student', query)
+    # Save the student's message for non-streaming only;
+    # streaming path saves are handled inside generate_streaming_response.
+    if not stream:
+        save_message_to_db(session_id, student_user_id, 'student', query)
     
     completion_string = """
                 Once I, the pharmacy student, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -279,7 +281,7 @@ def get_response(
         response = "I'm sorry, I cannot provide a response to that query."
     
     if stream:
-        save_message_to_db(session_id, persona_id, 'ai', response)
+        # AI message already saved inside generate_streaming_response
         return {"llm_output": response, "session_name": "Chat", "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion)

@@ -638,7 +638,7 @@ exports.handler = async (event, context) => {
                       SELECT *
                       FROM "messages"
                       WHERE chat_id = ${sessionId}
-                      ORDER BY time_sent ASC;
+                      ORDER BY sent_at ASC;
                   `;
 
             if (data.length > 0) {
@@ -679,8 +679,8 @@ exports.handler = async (event, context) => {
           try {
             // Insert the new message into the Messages table with a generated UUID for message_id
             const messageData = await sqlConnection`
-                      INSERT INTO "messages" (message_id, chat_id, student_sent, message_content, time_sent)
-                      VALUES (uuid_generate_v4(), ${sessionId}, true, ${message_content}, CURRENT_TIMESTAMP)
+                      INSERT INTO "messages" (message_id, chat_id, user_id, sender_type, message_content, sent_at)
+                      VALUES (uuid_generate_v4(), ${sessionId}, (SELECT user_id FROM "users" WHERE user_email = ${studentEmail}), 'student', ${message_content}, CURRENT_TIMESTAMP)
                       RETURNING *;
                   `;
 
@@ -760,8 +760,8 @@ exports.handler = async (event, context) => {
           try {
             // Insert the new AI message into the Messages table with a generated UUID for message_id
             const messageData = await sqlConnection`
-                      INSERT INTO "messages" (message_id, chat_id, student_sent, message_content, time_sent)
-                      VALUES (uuid_generate_v4(), ${sessionId}, false, ${message_content}, CURRENT_TIMESTAMP)
+                      INSERT INTO "messages" (message_id, chat_id, user_id, sender_type, message_content, sent_at)
+                      VALUES (uuid_generate_v4(), ${sessionId}, ${patientId}, 'ai', ${message_content}, CURRENT_TIMESTAMP)
                       RETURNING *;
                   `;
 
@@ -930,7 +930,7 @@ exports.handler = async (event, context) => {
                       SELECT *
                       FROM "messages"
                       WHERE "chat_id" = ${sessionId}
-                      ORDER BY "time_sent" ASC;
+                      ORDER BY "sent_at" ASC;
                   `;
 
             response.body = JSON.stringify(messages);

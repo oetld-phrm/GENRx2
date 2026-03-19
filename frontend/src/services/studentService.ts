@@ -196,12 +196,9 @@ export interface AssessmentActivity {
 export interface StudentChatMessage {
   message_id: string;
   chat_id: string;
-  student_sent: boolean;
+  sender_type: 'student' | 'ai' | 'system';
   message_content: string;
-  time_sent: string;
-  quality_score?: number;
-  quality_feedback?: string;
-  suggested_rewrite?: string;
+  sent_at: string;
 }
 
 /**
@@ -357,30 +354,30 @@ const mockChatHistoryMessages: StudentChatMessage[] = [
   {
     message_id: 'msg-1',
     chat_id: '',
-    student_sent: true,
+    sender_type: 'student',
     message_content: 'Hello, I\'m here to help you today. Can you tell me what brings you in?',
-    time_sent: '2026-02-18T10:00:00Z',
+    sent_at: '2026-02-18T10:00:00Z',
   },
   {
     message_id: 'msg-2',
     chat_id: '',
-    student_sent: false,
+    sender_type: 'ai',
     message_content: 'I\'ve been having chest pain for the past few hours.',
-    time_sent: '2026-02-18T10:00:30Z',
+    sent_at: '2026-02-18T10:00:30Z',
   },
   {
     message_id: 'msg-3',
     chat_id: '',
-    student_sent: true,
+    sender_type: 'student',
     message_content: 'I understand. Can you describe the pain? Is it sharp, dull, or pressure-like?',
-    time_sent: '2026-02-18T10:01:00Z',
+    sent_at: '2026-02-18T10:01:00Z',
   },
   {
     message_id: 'msg-4',
     chat_id: '',
-    student_sent: false,
+    sender_type: 'ai',
     message_content: 'It feels like pressure, like my chest is being constricted.',
-    time_sent: '2026-02-18T10:01:45Z',
+    sent_at: '2026-02-18T10:01:45Z',
   },
 ];
 
