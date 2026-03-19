@@ -30,16 +30,23 @@ exports.up = (pgm) => {
 
   // Rename time_sent -> sent_at and change to timestamptz
   pgm.sql(`
-    DO $
+    DO $$
     BEGIN
       IF EXISTS (SELECT FROM information_schema.columns
                  WHERE table_name = 'messages' AND column_name = 'time_sent') THEN
         ALTER TABLE messages RENAME COLUMN time_sent TO sent_at;
       END IF;
-    END $;
+    END $$;
   `);
   pgm.sql(`
-    ALTER TABLE messages ALTER COLUMN sent_at TYPE timestamptz USING sent_at AT TIME ZONE 'UTC'
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT FROM information_schema.columns
+                 WHERE table_name = 'messages' AND column_name = 'sent_at'
+                   AND data_type <> 'timestamp with time zone') THEN
+        ALTER TABLE messages ALTER COLUMN sent_at TYPE timestamptz USING sent_at AT TIME ZONE 'UTC';
+      END IF;
+    END $$;
   `);
 
   // Change message_content from varchar to text
@@ -87,15 +94,24 @@ exports.down = (pgm) => {
 
   // Rename sent_at back to time_sent
   pgm.sql(`
-    DO $
+    DO $$
     BEGIN
       IF EXISTS (SELECT FROM information_schema.columns
                  WHERE table_name = 'messages' AND column_name = 'sent_at') THEN
         ALTER TABLE messages RENAME COLUMN sent_at TO time_sent;
       END IF;
-    END $;
+    END $$;
   `);
-  pgm.sql(`ALTER TABLE messages ALTER COLUMN time_sent TYPE timestamp USING time_sent::timestamp`);
+  pgm.sql(`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT FROM information_schema.columns
+                 WHERE table_name = 'messages' AND column_name = 'time_sent'
+                   AND data_type <> 'timestamp without time zone') THEN
+        ALTER TABLE messages ALTER COLUMN time_sent TYPE timestamp USING time_sent::timestamp;
+      END IF;
+    END $$;
+  `);
 
   // Drop new indexes and columns
   pgm.sql("DROP INDEX IF EXISTS idx_messages_chat");
