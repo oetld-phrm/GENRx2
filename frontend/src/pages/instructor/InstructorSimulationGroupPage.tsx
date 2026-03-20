@@ -188,6 +188,32 @@ function InstructorSimulationGroupPage() {
       loadQuestionBank();
     }
   }, [activeSection]);
+
+  // Load assigned questions from API when rubric or questionBank section is activated
+  useEffect(() => {
+    if ((activeSection === 'rubric' || activeSection === 'questionBank') && groupId) {
+      instructorService.getSimulationGroupQuestions(groupId)
+        .then((assigned: any[]) => {
+          const rubricQuestions: GlobalRubricQuestion[] = assigned.map((q: any) => ({
+            id: q.question_id,
+            title: q.title || '',
+            keyQuestion: q.question_text || '',
+            clinicalIntent: '',
+            evaluationCriteria: q.evaluation_criteria || '',
+            required: q.is_mandatory ?? false,
+          }));
+          setGlobalRubricQuestions(rubricQuestions);
+          setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)));
+          setPendingQuestionIds(new Set(assigned.map((q: any) => q.question_id)));
+          if (rubricQuestions.length > 0 && !selectedQuestionId) {
+            setSelectedQuestionId(rubricQuestions[0].id);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to load assigned questions:', err);
+        });
+    }
+  }, [activeSection, groupId]);
   
   // State for selected patient
   const [selectedPatientId, setSelectedPatientId] = useState<string>('overview');
@@ -655,19 +681,37 @@ function InstructorSimulationGroupPage() {
     
     try {
       if (questionBankTab === 'global') {
-        // Find newly added IDs (in pending but not in included)
-        for (const id of Array.from(pendingQuestionIds)) {
-          if (!includedQuestionIds.has(id)) {
+        // Collect IDs to add and remove
+        const idsToAdd = Array.from(pendingQuestionIds).filter(id => !includedQuestionIds.has(id));
+        const idsToRemove = Array.from(includedQuestionIds).filter(id => !pendingQuestionIds.has(id));
+
+        // Batch assign all new questions in one API call
+        if (idsToAdd.length > 0) {
+          await instructorService.assignQuestionToGroup(groupId || '1', idsToAdd);
+          for (const id of idsToAdd) {
             const bankQ = allBankQuestions.find(q => q.id === id);
-            if (bankQ) await handleToggleQuestionInclusion(id, bankQ, true);
+            if (bankQ) {
+              const existingQuestion = globalRubricQuestions.find(q => q.id === id);
+              if (!existingQuestion) {
+                const newGlobalRubricQuestion: GlobalRubricQuestion = {
+                  id: bankQ.id,
+                  title: bankQ.title,
+                  keyQuestion: bankQ.questionText,
+                  clinicalIntent: bankQ.clinicalIntent,
+                  evaluationCriteria: bankQ.evaluationCriteria,
+                  required: bankQ.isMandatory,
+                };
+                instructorService.addGlobalRubricQuestion(groupId || '1', newGlobalRubricQuestion);
+              }
+            }
           }
+          setGlobalRubricQuestions(instructorService.getGlobalRubricQuestions(groupId || '1'));
         }
-        // Find removed IDs (in included but not in pending)
-        for (const id of Array.from(includedQuestionIds)) {
-          if (!pendingQuestionIds.has(id)) {
-            const bankQ = allBankQuestions.find(q => q.id === id);
-            if (bankQ) await handleToggleQuestionInclusion(id, bankQ, false);
-          }
+
+        // Unassign removed questions one by one (DELETE uses group_question_id)
+        for (const id of idsToRemove) {
+          const bankQ = allBankQuestions.find(q => q.id === id);
+          if (bankQ) await handleToggleQuestionInclusion(id, bankQ, false);
         }
       } else if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank) {
         // Handle patient-specific confirmation (local mock operations for now)
