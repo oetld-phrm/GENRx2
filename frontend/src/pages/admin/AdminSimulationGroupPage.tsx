@@ -616,9 +616,26 @@ function AdminSimulationGroupPage() {
     };
     
     if (addQuestionType === 'global') {
-      instructorService.addToGlobalQuestionBank(newBankQuestion);
-      const questions = await instructorService.getGlobalQuestionBank();
-      setGlobalBankQuestions(questions);
+      if (organizationId) {
+        try {
+          await adminApi.createQuestionBankQuestion(organizationId, {
+            title: question.title,
+            question_text: question.keyQuestion,
+            evaluation_criteria: question.evaluationCriteria,
+            is_mandatory: question.required,
+          });
+          const questions = await instructorService.getGlobalQuestionBank();
+          setGlobalBankQuestions(questions);
+        } catch (err) {
+          console.error('Failed to create question via API, falling back to mock:', err);
+          instructorService.addToGlobalQuestionBank(newBankQuestion);
+          setGlobalBankQuestions(prev => [...prev, newBankQuestion]);
+        }
+      } else {
+        // No org context — local-only fallback
+        instructorService.addToGlobalQuestionBank(newBankQuestion);
+        setGlobalBankQuestions(prev => [...prev, newBankQuestion]);
+      }
     } else {
       instructorService.addToPatientSpecificQuestionBank(newBankQuestion);
       setPatientSpecificBankQuestions(instructorService.getPatientSpecificQuestionBank());
