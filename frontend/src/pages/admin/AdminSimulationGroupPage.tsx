@@ -422,15 +422,16 @@ function AdminSimulationGroupPage() {
     }
   };
 
-  const handleSavePatientChanges = () => {
+  const handleSavePatientChanges = async () => {
     if (selectedPatientForEdit && groupId) {
       if (selectedPatientForEdit === 'new') {
-        mockInstructorDataService.createPatient(groupId, {
+        const newPersonaId = await instructorService.createPatient(groupId, {
           patient_name: editPatientName,
           patient_age: parseInt(editPatientAge) || 0,
           patient_gender: editPatientGender,
           patient_prompt: editPatientPrompt,
         });
+        setSelectedPatientForEdit(newPersonaId);
       } else {
         mockInstructorDataService.updatePatient(groupId, {
           patient_id: selectedPatientForEdit,
@@ -443,21 +444,70 @@ function AdminSimulationGroupPage() {
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Auto-save a new patient before allowing file uploads or other tabs.
+   */
+  const autoSaveNewPatient = async (): Promise<string | null> => {
+    if (selectedPatientForEdit !== 'new' || !groupId) return selectedPatientForEdit;
+    if (!editPatientName.trim()) {
+      alert('Please enter a patient name before proceeding.');
+      return null;
+    }
+    try {
+      const newPersonaId = await instructorService.createPatient(groupId, {
+        patient_name: editPatientName,
+        patient_age: parseInt(editPatientAge) || 0,
+        patient_gender: editPatientGender,
+        patient_prompt: editPatientPrompt,
+      });
+      setSelectedPatientForEdit(newPersonaId);
+      setManageablePatients(await instructorService.getManageablePatients(groupId));
+      return newPersonaId;
+    } catch (error) {
+      console.error('Failed to auto-save new patient:', error);
+      alert('Failed to save patient. Please try again.');
+      return null;
+    }
+  };
+
+  /**
+   * Handle tab switch with auto-save for new patients
+   */
+  const handleEditPatientTabSwitch = async (tab: 'info' | 'questions' | 'materials') => {
+    if (tab !== 'info' && selectedPatientForEdit === 'new') {
+      const savedId = await autoSaveNewPatient();
+      if (!savedId) return;
+    }
+    setEditPatientTab(tab);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && selectedPatientForEdit && groupId) {
-      instructorService.uploadPatientPhoto(groupId, selectedPatientForEdit, file).then(async () => {
+      let patientId = selectedPatientForEdit;
+      if (patientId === 'new') {
+        const savedId = await autoSaveNewPatient();
+        if (!savedId) return;
+        patientId = savedId;
+      }
+      instructorService.uploadPatientPhoto(groupId, patientId, file).then(async () => {
         const manageablePatients = await instructorService.getManageablePatients(groupId);
         setManageablePatients(manageablePatients);
       });
     }
   };
 
-  const handleFileUpload = (fileType: 'llm' | 'patientInfo' | 'answerKey', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (fileType: 'llm' | 'patientInfo' | 'answerKey', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && selectedPatientForEdit && groupId) {
+      let patientId = selectedPatientForEdit;
+      if (patientId === 'new') {
+        const savedId = await autoSaveNewPatient();
+        if (!savedId) return;
+        patientId = savedId;
+      }
       const folderType = fileType === 'llm' ? 'documents' : fileType === 'patientInfo' ? 'info' : 'answer_key' as const;
-      instructorService.uploadPatientFile(groupId, selectedPatientForEdit, file, folderType);
+      instructorService.uploadPatientFile(groupId, patientId, file, folderType);
     }
   };
 
@@ -1811,7 +1861,7 @@ function AdminSimulationGroupPage() {
                   ].map(({ tab, label }) => (
                     <button
                       key={tab}
-                      onClick={() => setEditPatientTab(tab as typeof editPatientTab)}
+                      onClick={() => handleEditPatientTabSwitch(tab as typeof editPatientTab)}
                       className="w-full text-left px-4 py-3 rounded-lg font-medium transition-colors"
                       style={{ backgroundColor: editPatientTab === tab ? UI_COLORS.background.tableHeader : 'transparent', color: UI_COLORS.text.heading, border: 'none', cursor: 'pointer' }}
                     >
@@ -2179,16 +2229,16 @@ function AdminSimulationGroupPage() {
                                   <h3 className="text-lg font-semibold mb-4" style={{ color: UI_COLORS.text.heading }}>Chat History</h3>
                                   <div className="border rounded-lg p-4 space-y-4 max-h-96 overflow-y-auto" style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
                                     {messages.length > 0 ? messages.map((message) => (
-                                      <div key={message.message_id} className={`flex gap-3 ${message.student_sent ? 'justify-end' : 'justify-start'}`}>
-                                        {!message.student_sent && <div className="flex-shrink-0"><UserAvatar name="Pamela" imageUrl={undefined} size="small" /></div>}
+                                      <div key={message.message_id} className={`flex gap-3 ${message.sender_type === 'student' ? 'justify-end' : 'justify-start'}`}>
+                                        {message.sender_type !== 'student' && <div className="flex-shrink-0"><UserAvatar name="Pamela" imageUrl={undefined} size="small" /></div>}
                                         <div
-                                          className={`max-w-[70%] rounded-lg px-4 py-3 ${message.student_sent ? 'rounded-br-none' : 'rounded-bl-none'}`}
-                                          style={{ backgroundColor: message.student_sent ? SIMULATION_GROUP_COLOR_PALETTE[2] : UI_COLORS.background.hoverLight, color: message.student_sent ? UI_COLORS.button.text : UI_COLORS.text.heading }}
+                                          className={`max-w-[70%] rounded-lg px-4 py-3 ${message.sender_type === 'student' ? 'rounded-br-none' : 'rounded-bl-none'}`}
+                                          style={{ backgroundColor: message.sender_type === 'student' ? SIMULATION_GROUP_COLOR_PALETTE[2] : UI_COLORS.background.hoverLight, color: message.sender_type === 'student' ? UI_COLORS.button.text : UI_COLORS.text.heading }}
                                         >
-                                          <p className="text-sm font-semibold mb-1">{message.student_sent ? 'Student (User)' : 'Pamela (LLM)'}:</p>
+                                          <p className="text-sm font-semibold mb-1">{message.sender_type === 'student' ? 'Student (User)' : 'Pamela (LLM)'}:</p>
                                           <p className="text-sm">{message.message_content}</p>
                                         </div>
-                                        {message.student_sent && <div className="flex-shrink-0"><UserAvatar name="Student" imageUrl={undefined} size="small" /></div>}
+                                        {message.sender_type === 'student' && <div className="flex-shrink-0"><UserAvatar name="Student" imageUrl={undefined} size="small" /></div>}
                                       </div>
                                     )) : (
                                       <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No chat history available.</p>

@@ -313,13 +313,44 @@ function ChatHistoryPage() {
             </div>
           )}
 
-          {/* Content Area - Empty for now */}
+          {/* Content Area - Uploaded documents grouped by category */}
           <div className="flex-1 overflow-y-auto p-4">
             {isPatientInfoSidebarOpen && (
-              <div className="space-y-4">
-                <p className="text-sm" style={{ color: UI_COLORS.text.body }}>
-                  Patient information content will be displayed here.
-                </p>
+              <div className="space-y-6">
+                {Object.entries(groupedCaseMaterials).map(([groupName, materials]) => (
+                  <div key={groupName}>
+                    {/* Group Header */}
+                    <h3 className="font-semibold text-base mb-3 pb-2" style={{ color: UI_COLORS.text.heading, borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+                      {groupName}
+                    </h3>
+                    
+                    {/* Materials in this group */}
+                    <div className="space-y-3">
+                      {materials.map((material) => (
+                        <div
+                          key={material.id}
+                          className="p-4 rounded-lg"
+                          style={{ backgroundColor: UI_COLORS.background.hoverLight }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <FileText className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: UI_COLORS.text.muted }} />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-sm mb-1" style={{ color: UI_COLORS.text.heading }}>
+                                {material.title}
+                              </h4>
+                              <p className="text-xs" style={{ color: UI_COLORS.text.body }}>
+                                {material.description}
+                              </p>
+                              <p className="text-xs mt-1" style={{ color: UI_COLORS.text.muted }}>
+                                Type: {material.type}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -343,10 +374,10 @@ function ChatHistoryPage() {
                 {messages.map((message) => (
                   <div
                     key={message.message_id}
-                    className={`flex gap-3 ${message.student_sent ? 'justify-end' : 'justify-start'}`}
+                    className={`flex gap-3 ${message.sender_type === 'student' ? 'justify-end' : 'justify-start'}`}
                   >
                     {/* Avatar for AI patient (left side) */}
-                    {!message.student_sent && (
+                    {message.sender_type !== 'student' && (
                       <div className="flex-shrink-0">
                         <UserAvatar
                           name={patient.name}
@@ -359,29 +390,29 @@ function ChatHistoryPage() {
                     {/* Message bubble */}
                     <div
                       className={`max-w-[70%] rounded-lg px-4 py-3 ${
-                        message.student_sent ? 'rounded-br-none' : 'rounded-bl-none'
+                        message.sender_type === 'student' ? 'rounded-br-none' : 'rounded-bl-none'
                       }`}
                       style={{
-                        backgroundColor: message.student_sent
+                        backgroundColor: message.sender_type === 'student'
                           ? SIMULATION_GROUP_COLOR_PALETTE[2]
                           : UI_COLORS.background.hoverLight,
-                        color: message.student_sent ? UI_COLORS.button.text : UI_COLORS.text.heading,
+                        color: message.sender_type === 'student' ? UI_COLORS.button.text : UI_COLORS.text.heading,
                       }}
                     >
                       <p className="text-sm leading-relaxed">{message.message_content}</p>
                       <p
                         className="text-xs mt-1"
                         style={{
-                          color: message.student_sent ? UI_COLORS.button.text : UI_COLORS.text.muted,
-                          opacity: message.student_sent ? 0.8 : 1,
+                          color: message.sender_type === 'student' ? UI_COLORS.button.text : UI_COLORS.text.muted,
+                          opacity: message.sender_type === 'student' ? 0.8 : 1,
                         }}
                       >
-                        {formatTime(message.time_sent)}
+                        {formatTime(message.sent_at)}
                       </p>
                     </div>
 
                     {/* Avatar for student (right side) */}
-                    {message.student_sent && (
+                    {message.sender_type === 'student' && (
                       <div className="flex-shrink-0">
                         <UserAvatar
                           name={user.name}
@@ -435,41 +466,9 @@ function ChatHistoryPage() {
           <div className="flex-1 overflow-y-auto p-4">
             {contentSidebarType === 'physical-assessment' && (
               <div className="space-y-6">
-                {/* Group materials by their 'group' property */}
-                {Object.entries(groupedCaseMaterials).map(([groupName, materials]) => (
-                  <div key={groupName}>
-                    {/* Group Header */}
-                    <h3 className="font-semibold text-base mb-3 pb-2" style={{ color: UI_COLORS.text.heading, borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
-                      {groupName}
-                    </h3>
-                    
-                    {/* Materials in this group */}
-                    <div className="space-y-3">
-                      {materials.map((material) => (
-                        <div
-                          key={material.id}
-                          className="p-4 rounded-lg"
-                          style={{ backgroundColor: UI_COLORS.background.hoverLight }}
-                        >
-                          <div className="flex items-start gap-3">
-                            <FileText className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: UI_COLORS.text.muted }} />
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-sm mb-1" style={{ color: UI_COLORS.text.heading }}>
-                                {material.title}
-                              </h4>
-                              <p className="text-xs" style={{ color: UI_COLORS.text.body }}>
-                                {material.description}
-                              </p>
-                              <p className="text-xs mt-1" style={{ color: UI_COLORS.text.muted }}>
-                                Type: {material.type}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                <p className="text-sm" style={{ color: UI_COLORS.text.body }}>
+                  Physical assessment content will be displayed here.
+                </p>
               </div>
             )}
           </div>

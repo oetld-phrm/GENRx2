@@ -196,12 +196,9 @@ export interface AssessmentActivity {
 export interface StudentChatMessage {
   message_id: string;
   chat_id: string;
-  student_sent: boolean;
+  sender_type: 'student' | 'ai' | 'system';
   message_content: string;
-  time_sent: string;
-  quality_score?: number;
-  quality_feedback?: string;
-  suggested_rewrite?: string;
+  sent_at: string;
 }
 
 /**
@@ -357,30 +354,30 @@ const mockChatHistoryMessages: StudentChatMessage[] = [
   {
     message_id: 'msg-1',
     chat_id: '',
-    student_sent: true,
+    sender_type: 'student',
     message_content: 'Hello, I\'m here to help you today. Can you tell me what brings you in?',
-    time_sent: '2026-02-18T10:00:00Z',
+    sent_at: '2026-02-18T10:00:00Z',
   },
   {
     message_id: 'msg-2',
     chat_id: '',
-    student_sent: false,
+    sender_type: 'ai',
     message_content: 'I\'ve been having chest pain for the past few hours.',
-    time_sent: '2026-02-18T10:00:30Z',
+    sent_at: '2026-02-18T10:00:30Z',
   },
   {
     message_id: 'msg-3',
     chat_id: '',
-    student_sent: true,
+    sender_type: 'student',
     message_content: 'I understand. Can you describe the pain? Is it sharp, dull, or pressure-like?',
-    time_sent: '2026-02-18T10:01:00Z',
+    sent_at: '2026-02-18T10:01:00Z',
   },
   {
     message_id: 'msg-4',
     chat_id: '',
-    student_sent: false,
+    sender_type: 'ai',
     message_content: 'It feels like pressure, like my chest is being constricted.',
-    time_sent: '2026-02-18T10:01:45Z',
+    sent_at: '2026-02-18T10:01:45Z',
   },
 ];
 
@@ -425,7 +422,7 @@ async function fetchPatientDetail(simulationGroupId: string, patientId: string):
       const filesData = await apiClient.request<{
         profile_picture_url?: string | null;
       }>(
-        `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+        `student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(patientId)}&patient_name=patient`
       );
       profilePictureUrl = filesData.profile_picture_url ?? undefined;
     } catch {
@@ -438,7 +435,7 @@ async function fetchPatientDetail(simulationGroupId: string, patientId: string):
       persona_age: number;
       persona_gender: string;
     }>>(
-      `/student/simulation_group_page?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+      `student/simulation_group_page?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
     );
 
     const persona = data.find(p => p.persona_id === patientId);
@@ -475,7 +472,7 @@ interface GetAllFilesResponse {
 async function fetchPatientFiles(simulationGroupId: string, patientId: string): Promise<PatientFile[]> {
   try {
     const data = await apiClient.request<GetAllFilesResponse>(
-      `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+      `student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(patientId)}&patient_name=patient`
     );
 
     const files: PatientFile[] = [];
@@ -502,7 +499,7 @@ async function fetchPatientFiles(simulationGroupId: string, patientId: string): 
 async function fetchCaseMaterials(simulationGroupId: string, patientId: string): Promise<StudentCaseMaterial[]> {
   try {
     const data = await apiClient.request<GetAllFilesResponse>(
-      `/student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&patient_name=patient`
+      `student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(patientId)}&patient_name=patient`
     );
 
     const materials: StudentCaseMaterial[] = [];
@@ -543,10 +540,88 @@ async function fetchCaseMaterials(simulationGroupId: string, patientId: string):
 }
 
 /**
- * Get chat history entries for patient dashboard
+ * Get chat history entries for patient dashboard (mock fallback)
  */
 function getChatHistory(): ChatHistoryEntry[] {
   return mockChatHistory;
+}
+
+/**
+ * Fetch chat history (sessions) for a patient from the API via GET /student/patient.
+ * Returns ChatHistoryEntry[] mapped from the chats table rows.
+ */
+async function fetchChatHistory(simulationGroupId: string, patientId: string): Promise<ChatHistoryEntry[]> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await apiClient.request<Array<{
+      chat_id: string;
+      student_interaction_id: string;
+      chat_name: string | null;
+      last_accessed: string | null;
+      notes: string | null;
+    }>>(
+      `student/patient?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}`
+    );
+
+    if (!Array.isArray(data) || data.length === 0) return [];
+
+    return data.map((chat, index) => {
+      const dateStr = chat.last_accessed
+        ? new Date(chat.last_accessed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+      return {
+        id: chat.chat_id,
+        name: chat.chat_name || `Attempt ${index + 1}${dateStr ? ` - ${dateStr}` : ''}`,
+        completionStatus: 'In Progress', // chats table has no completion flag; default to in-progress
+        score: null,
+      };
+    });
+  } catch (error) {
+    console.error('Failed to fetch chat history from API, using mock data:', error);
+    return mockChatHistory;
+  }
+}
+
+/**
+ * Fetch messages for an existing chat session via GET /student/get_messages.
+ */
+async function fetchMessages(sessionId: string): Promise<StudentChatMessage[]> {
+  try {
+    const data = await apiClient.request<Array<{
+      message_id: string;
+      chat_id: string;
+      sender_type: string;
+      message_content: string;
+      sent_at: string;
+      user_id?: string;
+    }>>(
+      `student/get_messages?session_id=${encodeURIComponent(sessionId)}`
+    );
+
+    if (!Array.isArray(data)) return [];
+
+    const mapped = data.map((msg) => ({
+      message_id: msg.message_id,
+      chat_id: msg.chat_id,
+      sender_type: (msg.sender_type as 'student' | 'ai' | 'system') || 'ai',
+      message_content: msg.message_content,
+      sent_at: msg.sent_at,
+    }));
+
+    // Deduplicate by sender_type + message_content (backend may insert the same message twice with different IDs)
+    const seen = new Set<string>();
+    return mapped.filter((msg) => {
+      const key = `${msg.sender_type}::${msg.message_content.trim()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  } catch (error) {
+    console.error('Failed to fetch messages:', error);
+    return [];
+  }
 }
 
 /**
@@ -593,13 +668,20 @@ async function getSimulationGroups(): Promise<SimulationGroup[]> {
     if (!user) throw new Error('Not authenticated');
 
     const data = await apiClient.request<SimulationGroup[]>(
-      `/student/simulation_groups?email=${encodeURIComponent(user.email)}`
+      `student/simulation_group?email=${encodeURIComponent(user.email)}`
     );
-    return data.map((g, i) => ({
-      ...g,
+    return data.map((g: any, i: number) => ({
+      simulation_group_id: g.simulation_group_id,
+      name: g.group_name,
       subtitle: 'Medical Simulation Group',
       icon_color: g.icon_color || getSimulationGroupColor(i),
+      access_code: g.group_access_code || '',
+      student_count: g.student_count || 0,
+      instructor_count: g.instructor_count || 0,
+      patient_count: g.persona_count || 0,
+      organization_id: g.organization_id || '',
     }));
+
   } catch (error) {
     console.error('Failed to fetch simulation groups, using mock data:', error);
     return mockSimulationGroups;
@@ -628,10 +710,15 @@ async function getPatients(simulationGroupId: string): Promise<Patient[]> {
     const user = await authService.getCurrentUser();
     if (!user) throw new Error('Not authenticated');
 
-    const data = await apiClient.request<Patient[]>(
-      `/student/patients?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
+    const data = await apiClient.request<any[]>(
+      `student/simulation_group_page?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
     );
-    return data;
+    return data.map((p) => ({
+      patient_id: p.persona_id,
+      patient_name: p.persona_name,
+      debrief_status: p.is_completed ? 'debrief_reached' as const : 'not_started' as const,
+      instructor_evaluation: p.persona_score > 0 ? 'Evaluated' : 'Not Evaluated',
+    }));
   } catch (error) {
     console.error('Failed to fetch patients, using mock data:', error);
     return mockPatients;
@@ -647,7 +734,7 @@ async function joinGroup(accessCode: string): Promise<{ success: boolean }> {
     if (!user) throw new Error('Not authenticated');
 
     await apiClient.request(
-      `/student/enroll_student?student_email=${encodeURIComponent(user.email)}&group_access_code=${encodeURIComponent(accessCode)}`,
+      `student/enroll_student?student_email=${encodeURIComponent(user.email)}&group_access_code=${encodeURIComponent(accessCode)}`,
       { method: 'POST' }
     );
     return { success: true };
@@ -666,7 +753,7 @@ async function createSession(simulationGroupId: string, patientId: string, sessi
     if (!user) throw new Error('Not authenticated');
 
     const data = await apiClient.request<Session[]>(
-      `/student/create_session?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_name=${encodeURIComponent(sessionName)}`,
+      `student/create_session?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_name=${encodeURIComponent(sessionName)}`,
       { method: 'POST' }
     );
 
@@ -687,7 +774,7 @@ async function sendMessage(
   messageContent: string
 ): Promise<{ llm_output: string; session_name?: string }> {
   const result = await apiClient.request<{ llm_output: string; session_name?: string }>(
-    `/student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}`,
+    `student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}`,
     {
       method: 'POST',
       body: { message_content: messageContent },
@@ -740,7 +827,7 @@ async function sendMessageStreaming(
 
     // Step 2: fire the REST call with stream=true to kick off generation
     apiClient.request(
-      `/student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}&stream=true`,
+      `student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}&stream=true`,
       {
         method: 'POST',
         body: { message_content: messageContent },
@@ -761,6 +848,26 @@ async function sendMessageStreaming(
   }
 }
 
+async function deleteSession(
+  simulationGroupId: string,
+  patientId: string,
+  sessionId: string
+): Promise<boolean> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user) throw new Error('Not authenticated');
+
+    await apiClient.request(
+      `student/delete_session?session_id=${encodeURIComponent(sessionId)}&email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}`,
+      { method: 'DELETE' }
+    );
+    return true;
+  } catch (error) {
+    console.error('Failed to delete session:', error);
+    return false;
+  }
+}
+
 /**
  * Student service — public API used by pages
  */
@@ -770,6 +877,7 @@ export const studentService = {
   getPatients,
   joinGroup,
   createSession,
+  deleteSession,
   sendMessage,
   sendMessageStreaming,
   getPatientDetail,
@@ -778,6 +886,8 @@ export const studentService = {
   fetchPatientDetail,
   fetchPatientFiles,
   fetchCaseMaterials,
+  fetchChatHistory,
+  fetchMessages,
 };
 
 /**

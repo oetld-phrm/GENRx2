@@ -7,7 +7,7 @@
  * DATABASE SCHEMA ALIGNMENT:
  * - Physical Assessment Materials: persona_media table (media_id, persona_id, media_type, url, title, description, created_at)
  * - Chat Attempts: chats table (chat_id, student_interaction_id, chat_name, chat_context_embeddings, last_accessed, notes)
- * - Chat Messages: messages table (message_id, chat_id, student_sent, message_content, time_sent, quality_score, quality_feedback, suggested_rewrite)
+ * - Chat Messages: messages table (message_id, chat_id, user_id, sender_type, message_content, sent_at)
  * - Notes: chats.notes field (text field in chats table)
  * - Key Questions: key_questions table (question_id, rubric_id, question_text, category, order, weight, max_score)
  * - Student Interactions: Links students to personas via student_interaction table
@@ -190,12 +190,9 @@ export interface ChatAttempt {
 export interface ChatMessage {
   message_id: string;                   // Unique identifier (message_id in DB)
   chat_id: string;                      // Reference to chat (chat_id in DB)
-  student_sent: boolean;                // True if sent by student, false if AI
+  sender_type: 'student' | 'ai' | 'system'; // Who sent the message (sender_type in DB)
   message_content: string;             // Message text (message_content in DB)
-  time_sent: string;                    // Timestamp (time_sent in DB)
-  quality_score?: number;               // Optional quality score (quality_score in DB)
-  quality_feedback?: string;            // Optional quality feedback (quality_feedback in DB)
-  suggested_rewrite?: string;           // Optional suggested rewrite (suggested_rewrite in DB)
+  sent_at: string;                      // Timestamp (sent_at in DB)
 }
 
 /**
@@ -273,7 +270,7 @@ export interface InstructorDataService {
   generateAccessCode: (simulationGroupId: string) => Promise<string>;
   getManageablePatients: (simulationGroupId: string) => Promise<ManageablePatient[]>;
   getPatient: (patientId: string) => ManageablePatient | undefined;
-  createPatient: (simulationGroupId: string, patientData: PatientCreateData) => Promise<void>;
+  createPatient: (simulationGroupId: string, patientData: PatientCreateData) => Promise<string>;
   updatePatient: (simulationGroupId: string, patientData: PatientUpdateData) => Promise<void>;
   uploadPatientPhoto: (simulationGroupId: string, patientId: string, photoFile: File) => Promise<string>;
   uploadPatientFile: (simulationGroupId: string, patientId: string, file: File, folderType: 'documents' | 'info' | 'answer_key') => Promise<void>;
@@ -601,44 +598,44 @@ const mockChatMessages: Record<string, ChatMessage[]> = {
     {
       message_id: 'msg-1',
       chat_id: 'attempt-2',
-      student_sent: false,
+      sender_type: 'ai',
       message_content: "Hello there! I'm Pamela, nice to meet you. I've been feeling really unwell lately, and I'm worried about these chest pains I've been having for the last week. They're quite uncomfortable and I'm not sure what's causing them. Do you think it could be related to my heart?",
-      time_sent: '10:00 AM'
+      sent_at: '10:00 AM'
     },
     {
       message_id: 'msg-2',
       chat_id: 'attempt-2',
-      student_sent: true,
+      sender_type: 'student',
       message_content: "Yes it's possible, can you please tell me a little bit about your medical history?",
-      time_sent: '10:01 AM'
+      sent_at: '10:01 AM'
     },
     {
       message_id: 'msg-3',
       chat_id: 'attempt-2',
-      student_sent: false,
+      sender_type: 'ai',
       message_content: "I have a history of hypertension, which I've had for about 4 years now. I've also had a total abdominal hysterectomy, and I've been experiencing dyspnea, or shortness of breath, lately. Oh, and I've had a peptic ulcer in the past, which is why I've been taking over-the-counter non-steroidal anti-inflammatory drugs. Could any of these things be contributing to my chest pains?",
-      time_sent: '10:02 AM'
+      sent_at: '10:02 AM'
     },
     {
       message_id: 'msg-4',
       chat_id: 'attempt-2',
-      student_sent: true,
+      sender_type: 'student',
       message_content: "What medications are you taking?",
-      time_sent: '10:03 AM'
+      sent_at: '10:03 AM'
     },
     {
       message_id: 'msg-5',
       chat_id: 'attempt-2',
-      student_sent: false,
+      sender_type: 'ai',
       message_content: "I'm not currently taking any prescription medications, but I do take ibuprofen (Advil) occasionally for headaches. I've also been taking NSAIDs regularly, which I know can irritate my stomach and make my peptic ulcer symptoms worse. I'm worried that maybe my medication use is related to my chest pains, but I'm not sure. Do you think that's possible?",
-      time_sent: '10:04 AM'
+      sent_at: '10:04 AM'
     },
     {
       message_id: 'msg-6',
       chat_id: 'attempt-2',
-      student_sent: true,
+      sender_type: 'student',
       message_content: "Tell me more about how the pain feels",
-      time_sent: '10:05 AM'
+      sent_at: '10:05 AM'
     }
   ]
 };
@@ -950,7 +947,7 @@ function getPatient(_patientId: string): ManageablePatient | undefined {
 /**
  * Create a new patient
  */
-async function createPatient(simulationGroupId: string, patientData: PatientCreateData): Promise<void> {
+async function createPatient(simulationGroupId: string, patientData: PatientCreateData): Promise<string> {
   try {
     const user = await authService.getCurrentUser();
     if (!user?.email) throw new Error('Not authenticated');
@@ -968,12 +965,16 @@ async function createPatient(simulationGroupId: string, patientData: PatientCrea
       queryParams.append('voice_id', patientData.voice_id);
     }
 
-    await apiClient.request(`instructor/create_patient?${queryParams.toString()}`, {
-      method: 'POST',
-      body: {
-        persona_prompt: patientData.patient_prompt || '',
-      },
-    });
+    const result = await apiClient.request<{ persona_id: string }>(
+      `instructor/create_patient?${queryParams.toString()}`,
+      {
+        method: 'POST',
+        body: {
+          persona_prompt: patientData.patient_prompt || '',
+        },
+      }
+    );
+    return result.persona_id;
   } catch (error) {
     console.error('Failed to create patient:', error);
     throw error;

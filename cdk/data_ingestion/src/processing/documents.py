@@ -7,7 +7,7 @@ from langchain_postgres import PGVector
 from langchain_core.documents import Document
 from langchain_aws import BedrockEmbeddings
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain.indexes import SQLRecordManager, index
+from langchain_classic.indexes import SQLRecordManager, index
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -44,12 +44,12 @@ def extract_txt(
 
     return text
 
-def get_ingestion_status(patient_id: str, file_path: str, connection) -> str:
+def get_ingestion_status(persona_id: str, file_path: str, connection) -> str:
     """
     Retrieves the current ingestion status of a file.
     
     Args:
-        patient_id (str): The patient ID associated with the file.
+        persona_id (str): The persona ID associated with the file.
         file_path (str): The full file path stored in the database.
     
     Returns:
@@ -62,9 +62,9 @@ def get_ingestion_status(patient_id: str, file_path: str, connection) -> str:
     try:
         cur = connection.cursor()
 
-        select_query = "SELECT ingestion_status FROM patient_data WHERE patient_id = %s AND filepath = %s;"
+        select_query = "SELECT ingestion_status FROM persona_data WHERE persona_id = %s AND filepath = %s;"
 
-        cur.execute(select_query, (patient_id, file_path))
+        cur.execute(select_query, (persona_id, file_path))
         result = cur.fetchone()
         connection.commit()
         cur.close()
@@ -77,12 +77,12 @@ def get_ingestion_status(patient_id: str, file_path: str, connection) -> str:
         logger.error(f"Error retrieving ingestion status for {file_path}: {e}")
         return None
 
-def update_ingestion_status(patient_id: str, file_path: str, status: str, connection):
+def update_ingestion_status(persona_id: str, file_path: str, status: str, connection):
     """
-    Updates the ingestion_status of a file in the patient_data table.
+    Updates the ingestion_status of a file in the persona_data table.
 
     Args:
-        patient_id (str): The patient ID associated with the file.
+        persona_id (str): The persona ID associated with the file.
         file_path (str): The full file path stored in the database.
         status (str): The status to update ('completed' or 'error').
     """
@@ -94,8 +94,8 @@ def update_ingestion_status(patient_id: str, file_path: str, status: str, connec
         cur = connection.cursor()
 
         # Retrieve the current ingestion status
-        select_query = "SELECT ingestion_status FROM patient_data WHERE patient_id = %s AND filepath = %s;"
-        cur.execute(select_query, (patient_id, file_path))
+        select_query = "SELECT ingestion_status FROM persona_data WHERE persona_id = %s AND filepath = %s;"
+        cur.execute(select_query, (persona_id, file_path))
         result = cur.fetchone()
 
         if result and result[0] == "completed":
@@ -105,30 +105,31 @@ def update_ingestion_status(patient_id: str, file_path: str, status: str, connec
             return
 
         update_query = """
-        UPDATE "patient_data"
+        UPDATE "persona_data"
         SET ingestion_status = %s
-        WHERE patient_id = %s
+        WHERE persona_id = %s
         AND filepath = %s;
         """
-        cur.execute(update_query, (status, patient_id, file_path))
+        cur.execute(update_query, (status, persona_id, file_path))
         connection.commit()
         cur.close()
 
-        logger.info(f"Ingestion status for {file_path} updated to '{status}' for patient {patient_id}.")
+        logger.info(f"Ingestion status for {file_path} updated to '{status}' for persona {persona_id}.")
 
     except Exception as e:
         if cur:
             cur.close()
         connection.rollback()
-        logger.error(f"Error updating ingestion status for patient {patient_id}, file {file_path}: {e}")
+        logger.error(f"Error updating ingestion status for persona {persona_id}, file {file_path}: {e}")
         raise
 
 def store_doc_texts(
     bucket: str, 
     group: str, 
-    patient: str,
+    persona: str,
     filename: str, 
-    output_bucket: str
+    output_bucket: str,
+    folder: str = "documents"
 ) -> List[str]:
     """
     Store the text of each page of a document in an S3 bucket.
@@ -136,15 +137,16 @@ def store_doc_texts(
     Args:
     bucket (str): The name of the S3 bucket containing the document.
     group (str): The group ID folder in the S3 bucket.
-    patient (str): The patient name and ID folder within the group.
+    persona (str): The persona name and ID folder within the group.
     filename (str): The name of the document file.
     output_bucket (str): The name of the S3 bucket for storing the extracted text.
+    folder (str): The folder category (e.g. "documents", "info", "answer_key").
     
     Returns:
     List[str]: A list of keys for the stored text files in the output bucket.
     """
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        s3.download_file(bucket, f"{group}/{patient}/documents/{filename}", tmp_file.name)
+        s3.download_file(bucket, f"{group}/{persona}/{folder}/{filename}", tmp_file.name)
         file_name, file_type = filename.rsplit('.', 1)
         doc = pymupdf.open(tmp_file.name, filetype=file_type)
         
@@ -154,23 +156,24 @@ def store_doc_texts(
                 output_buffer.write(text)
                 output_buffer.write(bytes((12,)))
                 
-                page_output_key = f'{group}/{patient}/documents/{filename}_page_{page_num}.txt'
+                page_output_key = f'{group}/{persona}/{folder}/{filename}_page_{page_num}.txt'
                 
                 with BytesIO(text) as page_output_buffer:
                     s3.upload_fileobj(page_output_buffer, output_bucket, page_output_key)
 
         os.remove(tmp_file.name)
 
-    return [f'{group}/{patient}/documents/{filename}_page_{page_num}.txt' for page_num in range(1, len(doc) + 1)]
+    return [f'{group}/{persona}/{folder}/{filename}_page_{page_num}.txt' for page_num in range(1, len(doc) + 1)]
 
 def add_document(
     bucket: str, 
     group: str, 
-    patient: str,
+    persona: str,
     filename: str, 
     vectorstore: PGVector, 
     embeddings: BedrockEmbeddings,
-    output_bucket: str = EMBEDDING_BUCKET_NAME
+    output_bucket: str = EMBEDDING_BUCKET_NAME,
+    folder: str = "documents"
 ) -> List[Document]:
     """
     Add a document to the vectorstore.
@@ -178,11 +181,12 @@ def add_document(
     Args:
     bucket (str): The name of the S3 bucket containing the document.
     group (str): The group ID folder in the S3 bucket.
-    patient (str): The patient name and ID folder within the group.
+    persona (str): The persona name and ID folder within the group.
     filename (str): The name of the document file.
     vectorstore (PGVector): The vectorstore instance.
     embeddings (BedrockEmbeddings): The embeddings instance.
     output_bucket (str, optional): The name of the S3 bucket for storing extracted data. Defaults to 'temp-extracted-data'.
+    folder (str): The folder category (e.g. "documents", "info", "answer_key").
     
     Returns:
     List[Document]: A list of all document chunks for this document that were added to the vectorstore.
@@ -191,9 +195,10 @@ def add_document(
     output_filenames = store_doc_texts(
         bucket=bucket,
         group=group,
-        patient=patient,
+        persona=persona,
         filename=filename,
-        output_bucket=output_bucket
+        output_bucket=output_bucket,
+        folder=folder
     )
     this_doc_chunks = store_doc_chunks(
         bucket=output_bucket,
@@ -255,7 +260,7 @@ def store_doc_chunks(
 def process_documents(
     bucket: str, 
     group: str, 
-    patient_id: str, 
+    persona_id: str, 
     vectorstore: PGVector, 
     embeddings: BedrockEmbeddings,
     record_manager: SQLRecordManager,
@@ -271,53 +276,50 @@ def process_documents(
     embeddings (BedrockEmbeddings): The embeddings instance.
     record_manager (SQLRecordManager): Manages list of documents in the vectorstore for indexing.
     """
-    paginator = s3.get_paginator('list_objects_v2')
-    page_iterator = paginator.paginate(Bucket=bucket, Prefix=f"{group}/{patient_id}/documents")
+    folders = ["documents", "info", "answer_key"]
     all_doc_chunks = []
     
-    for page in page_iterator:
-        if "Contents" not in page:
-            continue  # Skip pages without any content (e.g., if the bucket is empty)
-        for file in page['Contents']:
-            filename = file['Key']
-            if filename.endswith((".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".xps", ".mobi", ".cbz")):
-                file_path = f"{group}/{patient_id}/documents/{os.path.basename(filename)}"
-                this_doc_chunks = []
-                print(file_path)
+    for folder in folders:
+        paginator = s3.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=bucket, Prefix=f"{group}/{persona_id}/{folder}")
+        
+        for page in page_iterator:
+            if "Contents" not in page:
+                continue  # Skip pages without any content (e.g., if the bucket is empty)
+            for file in page['Contents']:
+                filename = file['Key']
+                if filename.endswith((".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".xps", ".mobi", ".cbz")):
+                    file_path = f"{group}/{persona_id}/{folder}/{os.path.basename(filename)}"
+                    this_doc_chunks = []
+                    print(file_path)
 
-                # Check if ingestion has already been completed
-                current_status = get_ingestion_status(patient_id, file_path, connection)
-                if current_status == "completed":
-                    logger.info(f"Ingestion already completed for {file_path}, skipping update.")
-                    continue
-                
-                this_doc_chunks = add_document(
-                    bucket=bucket,
-                    group=group,
-                    patient=patient_id,
-                    filename=os.path.basename(filename),
-                    vectorstore=vectorstore,
-                    embeddings=embeddings
-                )
+                    # Check if ingestion has already been completed
+                    current_status = get_ingestion_status(persona_id, file_path, connection)
+                    if current_status == "completed":
+                        logger.info(f"Ingestion already completed for {file_path}, skipping update.")
+                        continue
+                    
+                    this_doc_chunks = add_document(
+                        bucket=bucket,
+                        group=group,
+                        persona=persona_id,
+                        filename=os.path.basename(filename),
+                        vectorstore=vectorstore,
+                        embeddings=embeddings,
+                        folder=folder
+                    )
 
-                all_doc_chunks.extend(this_doc_chunks)
-                update_ingestion_status(patient_id, file_path, "completed", connection)
+                    all_doc_chunks.extend(this_doc_chunks)
+                    update_ingestion_status(persona_id, file_path, "completed", connection)
     
     if all_doc_chunks:  # Check if there are any documents to index
         idx = index(
             all_doc_chunks, 
             record_manager, 
             vectorstore, 
-            cleanup="full",
+            cleanup="incremental",
             source_id_key="source"
         )
         logger.info(f"Indexing updates: \n {idx}")
     else:
-        idx = index(
-            [],
-            record_manager, 
-            vectorstore, 
-            cleanup="full",
-            source_id_key="source"
-        )
         logger.info("No documents found for indexing.")
