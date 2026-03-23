@@ -1799,15 +1799,26 @@ The following is the instructor's answer key for this simulation case. Compare t
 
     # 4. Parse the JSON response
     try:
-        # Strip markdown code fences if present
+        # Robust JSON extraction: find the first { and last } to extract the JSON object
         cleaned = raw_output.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
+        
+        # Strip markdown code fences if present (handles various formats)
+        # Remove leading ```json or ``` with optional whitespace/newlines
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?\s*```\s*$', '', cleaned)
         cleaned = cleaned.strip()
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:].strip()
+        
+        # If still not starting with {, try to find the JSON object
+        if not cleaned.startswith('{'):
+            first_brace = cleaned.find('{')
+            if first_brace != -1:
+                cleaned = cleaned[first_brace:]
+        
+        # If not ending with }, find the last }
+        if not cleaned.endswith('}'):
+            last_brace = cleaned.rfind('}')
+            if last_brace != -1:
+                cleaned = cleaned[:last_brace + 1]
 
         debrief_data = json.loads(cleaned)
     except json.JSONDecodeError as e:
