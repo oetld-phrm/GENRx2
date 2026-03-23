@@ -353,7 +353,9 @@ function StudentChatPage() {
               summary: parsed.summary || '',
               questionsAddressed: addressedQuestions,
               missedKeyQuestionsCount: missedQuestions.length,
+              missedQuestions: missedQuestions,
               missedQuestionsGuidance: parsed.reasoning_gaps || '',
+              overallScore: typeof parsed.overall_score === 'number' ? parsed.overall_score : undefined,
               recommendationFeedback: {
                 strengths: parsed.recommendation_feedback?.strengths || [],
                 areasForImprovement: parsed.recommendation_feedback?.areas_for_improvement || [],
