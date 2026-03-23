@@ -513,7 +513,8 @@ function AdminSimulationGroupPage() {
         await instructorService.uploadPatientFile(groupId, patientId, file, folderType);
         setUploadStatus(prev => ({ ...prev, [fileType]: 'success' }));
         setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 3000);
-      } catch {
+      } catch (error) {
+        console.error('Failed to upload patient file', { groupId, patientId, fileType, error });
         setUploadStatus(prev => ({ ...prev, [fileType]: 'error' }));
         setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 5000);
       }

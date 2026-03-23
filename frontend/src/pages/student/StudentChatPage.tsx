@@ -751,6 +751,8 @@ function StudentChatPage() {
                       title={selectedPatientFile.filename}
                       className="w-full flex-1 rounded border"
                       style={{ borderColor: UI_COLORS.border.default, minHeight: '400px' }}
+                      sandbox="allow-same-origin"
+                      referrerPolicy="no-referrer"
                     />
                   ) : (
                     <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>No preview available for this file.</p>

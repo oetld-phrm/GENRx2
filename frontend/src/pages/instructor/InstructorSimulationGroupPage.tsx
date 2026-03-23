@@ -6,7 +6,7 @@ import UserAvatar from '@/components/UserAvatar';
 import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, HelpCircle, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
@@ -42,6 +42,7 @@ function InstructorSimulationGroupPage() {
   const [editPatientGender, setEditPatientGender] = useState('');
   const [editPatientPrompt, setEditPatientPrompt] = useState('');
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
+  const uploadTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   
   // Global Rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>(() => 
@@ -486,14 +487,16 @@ function InstructorSimulationGroupPage() {
         patientId = savedId;
       }
       const folderType = fileType === 'llm' ? 'documents' : fileType === 'patientInfo' ? 'info' : 'answer_key' as const;
+      if (uploadTimers.current[fileType]) clearTimeout(uploadTimers.current[fileType]);
       setUploadStatus(prev => ({ ...prev, [fileType]: 'uploading' }));
       try {
         await instructorService.uploadPatientFile(groupId, patientId, file, folderType);
         setUploadStatus(prev => ({ ...prev, [fileType]: 'success' }));
-        setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 3000);
-      } catch {
+        uploadTimers.current[fileType] = setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 3000);
+      } catch (error) {
+        console.error('Failed to upload patient file', { fileType, groupId, patientId, error });
         setUploadStatus(prev => ({ ...prev, [fileType]: 'error' }));
-        setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 5000);
+        uploadTimers.current[fileType] = setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 5000);
       }
     }
     e.target.value = '';
