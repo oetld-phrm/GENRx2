@@ -706,6 +706,34 @@ function deepParseJson(value: unknown): Record<string, any> | null {
   return null;
 }
 
+function extractJsonObjectFromText(text: string): Record<string, any> | null {
+  const firstBrace = text.indexOf('{');
+  if (firstBrace === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = firstBrace; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = text.slice(firstBrace, i + 1);
+        return deepParseJson(candidate);
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Fetch AI debrief for a concluded session via GET /student/get_debrief.
  */
@@ -714,43 +742,104 @@ async function fetchDebrief(sessionId: string): Promise<AIDebriefData | null> {
     const user = await authService.getCurrentUser();
     if (!user?.email) throw new Error('Not authenticated');
 
+    console.log('[fetchDebrief] start', { sessionId, email: user.email });
+
     // Retry to handle async debrief generation delay
     const maxAttempts = 6;
     const baseDelayMs = 400;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      console.log('[fetchDebrief] request attempt', { attempt: attempt + 1, maxAttempts });
+
       const data = await apiClient.request<{ generated_text?: any; status?: string; error?: string }>(
         `student/get_debrief?session_id=${encodeURIComponent(sessionId)}&email=${encodeURIComponent(user.email)}`
       );
 
+      console.log('[fetchDebrief] response meta', {
+        attempt: attempt + 1,
+        status: data?.status,
+        hasGeneratedText: Boolean(data?.generated_text),
+        error: data?.error,
+        generatedTextType: typeof data?.generated_text,
+      });
+
       // If backend says it's still generating, wait and retry
       if (data?.status === 'generating') {
         const delay = baseDelayMs * Math.pow(2, attempt);
+        console.log('[fetchDebrief] generating -> retrying after delay', { delayMs: delay, attempt: attempt + 1 });
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
 
-      if (!data?.generated_text) return null;
+      if (!data?.generated_text) {
+        console.log('[fetchDebrief] no generated_text, returning null');
+        return null;
+      }
 
       // Robustly extract the debrief object from generated_text.
       const raw = data.generated_text;
+
+      // Log a short preview for debugging
+      const rawPreview =
+        typeof raw === 'string'
+          ? raw.slice(0, 200)
+          : JSON.stringify(raw).slice(0, 200);
+
+      console.log('[fetchDebrief] raw generated_text preview', rawPreview);
+
       let debrief = deepParseJson(raw);
 
-      if (!debrief || typeof debrief !== 'object') return null;
+      console.log('[fetchDebrief] after deepParseJson', {
+        parsed: Boolean(debrief),
+        keys: debrief ? Object.keys(debrief).slice(0, 20) : [],
+        summaryType: debrief ? typeof debrief.summary : undefined,
+        summaryPreview:
+          debrief && typeof debrief.summary === 'string'
+            ? debrief.summary.slice(0, 200)
+            : undefined,
+      });
 
-      // Safety net: the backend may have stuffed the entire LLM JSON output
-      // as a string inside the "summary" field.
+      if (!debrief || typeof debrief !== 'object') {
+        console.log('[fetchDebrief] parsed debrief is null/invalid, returning null');
+        return null;
+      }
+
+      // Safety net #1: summary is *itself* JSON (starts with '{')
       if (
         debrief.summary &&
         typeof debrief.summary === 'string' &&
         debrief.summary.trimStart().startsWith('{')
       ) {
+        console.log('[fetchDebrief] summary starts with { -> attempting to parse inner JSON');
         const inner = deepParseJson(debrief.summary);
+        console.log('[fetchDebrief] inner-from-summary parse result', {
+          parsed: Boolean(inner),
+          keys: inner ? Object.keys(inner).slice(0, 20) : [],
+        });
         if (inner && typeof inner === 'object' && inner.summary) {
           debrief = inner;
+          console.log('[fetchDebrief] replaced debrief with inner summary JSON');
         }
       }
 
+      // Safety net #2: summary contains embedded JSON later in the string (e.g. "Interview Summary\n{...}")
+      if (typeof debrief.summary === 'string') {
+        const maybeInner = extractJsonObjectFromText(debrief.summary);
+        console.log('[fetchDebrief] extractJsonObjectFromText(summary) result', {
+          parsed: Boolean(maybeInner),
+          keys: maybeInner ? Object.keys(maybeInner).slice(0, 20) : [],
+          summaryPreview:
+            maybeInner && typeof maybeInner.summary === 'string'
+              ? maybeInner.summary.slice(0, 200)
+              : undefined,
+        });
+        if (maybeInner?.summary) {
+          debrief = maybeInner;
+          console.log('[fetchDebrief] replaced debrief with extracted JSON from summary string');
+        }
+      }
+
+      // Now compute mapped fields (do this AFTER possible replacements above)
       const addressedQuestions = (debrief.questions_addressed || []).map(
         (q: string | { question_text?: string }) =>
           typeof q === 'string' ? q : (q.question_text || 'Unknown question')
@@ -760,7 +849,7 @@ async function fetchDebrief(sessionId: string): Promise<AIDebriefData | null> {
           typeof q === 'string' ? q : (q.question_text || 'Unknown question')
       );
 
-      return {
+      const mapped: AIDebriefData = {
         summary: typeof debrief.summary === 'string' ? debrief.summary : '',
         questionsAddressed: addressedQuestions,
         missedKeyQuestionsCount: missedQuestions.length,
@@ -786,12 +875,21 @@ async function fetchDebrief(sessionId: string): Promise<AIDebriefData | null> {
           overallAlignment: debrief.answer_key_comparison.overall_alignment,
         } : undefined,
       };
+
+      console.log('[fetchDebrief] mapped result summary preview', {
+        summaryPreview: mapped.summary.slice(0, 200),
+        addressedCount: mapped.questionsAddressed.length,
+        missedCount: mapped.missedQuestions.length,
+        overallScore: mapped.overallScore,
+      });
+
+      return mapped;
     }
 
-    // If we exhausted retries, treat as not available yet
+    console.log('[fetchDebrief] exhausted retries, returning null', { sessionId });
     return null;
   } catch (error) {
-    console.error('Failed to fetch debrief:', error);
+    console.error('[fetchDebrief] failed', { sessionId, error });
     return null;
   }
 }
