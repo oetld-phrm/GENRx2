@@ -7,7 +7,8 @@ import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/App';
-import { studentService, type ChatHistoryEntry } from '@/services/studentService';
+import { studentService, type ChatHistoryEntry, type PatientDetail } from '@/services/studentService';
+import ConfirmDeleteSessionDialog from '@/components/ConfirmDeleteSessionDialog';
 
 /**
  * PatientDashboardPage Component
@@ -23,9 +24,22 @@ function PatientDashboardPage() {
   
   // State for showing all attempts
   const [showAllAttempts, setShowAllAttempts] = useState(false);
+
+  // State for delete confirmation dialog
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteTargetChatId, setDeleteTargetChatId] = useState<string | null>(null);
   
-  // Load patient data from mock data service
-  const patient = studentService.getPatientDetail(patientId);
+  // Load patient data from API
+  const [patient, setPatient] = useState<PatientDetail>({ id: patientId, name: 'Loading...', age: 0, gender: '' });
+
+  useEffect(() => {
+    if (!groupId || !patientId) return;
+    let cancelled = false;
+    studentService.fetchPatientDetail(groupId, patientId).then((data) => {
+      if (!cancelled) setPatient(data);
+    });
+    return () => { cancelled = true; };
+  }, [groupId, patientId]);
 
   // Load chat history from API (falls back to mock)
   const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
@@ -95,19 +109,31 @@ function PatientDashboardPage() {
   /**
    * Handle delete session
    */
-  const handleDeleteSession = async (e: React.MouseEvent, chatId: string) => {
+  const handleDeleteSession = (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation(); // Prevent row click navigation
-    if (!groupId || !patientId) return;
-    if (!window.confirm('Are you sure you want to delete this session?')) return;
+    setDeleteTargetChatId(chatId);
+    setIsDeleteDialogOpen(true);
+  };
 
-    const success = await studentService.deleteSession(groupId, patientId, chatId);
+  const handleConfirmDelete = async () => {
+    if (!groupId || !patientId || !deleteTargetChatId) return;
+    const success = await studentService.deleteSession(groupId, patientId, deleteTargetChatId);
     if (success) {
-      setChatHistory((prev) => prev.filter((c) => c.id !== chatId));
+      setChatHistory((prev) => prev.filter((c) => c.id !== deleteTargetChatId));
     }
+    setIsDeleteDialogOpen(false);
+    setDeleteTargetChatId(null);
   };
 
   return (
     <PageContainer>
+      {/* Delete Session Confirmation Dialog */}
+      <ConfirmDeleteSessionDialog
+        isOpen={isDeleteDialogOpen}
+        onCancel={() => { setIsDeleteDialogOpen(false); setDeleteTargetChatId(null); }}
+        onConfirm={handleConfirmDelete}
+      />
+
       {/* Header */}
       <header className="flex-shrink-0 flex border-b border-border items-center justify-between py-6 px-8" style={{ backgroundColor: UI_COLORS.header.background }}>
         <div className="flex items-center gap-4">
@@ -149,9 +175,9 @@ function PatientDashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto px-8 py-6">
-        <div className={hasChats ? "grid grid-cols-2 gap-6" : "max-w-4xl"}>
+        <div className={hasChats ? "grid grid-cols-2 gap-6 h-full overflow-hidden" : "max-w-4xl"}>
           {/* Left Column - Patient Overview */}
-          <div className={hasChats ? "pr-6" : ""} style={hasChats ? { borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: UI_COLORS.border.default } : {}}>
+          <div className={hasChats ? "pr-6 overflow-y-auto" : ""} style={hasChats ? { borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: UI_COLORS.border.default } : {}}>
             <h2 className="text-xl font-semibold mb-6" style={{ color: UI_COLORS.text.heading }}>Patient Overview</h2>
             
             {/* Patient Info Card */}
@@ -165,18 +191,31 @@ function PatientDashboardPage() {
                 <h3 className="text-2xl font-semibold" style={{ color: UI_COLORS.text.heading }}>
                   {patient.name}
                 </h3>
-                <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
-                  Pronouns: {patient.pronouns}
-                </p>
-                <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
-                  Age: {patient.age}
-                </p>
-                <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
-                  Sex: {patient.sex}
-                </p>
-                <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
-                  Primary Complaint: {patient.primaryComplaint}
-                </p>
+                {patient.pronouns && (
+                  <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
+                    Pronouns: {patient.pronouns}
+                  </p>
+                )}
+                {!!patient.age && (
+                  <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
+                    Age: {patient.age}
+                  </p>
+                )}
+                {patient.gender && (
+                  <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
+                    Gender: {patient.gender}
+                  </p>
+                )}
+                {patient.sex && (
+                  <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
+                    Sex: {patient.sex}
+                  </p>
+                )}
+                {patient.primaryComplaint && (
+                  <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
+                    Primary Complaint: {patient.primaryComplaint}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -308,7 +347,7 @@ function PatientDashboardPage() {
 
           {/* Right Column - Chat History (only when there are chats) */}
           {hasChats && (
-            <div className="pl-6">
+            <div className="pl-6 flex flex-col overflow-hidden h-full">
               <h2 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Chat History</h2>
               <p className="text-sm mb-4" style={{ color: UI_COLORS.text.body }}>
                 Click on an in-progress chat to continue your diagnosis.<br />
@@ -316,7 +355,7 @@ function PatientDashboardPage() {
               </p>
 
               {/* Chat History Table */}
-              <div className="rounded-lg overflow-hidden mb-4" style={{ backgroundColor: UI_COLORS.background.white, borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default }}>
+              <div className="rounded-lg overflow-y-auto flex-1 min-h-0 mb-4" style={{ backgroundColor: UI_COLORS.background.white, borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default }}>
                 <table className="w-full">
                   <thead style={{ backgroundColor: UI_COLORS.background.tableHeader, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
                     <tr>
@@ -336,7 +375,7 @@ function PatientDashboardPage() {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <td className="px-6 py-4" style={{ color: UI_COLORS.text.heading }}>{chat.name}</td>
-                        <td className="px-6 py-4 text-center" style={{ color: UI_COLORS.text.body }}>{chat.completionStatus}</td>
+                        <td className="px-6 py-4 text-center" style={{ color: UI_COLORS.text.body }}>{chat.completionStatus === 'Complete' ? 'Debrief Reached' : chat.completionStatus}</td>
                         <td className="px-6 py-4 text-center">
                           <button
                             onClick={(e) => handleDeleteSession(e, chat.id)}

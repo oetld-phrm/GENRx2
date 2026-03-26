@@ -125,6 +125,7 @@ export interface PatientFile {
   id: string;
   filename: string;
   description: string;
+  url?: string;
 }
 
 /**
@@ -168,7 +169,9 @@ export interface AIDebriefData {
   summary: string;
   questionsAddressed: string[];
   missedKeyQuestionsCount: number;
+  missedQuestions: string[];
   missedQuestionsGuidance: string;
+  overallScore?: number;
   recommendationFeedback: {
     strengths: string[];
     areasForImprovement: string[];
@@ -320,7 +323,15 @@ const mockAIDebriefData: AIDebriefData = {
     'Asked about previous diagnosis of asthma',
   ],
   missedKeyQuestionsCount: 5,
+  missedQuestions: [
+    'Did not ask about inhaler technique',
+    'Did not explore environmental triggers',
+    'Did not ask about exercise tolerance',
+    'Did not assess sleep quality',
+    'Did not ask about allergy history',
+  ],
   missedQuestionsGuidance: "These questions are important to fully assess the patient's condition and guide appropriate clinical decision-making.",
+  overallScore: 62.0,
   recommendationFeedback: {
     strengths: [
       'Identified relevant symptoms early',
@@ -500,11 +511,8 @@ async function fetchPatientFiles(simulationGroupId: string, patientId: string): 
     const files: PatientFile[] = [];
     let idx = 1;
 
-    for (const [filename, info] of Object.entries(data.document_files ?? {})) {
-      files.push({ id: String(idx++), filename, description: info.metadata ?? 'No description available' });
-    }
     for (const [filename, info] of Object.entries(data.info_files ?? {})) {
-      files.push({ id: String(idx++), filename, description: info.metadata ?? 'No description available' });
+      files.push({ id: String(idx++), filename, description: info.metadata ?? 'No description available', url: info.url });
     }
 
     return files.length > 0 ? files : mockPatientFiles;
@@ -583,6 +591,7 @@ async function fetchChatHistory(simulationGroupId: string, patientId: string): P
       chat_name: string | null;
       last_accessed: string | null;
       notes: string | null;
+      status: string | null;
     }>>(
       `student/patient?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}`
     );
@@ -596,7 +605,7 @@ async function fetchChatHistory(simulationGroupId: string, patientId: string): P
       return {
         id: chat.chat_id,
         name: chat.chat_name || `Attempt ${index + 1}${dateStr ? ` - ${dateStr}` : ''}`,
-        completionStatus: 'In Progress', // chats table has no completion flag; default to in-progress
+        completionStatus: chat.status === 'concluded' ? 'Complete' : 'In Progress',
         score: null,
       };
     });
@@ -633,8 +642,10 @@ async function fetchMessages(sessionId: string): Promise<StudentChatMessage[]> {
     }));
 
     // Deduplicate by sender_type + message_content (backend may insert the same message twice with different IDs)
+    // Also filter out the system prompt that kicks off the AI patient conversation
     const seen = new Set<string>();
     return mapped.filter((msg) => {
+      if (msg.message_content.trim().startsWith('Begin the conversation as the patient:')) return false;
       const key = `${msg.sender_type}::${msg.message_content.trim()}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -643,6 +654,282 @@ async function fetchMessages(sessionId: string): Promise<StudentChatMessage[]> {
   } catch (error) {
     console.error('Failed to fetch messages:', error);
     return [];
+  }
+}
+
+/**
+ * Recursively unwrap a value that may be a JSON string (possibly multi-encoded)
+ * or an object. Returns a plain object or null.
+ */
+function deepParseJson(value: unknown): Record<string, any> | null {
+  const MAX_DEPTH = 5;
+  let current: unknown = value;
+  for (let i = 0; i < MAX_DEPTH; i++) {
+    if (current !== null && typeof current === 'object' && !Array.isArray(current)) {
+      return current as Record<string, any>;
+    }
+    if (typeof current !== 'string') return null;
+    const str = (current as string).trim();
+    if (!str) return null;
+
+    // Try direct JSON.parse
+    try {
+      current = JSON.parse(str);
+      continue;
+    } catch { /* fall through to brace extraction */ }
+
+    // Try extracting the outermost { ... } from the string (handles LLM preamble text)
+    const firstBrace = str.indexOf('{');
+    if (firstBrace === -1) return null;
+
+    // Find the matching closing brace by counting depth
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let lastBrace = -1;
+    for (let j = firstBrace; j < str.length; j++) {
+      const ch = str[j];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') depth++;
+      if (ch === '}') { depth--; if (depth === 0) { lastBrace = j; break; } }
+    }
+    if (lastBrace === -1) return null;
+
+    try {
+      current = JSON.parse(str.slice(firstBrace, lastBrace + 1));
+      continue;
+    } catch { return null; }
+  }
+  return null;
+}
+
+/**
+ * Attempts to extract structured debrief data from a raw JSON string.
+ * Handles both complete and truncated JSON from the LLM.
+ * Tries direct parse first, then progressively repairs truncated JSON
+ * by closing open brackets/braces.
+ */
+function extractDebriefFromRawJson(raw: string): Record<string, any> | null {
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && obj.summary) return obj;
+  } catch { /* continue to repair attempts */ }
+
+  const firstBrace = raw.indexOf('{');
+  if (firstBrace === -1) return null;
+
+  let jsonStr = raw.slice(firstBrace);
+
+  // Try progressively closing the JSON to make it parseable
+  const closers = ['"}', '"]', '}]', '}}', '}'];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    for (const closer of closers) {
+      try {
+        const repaired = jsonStr + closer.repeat(attempt + 1);
+        const obj = JSON.parse(repaired);
+        if (obj && typeof obj === 'object' && obj.summary) return obj;
+      } catch { /* try next */ }
+    }
+    // Specific common truncation repairs
+    try {
+      const obj = JSON.parse(jsonStr + ']}]}');
+      if (obj && typeof obj === 'object' && obj.summary) return obj;
+    } catch { /* try next */ }
+    try {
+      const obj = JSON.parse(jsonStr + '"}]}');
+      if (obj && typeof obj === 'object' && obj.summary) return obj;
+    } catch { /* try next */ }
+  }
+
+  // Last resort: truncate to the last complete key-value and close
+  const lastCompleteComma = jsonStr.lastIndexOf('",');
+  const lastCompleteBracket = jsonStr.lastIndexOf('],');
+  const lastCompleteBrace = jsonStr.lastIndexOf('},');
+  const cutPoint = Math.max(lastCompleteComma, lastCompleteBracket, lastCompleteBrace);
+  
+  if (cutPoint > 0) {
+    const truncated = jsonStr.slice(0, cutPoint + 1);
+    let openBraces = 0, openBrackets = 0, inString = false, escaped = false;
+    for (const ch of truncated) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') openBraces++;
+      if (ch === '}') openBraces--;
+      if (ch === '[') openBrackets++;
+      if (ch === ']') openBrackets--;
+    }
+    const suffix = ']'.repeat(Math.max(0, openBrackets)) + '}'.repeat(Math.max(0, openBraces));
+    try {
+      const obj = JSON.parse(truncated + suffix);
+      if (obj && typeof obj === 'object' && obj.summary) return obj;
+    } catch { /* give up */ }
+  }
+
+  return null;
+}
+
+/**
+ * Fetch AI debrief for a concluded session via GET /student/get_debrief.
+ */
+export async function fetchDebrief(sessionId: string): Promise<AIDebriefData | null> {
+  try {
+    const user = await authService.getCurrentUser();
+    if (!user?.email) throw new Error('Not authenticated');
+
+    console.log('[fetchDebrief] start', { sessionId, email: user.email });
+
+    const maxAttempts = 6;
+    const baseDelayMs = 400;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      console.log('[fetchDebrief] request attempt', { attempt: attempt + 1, maxAttempts });
+
+      const data = await apiClient.request<{ generated_text?: any; status?: string; error?: string }>(
+        `student/get_debrief?session_id=${encodeURIComponent(sessionId)}&email=${encodeURIComponent(user.email)}`
+      );
+
+      console.log('[fetchDebrief] response meta', {
+        attempt: attempt + 1,
+        status: data?.status,
+        hasGeneratedText: Boolean(data?.generated_text),
+        error: data?.error,
+        generatedTextType: typeof data?.generated_text,
+      });
+
+      if (data?.status === 'generating') {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.log('[fetchDebrief] generating -> retrying after delay', { delayMs: delay, attempt: attempt + 1 });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (!data?.generated_text) {
+        console.log('[fetchDebrief] no generated_text, returning null');
+        return null;
+      }
+
+      let raw = data.generated_text;
+
+      if (typeof raw === 'string') {
+        console.log('[fetchDebrief] generated_text is a string, will parse');
+      } else {
+        console.log('[fetchDebrief] generated_text is already an object');
+      }
+
+      const rawPreview = typeof raw === 'string' ? raw.slice(0, 200) : JSON.stringify(raw).slice(0, 200);
+      console.log('[fetchDebrief] raw generated_text preview', rawPreview);
+
+      let debrief = deepParseJson(raw);
+
+      console.log('[fetchDebrief] after deepParseJson', {
+        parsed: Boolean(debrief),
+        keys: debrief ? Object.keys(debrief).slice(0, 20) : [],
+        summaryType: debrief ? typeof debrief.summary : undefined,
+      });
+
+      if (!debrief || typeof debrief !== 'object') {
+        console.log('[fetchDebrief] parsed debrief is null/invalid, returning null');
+        return null;
+      }
+
+      // Check if summary contains '{' instead of strictly starting with it
+      if (
+        debrief.summary &&
+        typeof debrief.summary === 'string' &&
+        debrief.summary.includes('{')
+      ) {
+        console.log('[fetchDebrief] summary contains { -> attempting to extract and repair');
+        
+        // USE THE REPAIR FUNCTION HERE
+        const extracted = extractDebriefFromRawJson(debrief.summary);
+
+        if (extracted && typeof extracted === 'object') {
+          debrief = { ...debrief, ...extracted } as Record<string, any>;
+          console.log('[fetchDebrief] replaced debrief with repaired JSON from summary');
+        } else {
+           console.log('[fetchDebrief] advanced repair failed, falling back to basic extraction');
+        }
+      }
+
+      // Final fallback if summary somehow remains a JSON string with leading/trailing spaces
+      if (typeof debrief.summary === 'string' && debrief.summary.includes('{')) {
+        try {
+          const firstBrace = debrief.summary.indexOf('{');
+          const lastBrace = debrief.summary.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            const summaryObj = JSON.parse(debrief.summary.substring(firstBrace, lastBrace + 1));
+            if (summaryObj.summary) {
+              debrief.summary = summaryObj.summary;
+            }
+          }
+        } catch (e) {
+          console.warn('[fetchDebrief] could not parse summary as JSON, extracting text', e);
+          const m = debrief.summary.match(/"summary"\s*:\s*"([^"]+)"/);
+          if (m) {
+            debrief.summary = m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+            console.log('[fetchDebrief] extracted summary via regex from truncated JSON');
+          } else {
+            debrief.summary = 'AI debrief summary could not be fully parsed. Please try concluding the session again.';
+            console.log('[fetchDebrief] summary was unparseable JSON, replaced with fallback message');
+          }
+        }
+      }
+
+      const addressedQuestions = (debrief.questions_addressed || []).map(
+        (q: string | { question_text?: string }) =>
+          typeof q === 'string' ? q : (q.question_text || 'Unknown question')
+      );
+      const missedQuestions = (debrief.questions_missed || []).map(
+        (q: string | { question_text?: string }) =>
+          typeof q === 'string' ? q : (q.question_text || 'Unknown question')
+      );
+
+      const mapped: AIDebriefData = {
+        summary: typeof debrief.summary === 'string' ? debrief.summary : '',
+        questionsAddressed: addressedQuestions,
+        missedKeyQuestionsCount: missedQuestions.length,
+        missedQuestions: missedQuestions,
+        missedQuestionsGuidance: typeof debrief.reasoning_gaps === 'string' ? debrief.reasoning_gaps : '',
+        overallScore: typeof debrief.overall_score === 'number' ? debrief.overall_score : undefined,
+        recommendationFeedback: {
+          strengths: debrief.recommendation_feedback?.strengths || [],
+          areasForImprovement: debrief.recommendation_feedback?.areas_for_improvement || [],
+        },
+        suggestedRewrites: (debrief.suggested_rewrites || []).map(
+          (r: { original_message?: string; suggested_rewrite?: string }) => ({
+            original: r.original_message || '',
+            suggested: r.suggested_rewrite || '',
+          })
+        ),
+        rubricDescription: 'Compare your recommendations with the answer key provided by your instructor.',
+        answerKeyComparison: debrief.answer_key_comparison ? {
+          answerKeyAvailable: debrief.answer_key_comparison.answer_key_available ?? false,
+          correctElements: debrief.answer_key_comparison.correct_elements,
+          missingElements: debrief.answer_key_comparison.missing_elements,
+          incorrectElements: debrief.answer_key_comparison.incorrect_elements,
+          overallAlignment: debrief.answer_key_comparison.overall_alignment,
+        } : undefined,
+      };
+
+      console.log('[fetchDebrief] mapped result', {
+        summaryPreview: mapped.summary.slice(0, 200),
+        addressedCount: mapped.questionsAddressed.length,
+        missedCount: mapped.missedQuestions.length,
+      });
+
+      return mapped;
+    }
+
+    console.log('[fetchDebrief] exhausted retries, returning null', { sessionId });
+    return null;
+  } catch (error) {
+    console.error('[fetchDebrief] failed', { sessionId, error });
+    return null;
   }
 }
 
@@ -958,6 +1245,7 @@ export const studentService = {
   fetchChatHistory,
   fetchMessages,
   fetchAnswerKeyUrl,
+  fetchDebrief
 };
 
 /**
@@ -977,5 +1265,7 @@ export const mockDataService = {
   getAssessmentActivities,
   getChatHistoryMessages,
   getSavedNote,
+  fetchDebrief,
+  fetchAnswerKeyUrl
 };
 

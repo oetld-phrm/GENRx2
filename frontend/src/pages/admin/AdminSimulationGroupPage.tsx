@@ -3,14 +3,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient } from '@/services/instructorService';
+import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient, type KeyQuestionAnalytics } from '@/services/instructorService';
 import { mockAdminDataService, mockGroupInstructors, mockOrganizations } from '@/services/adminService';
-import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode } from 'lucide-react';
+import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AddInstructorDialog } from '@/components/AddInstructorDialog';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -48,6 +49,7 @@ function AdminSimulationGroupPage() {
   const [editPatientAge, setEditPatientAge] = useState('');
   const [editPatientGender, setEditPatientGender] = useState('');
   const [editPatientPrompt, setEditPatientPrompt] = useState('');
+  const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
   
   // Global Rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>([]);
@@ -113,6 +115,8 @@ function AdminSimulationGroupPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [manageablePatients, setManageablePatients] = useState<ManageablePatient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [globalKeyQuestionAnalytics, setGlobalKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
+  const [isAccessCodeDialogOpen, setIsAccessCodeDialogOpen] = useState(false);
 
   // Load data from instructor service (sync)
   const user = mockAdminDataService.getCurrentUser();
@@ -139,13 +143,14 @@ function AdminSimulationGroupPage() {
       if (!groupId) return;
       
       try {
-        const [groupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient] = await Promise.all([
+        const [groupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient, keyQuestionData] = await Promise.all([
           instructorService.getSimulationGroup(groupId),
           instructorService.getPatientAnalytics(groupId),
           instructorService.getStudents(groupId),
           instructorService.getManageablePatients(groupId),
           Promise.resolve(instructorService.getGlobalQuestionBank()),
           Promise.resolve(instructorService.getPatientSpecificQuestionBank()),
+          instructorService.getKeyQuestionAnalytics(groupId),
         ]);
         
         setSimulationGroup(groupData);
@@ -154,6 +159,7 @@ function AdminSimulationGroupPage() {
         setManageablePatients(patientsData);
         setGlobalBankQuestions(bankGlobal);
         setPatientSpecificBankQuestions(bankPatient);
+        setGlobalKeyQuestionAnalytics(keyQuestionData);
         
         // Set initial selected patient if analytics available
         if (analyticsData.length > 0) {
@@ -197,7 +203,7 @@ function AdminSimulationGroupPage() {
 
   // Load assigned questions from API when rubric or questionBank section is activated
   useEffect(() => {
-    if ((activeSection === 'rubric' || activeSection === 'questionBank') && groupId) {
+    if ((activeSection === 'rubric' || activeSection === 'questionBank' || activeSection === 'editPatient') && groupId) {
       instructorService.getSimulationGroupQuestions(groupId)
         .then((assigned: any[]) => {
           // Map to GlobalRubricQuestion format for the rubric view
@@ -235,9 +241,9 @@ function AdminSimulationGroupPage() {
   const donutColors = [SIMULATION_GROUP_COLOR_PALETTE[2], SIMULATION_GROUP_COLOR_PALETTE[5]];
   const totalMessages = currentPatient ? currentPatient.student_message_count + currentPatient.ai_message_count : 0;
   
-  // Key question analytics (per patient)
+  // Key question analytics (per patient) — uses pre-fetched data
   const keyQuestionAnalytics = currentPatient
-    ? mockInstructorDataService.getKeyQuestionAnalytics(groupId || '1')
+    ? globalKeyQuestionAnalytics
     : [];
   
   // Question performance scores
@@ -298,16 +304,6 @@ function AdminSimulationGroupPage() {
     navigator.clipboard.writeText(accessCode);
   };
 
-  const handleToggleLLMEvaluation = (patientId: string, currentValue: boolean) => {
-    setManageablePatients(prevPatients => 
-      prevPatients.map(patient => 
-        patient.patient_id === patientId 
-          ? { ...patient, llm_completion: !currentValue }
-          : patient
-      )
-    );
-    mockInstructorDataService.updatePatientLLMEvaluation(patientId, !currentValue);
-  };
 
   const handleDeletePatient = (patientId: string) => {
     if (confirm(`Are you sure you want to delete this ${aiPersonaLabelLower}?`)) {
@@ -507,8 +503,18 @@ function AdminSimulationGroupPage() {
         patientId = savedId;
       }
       const folderType = fileType === 'llm' ? 'documents' : fileType === 'patientInfo' ? 'info' : 'answer_key' as const;
-      instructorService.uploadPatientFile(groupId, patientId, file, folderType);
+      setUploadStatus(prev => ({ ...prev, [fileType]: 'uploading' }));
+      try {
+        await instructorService.uploadPatientFile(groupId, patientId, file, folderType);
+        setUploadStatus(prev => ({ ...prev, [fileType]: 'success' }));
+        setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 3000);
+      } catch (error) {
+        console.error('Failed to upload patient file', { groupId, patientId, fileType, error });
+        setUploadStatus(prev => ({ ...prev, [fileType]: 'error' }));
+        setTimeout(() => setUploadStatus(prev => ({ ...prev, [fileType]: 'idle' })), 5000);
+      }
     }
+    e.target.value = '';
   };
 
   // Get the patient being edited
@@ -857,9 +863,7 @@ function AdminSimulationGroupPage() {
 
   // Reusable accordion for global rubric questions (read-only)
   const renderGlobalRubricAccordion = () => {
-    const patientSimGroupId = patientBeingEdited?.simulation_group_id || groupId || '1';
-    const patientGlobalRubric = mockInstructorDataService.getGlobalRubricQuestions(patientSimGroupId);
-    const filteredGlobalRubric = patientGlobalRubric.filter(q =>
+    const filteredGlobalRubric = globalRubricQuestions.filter(q =>
       q.title.toLowerCase().includes(globalRubricSearchQuery.toLowerCase())
     );
     return (
@@ -1067,7 +1071,7 @@ function AdminSimulationGroupPage() {
               </div>
             </div>
             <Button
-              onClick={handleGenerateAccessCode}
+              onClick={() => setIsAccessCodeDialogOpen(true)}
               variant="outline"
               className="w-full justify-start gap-2 py-2.5 h-auto font-medium"
               style={{ borderColor: UI_COLORS.border.default, color: UI_COLORS.text.heading }}
@@ -1143,11 +1147,9 @@ function AdminSimulationGroupPage() {
                     <p className="text-sm mb-6" style={{ color: UI_COLORS.text.muted }}>
                       Number of students who answered each global key question across all personas
                     </p>
-                    {(() => {
-                      const globalKeyQuestionData = mockInstructorDataService.getKeyQuestionAnalytics(groupId || '1');
-                      return globalKeyQuestionData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={Math.max(250, globalKeyQuestionData.length * 50)}>
-                          <BarChart data={globalKeyQuestionData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    {globalKeyQuestionAnalytics.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={Math.max(250, globalKeyQuestionAnalytics.length * 50)}>
+                          <BarChart data={globalKeyQuestionAnalytics} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
                             <XAxis type="number" tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} allowDecimals={false} />
                             <YAxis type="category" dataKey="questionTitle" width={180} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} />
@@ -1157,8 +1159,7 @@ function AdminSimulationGroupPage() {
                         </ResponsiveContainer>
                       ) : (
                         <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No key questions configured.</p>
-                      );
-                    })()}
+                      )}
                   </div>
 
                   {/* Question Performance Scores */}
@@ -1326,29 +1327,17 @@ function AdminSimulationGroupPage() {
               </div>
 
               <div className="border rounded-lg overflow-hidden" style={{ borderColor: UI_COLORS.border.default }}>
-                <div className="grid grid-cols-[2fr_1fr_1fr_2fr_2fr] gap-4 px-6 py-4" style={{ backgroundColor: UI_COLORS.background.tableHeader }}>
-                  {['Patient Name', 'Age', 'Gender', 'LLM Evaluation', 'Actions'].map(h => (
+                <div className="grid grid-cols-[2fr_1fr_1fr_2fr] gap-4 px-6 py-4" style={{ backgroundColor: UI_COLORS.background.tableHeader }}>
+                  {['Patient Name', 'Age', 'Gender', 'Actions'].map(h => (
                     <div key={h} className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>{h}</div>
                   ))}
                 </div>
 
                 {filteredPatients.map((patient) => (
-                  <div key={patient.patient_id} className="grid grid-cols-[2fr_1fr_1fr_2fr_2fr] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
+                  <div key={patient.patient_id} className="grid grid-cols-[2fr_1fr_1fr_2fr] gap-4 px-6 py-4 border-t items-center" style={{ borderColor: UI_COLORS.border.default }}>
                     <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_name}</div>
                     <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_age}</div>
                     <div className="text-base" style={{ color: UI_COLORS.text.heading }}>{patient.patient_gender}</div>
-                    <div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={patient.llm_completion}
-                        onClick={() => handleToggleLLMEvaluation(patient.patient_id, patient.llm_completion)}
-                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                        style={{ backgroundColor: patient.llm_completion ? UI_COLORS.toggle.active : UI_COLORS.toggle.inactive }}
-                      >
-                        <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: patient.llm_completion ? 'translateX(22px)' : 'translateX(2px)' }} />
-                      </button>
-                    </div>
                     <div className="flex items-center gap-3">
                       <Button
                         onClick={() => handleEditPatient(patient.patient_id)}
@@ -1945,8 +1934,13 @@ function AdminSimulationGroupPage() {
                           { label: 'Answer Key', type: 'answerKey' as const },
                         ].map(({ label, type }) => (
                           <div key={type} className="flex items-center justify-between p-4 border rounded-lg" style={{ borderColor: UI_COLORS.border.default }}>
-                            <span className="font-medium" style={{ color: UI_COLORS.text.heading }}>{label}</span>
-                            <label className="cursor-pointer">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium" style={{ color: UI_COLORS.text.heading }}>{label}</span>
+                              {uploadStatus[type] === 'uploading' && <Loader2 className="w-4 h-4 animate-spin" style={{ color: UI_COLORS.text.muted }} />}
+                              {uploadStatus[type] === 'success' && <span className="flex items-center gap-1 text-sm" style={{ color: '#16a34a' }}><CheckCircle className="w-4 h-4" /> Uploaded</span>}
+                              {uploadStatus[type] === 'error' && <span className="flex items-center gap-1 text-sm" style={{ color: '#dc2626' }}><XCircle className="w-4 h-4" /> Failed</span>}
+                            </div>
+                            <label className={`cursor-pointer ${uploadStatus[type] === 'uploading' ? 'pointer-events-none opacity-50' : ''}`}>
                               <input type="file" onChange={(e) => handleFileUpload(type, e)} className="hidden" />
                               <div className="p-2 rounded-lg transition-colors flex items-center gap-2" style={{ backgroundColor: UI_COLORS.background.tableHeader, color: UI_COLORS.text.body }}>
                                 <Upload className="w-5 h-5" />
@@ -2316,6 +2310,36 @@ function AdminSimulationGroupPage() {
         onOpenChange={setIsAddInstructorDialogOpen}
         onAddInstructor={handleAddInstructorSubmit}
       />
+
+      {/* Confirm Generate New Access Code Dialog */}
+      <Dialog open={isAccessCodeDialogOpen} onOpenChange={setIsAccessCodeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle style={{ color: UI_COLORS.text.heading }}>Generate New Access Code</DialogTitle>
+            <DialogDescription style={{ color: UI_COLORS.text.body }}>
+              Are you sure? This will permanently replace the current access code. Any students using the old code will no longer be able to join.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAccessCodeDialogOpen(false)}
+              style={{ borderColor: UI_COLORS.border.default, color: UI_COLORS.text.heading }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setIsAccessCodeDialogOpen(false);
+                await handleGenerateAccessCode();
+              }}
+              style={{ backgroundColor: UI_COLORS.status.error, color: UI_COLORS.button.text }}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }

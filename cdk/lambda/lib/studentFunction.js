@@ -1323,6 +1323,117 @@ exports.handler = async (event, context) => {
           });
         }
         break;
+      case "GET /student/get_debrief":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.session_id &&
+          event.queryStringParameters.email
+        ) {
+          const sessionId = event.queryStringParameters.session_id;
+          const studentEmail = event.queryStringParameters.email;
+
+          try {
+            // 1) Validate student exists
+            const userResult = await sqlConnection`
+              SELECT user_id
+              FROM "users"
+              WHERE user_email = ${studentEmail}
+              LIMIT 1;
+            `;
+
+            if (userResult.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Student not found." });
+              break;
+            }
+
+            const userId = userResult[0].user_id;
+
+            // 2) Validate the chat belongs to this student (ownership check)
+            const ownerCheck = await sqlConnection`
+              SELECT c.chat_id
+              FROM "chats" c
+              JOIN "student_interactions" si
+                ON c.student_interaction_id = si.student_interaction_id
+              JOIN "enrollments" e
+                ON si.enrollment_id = e.enrollment_id
+              WHERE c.chat_id = ${sessionId}
+                AND e.user_id = ${userId}
+              LIMIT 1;
+            `;
+
+            if (ownerCheck.length === 0) {
+              response.statusCode = 403;
+              response.body = JSON.stringify({
+                error: "Forbidden: you do not have access to this chat.",
+              });
+              break;
+            }
+
+            // 3) Retry for race condition (debrief inserted async after conclude)
+            const maxRetries = 6;
+            const baseDelayMs = 300; // 0.3s, 0.6s, 1.2s, 2.4s, 4.8s, 9.6s (approx)
+            let debriefRow = null;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+              const debriefData = await sqlConnection`
+                SELECT generated_text
+                FROM "debriefs"
+                WHERE chat_id = ${sessionId}
+                ORDER BY created_at DESC
+                LIMIT 1;
+              `;
+
+              if (debriefData.length > 0) {
+                debriefRow = debriefData[0];
+                break;
+              }
+
+              // exponential-ish backoff
+              const delay = baseDelayMs * Math.pow(2, attempt);
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+
+            if (debriefRow) {
+              let parsedDebrief = debriefRow.generated_text;
+              // If it's a string, parse it
+              if (typeof parsedDebrief === 'string') {
+                try {
+                  parsedDebrief = JSON.parse(parsedDebrief);
+                } catch (parseErr) {
+                  logger.error("Failed to parse debrief JSON from DB", { 
+                    error: parseErr.message,
+                    raw: parsedDebrief.substring(0, 200)
+                  });
+                  // Return unparsed if parse fails — let frontend handle it
+                }
+              }
+              response.statusCode = 200;
+              response.body = JSON.stringify({
+                generated_text:parsedDebrief, // no double encoding
+                status: "complete",
+              });
+            } else {
+              // Not an error; it's still generating
+              response.statusCode = 202;
+              response.body = JSON.stringify({
+                status: "generating",
+                error:
+                  "Debrief is still being generated. Please try again shortly.",
+              });
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Operation failed", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "session_id and email are required",
+          });
+        }
+        break;
       case "POST /student/conclude_interaction":
         if (
           event.queryStringParameters != null &&
