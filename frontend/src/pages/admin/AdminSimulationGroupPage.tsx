@@ -650,7 +650,7 @@ function AdminSimulationGroupPage() {
     console.log('Saved new question to bank:', addQuestionType, question);
   };
 
-  const handleSaveNewPatientQuestion = (question: {
+  const handleSaveNewPatientQuestion = async (question: {
     patientId: string;
     title: string;
     keyQuestion: string;
@@ -658,46 +658,44 @@ function AdminSimulationGroupPage() {
     evaluationCriteria: string;
     required: boolean;
   }) => {
-    const newQuestionId = `bank-patient-${Date.now()}`;
-    const newBankQuestion: QuestionBankItem = { 
-      id: newQuestionId, 
-      title: question.title,
-      questionText: question.keyQuestion,
-      clinicalIntent: question.clinicalIntent,
-      evaluationCriteria: question.evaluationCriteria,
-      isMandatory: question.required,
-      isActive: true,
-      usedBySimulationGroups: [],
-      usedByPatients: []
-    };
-    
-    mockInstructorDataService.addToPatientSpecificQuestionBank(newBankQuestion);
-    setPatientSpecificBankQuestions(mockInstructorDataService.getPatientSpecificQuestionBank());
-    
-    const newCaseQuestion: GlobalRubricQuestion = {
-      id: newQuestionId,
-      title: question.title,
-      keyQuestion: question.keyQuestion,
-      clinicalIntent: question.clinicalIntent,
-      evaluationCriteria: question.evaluationCriteria,
-      required: question.required,
-    };
-    
-    instructorService.addCaseSpecificQuestion(question.patientId, newCaseQuestion);
-    
-    if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank === question.patientId) {
-      setIncludedQuestionIds(prev => {
-        const newSet = new Set(prev);
-        newSet.add(newQuestionId);
-        return newSet;
+    if (!organizationId) {
+      console.error('No organization ID available');
+      return;
+    }
+
+    try {
+      // 1. Create the question in the question_bank via real API
+      const created = await adminApi.createQuestionBankQuestion(organizationId, {
+        title: question.title,
+        question_text: question.keyQuestion,
+        evaluation_criteria: question.evaluationCriteria,
+        is_mandatory: question.required,
       });
+
+      // 2. Assign it to the group with persona_id to make it patient-specific
+      await instructorService.assignQuestionToGroup(
+        groupId || '',
+        created.id,
+        question.patientId
+      );
+
+      // 3. Refresh the question bank from the API
+      const updatedBank = await instructorService.getGlobalQuestionBank();
+      setGlobalBankQuestions(updatedBank);
+
+      // 4. Update UI state for the included checkmark
+      if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank === question.patientId) {
+        setIncludedQuestionIds(prev => {
+          const newSet = new Set(prev);
+          newSet.add(created.id);
+          return newSet;
+        });
+      }
+
+      console.log('Created patient-specific question via API:', created.id);
+    } catch (err) {
+      console.error('Failed to create patient-specific question:', err);
     }
-    
-    if (selectedPatientForEdit === question.patientId) {
-      setCaseSpecificQuestions(instructorService.getCaseSpecificQuestions(question.patientId));
-    }
-    
-    console.log('Saved new patient-specific question:', question);
   };
 
   const handleToggleQuestionInclusion = async (questionId: string, bankQuestion: QuestionBankItem, isChecked: boolean) => {
