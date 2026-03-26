@@ -602,9 +602,25 @@ async function fetchChatHistory(simulationGroupId: string, patientId: string): P
       const dateStr = chat.last_accessed
         ? new Date(chat.last_accessed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : '';
+
+      let displayName = chat.chat_name;
+      if (displayName) {
+        // Check if the name contains a large number (epoch timestamp)
+        const timestampMatch = displayName.match(/(\d{10,13})/);
+        if (timestampMatch) {
+          const ts = Number(timestampMatch[1]);
+          const parsed = new Date(ts < 1e12 ? ts * 1000 : ts); // handle seconds vs ms
+          if (!isNaN(parsed.getTime())) {
+            const formatted = parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            + ' ' + parsed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            displayName = displayName.replace(timestampMatch[1], formatted);
+          }
+        }
+      }
+
       return {
         id: chat.chat_id,
-        name: chat.chat_name || `Attempt ${index + 1}${dateStr ? ` - ${dateStr}` : ''}`,
+        name: displayName || `Attempt ${index + 1}${dateStr ? ` - ${dateStr}` : ''}`,
         completionStatus: chat.status === 'concluded' ? 'Complete' : 'In Progress',
         score: null,
       };
