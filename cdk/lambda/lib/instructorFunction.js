@@ -1838,31 +1838,17 @@ exports.handler = async (event, context) => {
               break;
             }
 
-            // Retry for race condition (debrief inserted async after conclude)
-            const maxRetries = 6;
-            const baseDelayMs = 300;
-            let debriefRow = null;
+            // Single query — instructor flow views past chats, no async generation in progress
+            const debriefData = await sqlConnection`
+              SELECT generated_text
+              FROM "debriefs"
+              WHERE chat_id = ${sessionId}
+              ORDER BY created_at DESC
+              LIMIT 1;
+            `;
 
-            for (let attempt = 0; attempt < maxRetries; attempt++) {
-              const debriefData = await sqlConnection`
-                SELECT generated_text
-                FROM "debriefs"
-                WHERE chat_id = ${sessionId}
-                ORDER BY created_at DESC
-                LIMIT 1;
-              `;
-
-              if (debriefData.length > 0) {
-                debriefRow = debriefData[0];
-                break;
-              }
-
-              const delay = baseDelayMs * Math.pow(2, attempt);
-              await new Promise((resolve) => setTimeout(resolve, delay));
-            }
-
-            if (debriefRow) {
-              let parsedDebrief = debriefRow.generated_text;
+            if (debriefData.length > 0) {
+              let parsedDebrief = debriefData[0].generated_text;
               if (typeof parsedDebrief === 'string') {
                 try {
                   parsedDebrief = JSON.parse(parsedDebrief);
@@ -1879,10 +1865,9 @@ exports.handler = async (event, context) => {
                 status: "complete",
               });
             } else {
-              response.statusCode = 202;
+              response.statusCode = 404;
               response.body = JSON.stringify({
-                status: "generating",
-                error: "Debrief is still being generated. Please try again shortly.",
+                error: "Debrief not available for this chat.",
               });
             }
           } catch (err) {
