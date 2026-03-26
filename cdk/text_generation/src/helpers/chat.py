@@ -1354,7 +1354,7 @@ def build_rewrite_prompt(
     """
 
     prompt = f"""## Student's Original Message
-{original_message}
+"{original_message}"
 
 ## Matched Question
 {question_text}
@@ -1363,18 +1363,29 @@ def build_rewrite_prompt(
 {evaluation_criteria if evaluation_criteria else "(No specific evaluation criteria provided)"}
 
 ## Your Task
-The student's message above was matched to the question shown, but with only moderate confidence.  Generate an improved version of the student's message that more directly and thoroughly addresses the matched question while preserving the student's intent.
+The student's message above was matched to the question shown, but with only moderate confidence — meaning the student partially addressed the topic but could have been more direct or thorough.
+
+Rewrite the student's message so it more clearly and completely addresses the matched question. Keep the student's original intent and conversational tone, but make the question more specific and targeted.
+
+Example:
+- Original: "Have you had any troubles with it?"
+- Question: "How often do you take gingko / do you take gingko regularly?"
+- Rewrite: "How often do you take gingko biloba? Is it something you take every day, or just occasionally?"
 
 Return a JSON object with EXACTLY one key:
 
 {{
-  "suggested_rewrite": "An improved version of the student's message that better addresses the question."
+  "suggested_rewrite": "The improved version of the student's message."
 }}
+
+RULES:
+- The "suggested_rewrite" value MUST be a non-empty string containing the full rewritten message.
+- Do NOT return an empty string — always provide a concrete, actionable rewrite.
+- The rewrite should be a complete sentence or question the student could actually say to the patient.
 
 CRITICAL JSON OUTPUT RULES:
 - Your ENTIRE response must be a single valid JSON object. Nothing else.
 - Do NOT wrap the JSON in markdown code fences (no ```json or ```).
-- Do NOT include any text, explanation, or commentary before or after the JSON.
 - The very first character of your response MUST be '{{' and the very last character MUST be '}}'.
 - Ensure all strings are properly escaped (double quotes inside strings must be \\", newlines must be \\n).
 """
@@ -2140,12 +2151,14 @@ def generate_debrief(
                         q.get("evaluation_criteria", ""),
                     )
                     rewrite_data = _invoke_llm_json(rewrite_prompt)
-                    suggested_rewrites.append({
-                        "original_message": msg_match["message_content"],
-                        "matched_question_id": qa_entry["question_id"],
-                        "similarity_score": msg_match.get("similarity_score", 0.0),
-                        "suggested_rewrite": rewrite_data.get("suggested_rewrite", ""),
-                    })
+                    rewrite_text = rewrite_data.get("suggested_rewrite", "").strip()
+                    if rewrite_text:
+                        suggested_rewrites.append({
+                            "original_message": msg_match["message_content"],
+                            "matched_question_id": qa_entry["question_id"],
+                            "similarity_score": msg_match.get("similarity_score", 0.0),
+                            "suggested_rewrite": rewrite_text,
+                        })
         logger.info(f"📋 Generated {len(suggested_rewrites)} suggested rewrites")
 
         # Step e: Answer key comparison
