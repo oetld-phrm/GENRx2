@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type StudentDetails } from '@/services/instructorService';
+import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type StudentDetails, type StudentPatientData } from '@/services/instructorService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, HelpCircle, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useEffect, useRef, useState } from 'react';
@@ -34,8 +34,9 @@ function InstructorSimulationGroupPage() {
   const [, setStudentViewTab] = useState<'overview' | 'chatHistory'>('overview');
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null);
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(false);
+  const [studentPatientData, setStudentPatientData] = useState<StudentPatientData | null>(null);
   const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null);
-  const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('pamela');
+  const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('');
   
   // Edit Patient state
   const [selectedPatientForEdit, setSelectedPatientForEdit] = useState<string | null>(null);
@@ -372,10 +373,21 @@ function InstructorSimulationGroupPage() {
     setStudentViewTab('overview');
     setActiveSection('viewStudent');
     setStudentDetails(null);
+    setStudentPatientData(null);
     setStudentDetailsLoading(true);
     try {
-      const details = await instructorService.getStudentDetails(studentId, groupId || '');
+      const details = await instructorService.getStudentDetails(studentId, groupId || '', simulationGroup?.name);
       setStudentDetails(details || null);
+
+      // Fetch patient data using the student's email
+      if (details?.email) {
+        const patientData = await instructorService.getStudentPatientData(details.email, groupId || '');
+        setStudentPatientData(patientData);
+        // Auto-select first patient if available
+        if (patientData.patientNames.length > 0) {
+          setSelectedPatientFilter(patientData.patientNames[0]);
+        }
+      }
     } catch (error) {
       console.error('Error loading student details:', error);
     } finally {
@@ -389,6 +401,7 @@ function InstructorSimulationGroupPage() {
   const handleBackFromViewStudent = () => {
     setSelectedStudentId(null);
     setStudentDetails(null);
+    setStudentPatientData(null);
     setActiveSection('students');
   };
 
@@ -3697,8 +3710,9 @@ Return valid JSON in exactly this structure:
                           color: UI_COLORS.text.heading
                         }}
                       >
-                        <option value="pamela">Pamela</option>
-                        <option value="timothy">Timothy</option>
+                        {(studentPatientData?.patientNames || []).map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -3708,10 +3722,10 @@ Return valid JSON in exactly this structure:
 
                     {/* Chat Attempts */}
                     <div className="space-y-4">
-                      {instructorService.getChatAttempts(selectedStudentId, selectedPatientFilter).map((attempt) => {
+                      {(studentPatientData?.attempts[selectedPatientFilter] || []).map((attempt) => {
                         const isExpanded = expandedAttemptId === attempt.id;
-                        const messages = instructorService.getChatMessages(attempt.id);
-                        const notes = instructorService.getChatNotes(attempt.id);
+                        const messages = studentPatientData?.messages[attempt.id] || [];
+                        const notes = studentPatientData?.notes[attempt.id] || '';
 
                         return (
                           <div 
@@ -3726,14 +3740,12 @@ Return valid JSON in exactly this structure:
                               onClick={() => setExpandedAttemptId(isExpanded ? null : attempt.id)}
                             >
                               <div className="text-base" style={{ color: UI_COLORS.text.heading }}>
-                                Attempt {attempt.attemptNumber} - {attempt.date}
+                                {attempt.date}
                               </div>
                               <div className="text-base" style={{ color: UI_COLORS.text.heading }}>
                                 {attempt.completionStatus}
                               </div>
-                              <div className="text-base" style={{ color: UI_COLORS.text.heading }}>
-                                {attempt.score !== null ? `${attempt.score}%` : '-'}
-                              </div>
+                
                               <div className="flex justify-end">
                                 <button
                                   className="p-2 rounded transition-transform"
@@ -3776,7 +3788,7 @@ Return valid JSON in exactly this structure:
                                           {message.sender_type !== 'student' && (
                                             <div className="flex-shrink-0">
                                               <UserAvatar
-                                                name="Pamela"
+                                                name={selectedPatientFilter || 'Patient'}
                                                 imageUrl={undefined}
                                                 size="small"
                                               />
@@ -3796,7 +3808,7 @@ Return valid JSON in exactly this structure:
                                             }}
                                           >
                                             <p className="text-sm font-semibold mb-1">
-                                              {message.sender_type === 'student' ? 'Student (User)' : 'Pamela (LLM)'}:
+                                              {message.sender_type === 'student' ? `${studentDetails?.name || 'Student'} (User)` : `${selectedPatientFilter || 'Patient'} (LLM)`}:
                                             </p>
                                             <p className="text-sm">{message.message_content}</p>
                                           </div>
@@ -3805,7 +3817,7 @@ Return valid JSON in exactly this structure:
                                           {message.sender_type === 'student' && (
                                             <div className="flex-shrink-0">
                                               <UserAvatar
-                                                name="Student"
+                                                name={studentDetails?.name || 'Student'}
                                                 imageUrl={undefined}
                                                 size="small"
                                               />

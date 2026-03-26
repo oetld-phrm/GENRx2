@@ -74,6 +74,14 @@ export async function getAllSimulationGroups(): Promise<AdminSimulationGroup[]> 
 }
 
 /**
+ * Get a specific simulation group by ID
+ */
+export async function getSimulationGroup(simulationGroupId: string): Promise<AdminSimulationGroup | undefined> {
+  const groups = await getAllSimulationGroups();
+  return groups.find(g => g.simulation_group_id === simulationGroupId);
+}
+
+/**
  * Get instructors enrolled in a specific simulation group
  */
 export async function getGroupInstructors(simulationGroupId: string): Promise<AdminInstructor[]> {
