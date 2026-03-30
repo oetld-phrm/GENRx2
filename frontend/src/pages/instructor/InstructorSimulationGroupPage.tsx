@@ -94,6 +94,15 @@ function InstructorSimulationGroupPage() {
     instructorService.getPatientSpecificQuestionBank()
   );
 
+  // Collect all unique tags from existing questions for autocomplete
+  const allExistingTags = Array.from(
+    new Set(
+      [...globalBankQuestions, ...patientSpecificBankQuestions]
+        .flatMap(q => q.tags || [])
+        .filter(t => t !== 'patient_specific')
+    )
+  ).sort();
+  
   // Case-Specific Key Questions state
   const [caseSpecificQuestions, setCaseSpecificQuestions] = useState<GlobalRubricQuestion[]>(() =>
     selectedPatientForEdit ? instructorService.getCaseSpecificQuestions(selectedPatientForEdit) : []
@@ -3908,6 +3917,7 @@ function InstructorSimulationGroupPage() {
         open={isAddQuestionDialogOpen}
         onOpenChange={setIsAddQuestionDialogOpen}
         questionType={addQuestionType}
+        existingTags={allExistingTags}
         onSave={handleSaveQuestion}
       />
 
