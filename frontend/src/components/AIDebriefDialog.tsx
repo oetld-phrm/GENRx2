@@ -143,16 +143,6 @@ function AIDebriefDialog({ isOpen, onClose, data, simulationGroupId, patientId }
                 You missed {debriefData.missedKeyQuestionsCount} Key Question{debriefData.missedKeyQuestionsCount !== 1 ? 's' : ''}
               </h3>
             </div>
-            {debriefData.missedQuestions && debriefData.missedQuestions.length > 0 && (
-              <ul className="space-y-2 pl-7">
-                {debriefData.missedQuestions.map((question, index) => (
-                  <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
-                    <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#ef4444' }} />
-                    <span>{question}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
             {debriefData.missedQuestionsGuidance && (
               <p className="text-sm pl-7" style={{ color: UI_COLORS.text.body }}>
                 {debriefData.missedQuestionsGuidance}
