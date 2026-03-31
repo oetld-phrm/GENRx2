@@ -7,6 +7,7 @@ import { DatabaseStack } from "../lib/database-stack";
 import { DBFlowStack } from "../lib/dbFlow-stack";
 import { VpcStack } from "../lib/vpc-stack";
 import { EcsSocketStack } from "../lib/ecs-socket-stack";
+import { TurnServerStack } from "../lib/turn-server-stack";
 import { CICDStack } from "../lib/cicd-stack";
 
 const app = new cdk.App();
@@ -59,6 +60,12 @@ const apiStack = new ApiServiceStack(
   cicdStack.buildProjects["dataIngestion"]?.projectName,
   { env }
 );
+const turnServerStack = new TurnServerStack(
+  app,
+  `${StackPrefix}-TurnServer`,
+  vpcStack,
+  { env }
+);
 const ecsSocketStack = new EcsSocketStack(
   app,
   `${StackPrefix}-EcsSocket`,
@@ -66,6 +73,7 @@ const ecsSocketStack = new EcsSocketStack(
   dbStack,
   apiStack,
   cicdStack.ecrRepositories["socketServer"],
+  turnServerStack,
   { env }
 );
 const dbFlowStack = new DBFlowStack(

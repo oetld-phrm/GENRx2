@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
@@ -5,6 +6,7 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { verifyToken, getStsCredentials } = require("./auth");
+const { MediaBridge } = require("./media-bridge");
 
 const app = express();
 const server = createServer(app);
@@ -16,6 +18,48 @@ const io = new Server(server, {
 app.get("/health", (req, res) => {
   res.json({ status: "healthy" });
 });
+
+// ─── TURN Credential Generation (RFC 5389) ───────────────────────────────────
+/**
+ * Generate time-limited TURN credentials using HMAC-SHA1.
+ * @param {string} username — unique identifier (e.g. socket.userId)
+ * @param {string} sharedSecret — TURN shared secret
+ * @param {number} ttlSeconds — credential lifetime (max 24 hours)
+ * @returns {{ username: string, credential: string }}
+ */
+function generateTurnCredentials(username, sharedSecret, ttlSeconds = 86400) {
+  const timestamp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const turnUsername = `${timestamp}:${username}`;
+  const hmac = crypto.createHmac("sha1", sharedSecret);
+  hmac.update(turnUsername);
+  const turnPassword = hmac.digest("base64");
+  return { username: turnUsername, credential: turnPassword };
+}
+
+/**
+ * Build the ICE server configuration array for a given user.
+ * Reads STUN_SERVER_URL, TURN_SERVER_URL, and TURN_SHARED_SECRET from env.
+ * @param {string} userId — authenticated user id to scope TURN credentials
+ * @returns {Array<{urls: string, username?: string, credential?: string}>}
+ */
+function getIceServers(userId) {
+  const stunUrl = process.env.STUN_SERVER_URL || "stun:stun.l.google.com:19302";
+  const turnUrl = process.env.TURN_SERVER_URL;
+  const turnSecret = process.env.TURN_SHARED_SECRET;
+
+  const iceServers = [{ urls: stunUrl }];
+
+  if (turnUrl && turnSecret) {
+    const creds = generateTurnCredentials(userId, turnSecret);
+    iceServers.push({
+      urls: turnUrl,
+      username: creds.username,
+      credential: creds.credential,
+    });
+  }
+
+  return iceServers;
+}
 
 // ─── Socket.IO Connection ─────────────────────────────────────────────────────
 io.use(async (socket, next) => {
@@ -59,7 +103,10 @@ io.on("connection", (socket) => {
     console.error("🔌 SOCKET ERROR:", err);
   });
 
-  // ─── Start Nova Sonic ──────────────────────────────────────────────────────
+  // ─── Start Nova Sonic (Socket.IO audio transport) ───────────────────────
+  // This handler uses Socket.IO for audio: Nova stdout "audio" messages are
+  // emitted as "audio-chunk" events. This path coexists with the WebRTC
+  // start-voice-session handler — each socket uses one transport per session.
   socket.on("start-nova-sonic", async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
 
@@ -246,6 +293,207 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ─── Start Voice Session (WebRTC) ─────────────────────────────────────────
+  // Audio routing: MediaBridge owns Nova stdout — "audio" messages go through
+  // the Opus→RTP outbound pipeline (not Socket.IO "audio-chunk"). Non-audio
+  // messages (text, diagnosis_complete, diagnosis_verdict) are forwarded via
+  // the onNovaMessage callback to Socket.IO, matching the start-nova-sonic path.
+  // Both WebRTC and Socket.IO audio transports can coexist: each socket spawns
+  // its own Nova process, so different clients can use different transports
+  // concurrently without conflict (Req 10.4).
+  socket.on("start-voice-session", async (config = {}) => {
+    console.log("🚀 Starting WebRTC voice session for client:", socket.id);
+
+    // Kill any previous nova process
+    if (novaProcess) {
+      novaProcess.kill();
+      novaProcess = null;
+    }
+    novaReady = false;
+
+    // Clean up any existing MediaBridge
+    if (socket.mediaBridge) {
+      socket.mediaBridge.close();
+      socket.mediaBridge = null;
+    }
+
+    // Get Cognito Identity Pool credentials
+    let stsCredentials;
+    try {
+      stsCredentials = await getStsCredentials(socket.handshake.auth.token);
+      console.log("✅ Successfully obtained Cognito Identity Pool credentials");
+    } catch (error) {
+      console.error("❌ Failed to get Cognito credentials:", error.message);
+      socket.emit("nova-error", {
+        error: "Failed to authenticate with AWS services",
+      });
+      return;
+    }
+
+    // Spawn nova_sonic.py child process (same logic as start-nova-sonic)
+    const pythonCmd = process.env.PYTHON_CMD || "python3";
+    try {
+      novaProcess = spawn(pythonCmd, ["nova_sonic.py"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          SESSION_ID: config.session_id || "default",
+          VOICE_ID: config.voice_id || "",
+          USER_ID: socket.userId || "anonymous",
+          AWS_ACCESS_KEY_ID: stsCredentials.AccessKeyId,
+          AWS_SECRET_ACCESS_KEY: stsCredentials.SecretKey,
+          AWS_SESSION_TOKEN: stsCredentials.SessionToken,
+          SM_DB_CREDENTIALS: process.env.SM_DB_CREDENTIALS || "",
+          RDS_PROXY_ENDPOINT: process.env.RDS_PROXY_ENDPOINT || "",
+          PATIENT_NAME: config.patient_name || "",
+          PATIENT_PROMPT: config.patient_prompt || "",
+          PATIENT_ID: config.patient_id || "",
+          LLM_COMPLETION: config.llm_completion ? "true" : "false",
+          EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
+          APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
+          COGNITO_TOKEN: socket.handshake.auth.token || "",
+        },
+      });
+      console.log("📡 Nova process spawned with PID:", novaProcess.pid);
+    } catch (error) {
+      console.error("❌ Failed to spawn Nova process:", error.message);
+      socket.emit("nova-error", { error: "Failed to start voice system" });
+      return;
+    }
+
+    // Store nova process reference on socket
+    socket.novaProcess = novaProcess;
+
+    novaProcess.stderr.on("data", (data) => {
+      console.warn("⚠️ Nova stderr:", data.toString().trim());
+    });
+
+    novaProcess.on("error", (error) => {
+      console.error("❌ Nova process error:", error.message);
+      socket.emit("nova-error", { error: error.message });
+    });
+
+    novaProcess.on("close", (code) => {
+      console.log("🔚 Nova process closed with code:", code);
+      novaProcess = null;
+      socket.novaProcess = null;
+      novaReady = false;
+    });
+
+    // Create MediaBridge with ICE server config and nova process
+    const iceServers = getIceServers(socket.userId);
+    const mediaBridge = new MediaBridge(iceServers, novaProcess);
+    socket.mediaBridge = mediaBridge;
+
+    // Wire non-audio Nova messages (text, diagnosis) through Socket.IO
+    mediaBridge.onNovaMessage((parsed) => {
+      if (parsed.type === "text") {
+        console.log("💬 NOVA TEXT:", parsed.text);
+        socket.emit("text-message", { text: parsed.text });
+        if (parsed.text && parsed.text.includes("Nova Sonic ready")) {
+          novaReady = true;
+          socket.emit("nova-started", {
+            status: "Nova Sonic session started",
+          });
+        }
+      } else if (parsed.type === "diagnosis_complete") {
+        console.log("🎯 DIAGNOSIS COMPLETE:", parsed.text);
+        socket.emit("diagnosis-complete", { message: parsed.text });
+      } else if (parsed.type === "diagnosis_verdict") {
+        console.log("🩺 DIAGNOSIS VERDICT:", parsed.verdict);
+        if (parsed.verdict) {
+          socket.emit("diagnosis-complete", {
+            message: "Session completed successfully",
+          });
+        }
+      } else if (parsed.type === "raw") {
+        // Plain-text fallback from Nova
+        const line = parsed.text || "";
+        if (line.includes("Nova Sonic ready")) {
+          novaReady = true;
+          socket.emit("nova-started", {
+            status: "Nova Sonic session started",
+          });
+        }
+        if (line.includes("User:") || line.includes("Assistant:")) {
+          socket.emit("text-message", { text: line });
+        }
+        if (line.includes("SESSION COMPLETED")) {
+          socket.emit("diagnosis-complete", {
+            message: "Session completed successfully",
+          });
+        }
+      }
+    });
+
+    // Relay server-side ICE candidates to the client
+    mediaBridge.onIceCandidate((candidate) => {
+      socket.emit("webrtc-ice-candidate", { candidate });
+    });
+
+    // Emit ICE server config to client
+    socket.emit("ice-servers", { iceServers });
+    console.log("🧊 Sent ICE server config to client:", socket.id);
+  });
+
+  // ─── WebRTC Offer ─────────────────────────────────────────────────────────
+  socket.on("webrtc-offer", async ({ sdp } = {}) => {
+    console.log("📨 Received WebRTC offer from client:", socket.id);
+
+    if (!socket.mediaBridge) {
+      socket.emit("nova-error", { error: "No active voice session" });
+      return;
+    }
+
+    try {
+      const timeoutMs = 5000;
+      const answerPromise = socket.mediaBridge.handleOffer(sdp);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("SDP answer timed out after 5 seconds")), timeoutMs)
+      );
+
+      const { sdpAnswer } = await Promise.race([answerPromise, timeoutPromise]);
+      socket.emit("webrtc-answer", { sdp: sdpAnswer });
+      console.log("📤 Sent WebRTC answer to client:", socket.id);
+    } catch (error) {
+      console.error("❌ WebRTC offer handling failed:", error.message);
+      socket.emit("nova-error", { error: error.message });
+    }
+  });
+
+  // ─── WebRTC ICE Candidate ─────────────────────────────────────────────────
+  socket.on("webrtc-ice-candidate", ({ candidate } = {}) => {
+    if (!socket.mediaBridge) return;
+
+    try {
+      socket.mediaBridge.addIceCandidate(candidate);
+    } catch (error) {
+      console.error("❌ ICE candidate error:", error.message);
+    }
+  });
+
+  // ─── WebRTC Connected ─────────────────────────────────────────────────────
+  socket.on("webrtc-connected", () => {
+    console.log("✅ WebRTC connection established for client:", socket.id);
+  });
+
+  // ─── End Voice Session ────────────────────────────────────────────────────
+  socket.on("end-voice-session", () => {
+    console.log("🛑 Ending voice session for client:", socket.id);
+
+    if (socket.mediaBridge) {
+      socket.mediaBridge.close();
+      socket.mediaBridge = null;
+    }
+
+    if (socket.novaProcess) {
+      socket.novaProcess.kill();
+      socket.novaProcess = null;
+    }
+
+    novaReady = false;
+  });
+
   // ─── Audio‑input from client ──────────────────────────────────────────────
   let audioStarted = false;
   socket.on("audio-input", (msg) => {
@@ -348,9 +596,19 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ─── Do NOT kill on disconnect ──────────────────────────────────────────
+  // ─── Disconnect cleanup ──────────────────────────────────────────────────
+  // Socket.IO audio sessions: Nova process is intentionally kept alive across
+  // brief disconnects. WebRTC sessions: clean up MediaBridge since the peer
+  // connection is no longer usable after disconnect.
   socket.on("disconnect", () => {
     console.log("🔌 CLIENT DISCONNECTED:", socket.id, "- Nova still running");
+
+    // Clean up WebRTC MediaBridge resources if present
+    if (socket.mediaBridge) {
+      console.log("🧹 Cleaning up MediaBridge for disconnected client:", socket.id);
+      socket.mediaBridge.close();
+      socket.mediaBridge = null;
+    }
   });
 });
 

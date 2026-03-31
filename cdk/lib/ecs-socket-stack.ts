@@ -11,6 +11,7 @@ import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
+import { TurnServerStack } from "./turn-server-stack";
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
@@ -22,6 +23,7 @@ export class EcsSocketStack extends Stack {
     db: DatabaseStack,
     apiServiceStack: any,
     socketServerRepo: ecr.IRepository,
+    turnServerStack: TurnServerStack,
     props?: StackProps
   ) {
     super(scope, id, props);
@@ -116,6 +118,9 @@ export class EcsSocketStack extends Stack {
       })
     );
 
+    // Grant ECS task role permission to read the TURN shared secret
+    turnServerStack.turnSecret.grantRead(taskRole);
+
     // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
       cpu: 1024,
@@ -145,6 +150,11 @@ export class EcsSocketStack extends Stack {
         TEXT_GENERATION_ENDPOINT: apiServiceStack.getEndpointUrl(),
         APPSYNC_GRAPHQL_URL: apiServiceStack.appSyncApi.graphqlUrl,
         SOCKET_EXECUTION_ROLE_ARN: taskRole.roleArn,
+        TURN_SERVER_URL: turnServerStack.turnServerUrl,
+        STUN_SERVER_URL: turnServerStack.stunServerUrl,
+      },
+      secrets: {
+        TURN_SHARED_SECRET: ecs.Secret.fromSecretsManager(turnServerStack.turnSecret),
       },
     });
 
@@ -161,6 +171,12 @@ export class EcsSocketStack extends Stack {
     service.connections.allowFromAnyIpv4(
       ec2.Port.tcp(80),
       "AllowHTTPFromLoadBalancer"
+    );
+
+    // 5.2) Allow inbound UDP for WebRTC media (RTP audio)
+    service.connections.allowFromAnyIpv4(
+      ec2.Port.udpRange(49152, 65535),
+      "AllowWebRTCMediaUDP"
     );
     
     // Allow NLB to reach ECS service from VPC

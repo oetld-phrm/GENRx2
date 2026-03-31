@@ -3,9 +3,11 @@ import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
 import { studentService, type StudentChatMessage as Message, type PatientDetail, type StudentCaseMaterial, type PatientFile, type AIDebriefData } from '@/services/studentService';
-import { ArrowLeft, Mic, Send, FileText, User, CheckCircle, X, Menu, Stethoscope, Flag, ChevronRight, ChevronLeft, Eye, Loader2, ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, FileText, User, CheckCircle, X, Menu, Stethoscope, Flag, ChevronRight, ChevronLeft, Eye, Loader2, ArrowLeftIcon, RotateCcw } from 'lucide-react';
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { io, type Socket } from 'socket.io-client';
+import { WebRTCClient, isWebRTCSupported, playRemoteAudioTrack, type VoiceSessionState } from '@/lib/webrtc-client';
 // CaseMaterialsDialog and PhysicalAssessmentDialog are rendered inline in the sidebar
 import ConfirmConcludeDialog from '@/components/ConfirmConcludeDialog';
 import ReportIssueDialog from '@/components/ReportIssueDialog';
@@ -160,6 +162,118 @@ function StudentChatPage() {
 
   // State for voice mode
   const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
+
+  // WebRTC voice session state
+  const [voiceSessionState, setVoiceSessionState] = useState<VoiceSessionState>('idle');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const webrtcClientRef = useRef<WebRTCClient | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const audioCleanupRef = useRef<(() => void) | null>(null);
+
+  /**
+   * Clean up WebRTC session and Socket.IO connection.
+   */
+  const cleanupVoiceSession = useCallback(() => {
+    if (webrtcClientRef.current) {
+      webrtcClientRef.current.disconnect();
+      webrtcClientRef.current = null;
+    }
+    if (audioCleanupRef.current) {
+      audioCleanupRef.current();
+      audioCleanupRef.current = null;
+    }
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setVoiceSessionState('idle');
+    setVoiceError(null);
+    setIsMuted(false);
+  }, []);
+
+  /**
+   * Start a WebRTC voice session when the mic button is clicked.
+   */
+  const handleStartVoiceMode = useCallback(() => {
+    if (!isWebRTCSupported()) {
+      setVoiceError('Your browser does not support WebRTC voice chat.');
+      setIsVoiceModeActive(true);
+      setVoiceSessionState('error');
+      return;
+    }
+
+    setIsVoiceModeActive(true);
+    setVoiceError(null);
+    setVoiceSessionState('connecting');
+
+    // Create Socket.IO connection (or reuse existing)
+    if (!socketRef.current || !socketRef.current.connected) {
+      const socketUrl = import.meta.env.VITE_SOCKET_URL || '';
+      socketRef.current = io(socketUrl, { transports: ['websocket'] });
+    }
+
+    const client = new WebRTCClient({
+      socket: socketRef.current,
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      onStateChange: (state) => {
+        setVoiceSessionState(state);
+        if (state === 'disconnected' || state === 'error') {
+          setIsVoiceModeActive(false);
+        }
+      },
+      onRemoteTrack: (track) => {
+        // Clean up previous audio playback if any
+        if (audioCleanupRef.current) {
+          audioCleanupRef.current();
+        }
+        audioCleanupRef.current = playRemoteAudioTrack(track);
+      },
+      onError: (error) => {
+        const msg = error.message || '';
+        if (msg.includes('Permission denied') || msg.includes('NotAllowedError')) {
+          setVoiceError('Microphone access was denied. Please allow microphone permission in your browser settings and try again.');
+        } else {
+          setVoiceError(msg);
+        }
+        setVoiceSessionState('error');
+      },
+    });
+
+    webrtcClientRef.current = client;
+    client.connect().catch((err) => {
+      console.error('[VoiceMode] Failed to connect:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to start voice session';
+      if (msg.includes('Permission denied') || msg.includes('NotAllowedError')) {
+        setVoiceError('Microphone access was denied. Please allow microphone permission in your browser settings and try again.');
+      } else {
+        setVoiceError(msg);
+      }
+      setVoiceSessionState('error');
+    });
+  }, []);
+
+  /**
+   * Stop the voice session when the X button is clicked.
+   */
+  const handleStopVoiceMode = useCallback(() => {
+    cleanupVoiceSession();
+    setIsVoiceModeActive(false);
+  }, [cleanupVoiceSession]);
+
+  // Clean up WebRTC on unmount or navigation away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (webrtcClientRef.current) {
+        webrtcClientRef.current.disconnect();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      cleanupVoiceSession();
+    };
+  }, [cleanupVoiceSession]);
 
   // State for sidebar visibility
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
@@ -850,32 +964,67 @@ function StudentChatPage() {
 
               {/* Voice Mode Active Text */}
               <h2 className="text-2xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                Voice Mode Active
+                {voiceSessionState === 'connecting' ? 'Connecting...' :
+                 voiceSessionState === 'error' ? 'Connection Error' :
+                 'Voice Mode Active'}
               </h2>
               <p className="text-base mb-12" style={{ color: UI_COLORS.text.body }}>
-                Speak naturally to interact with the AI patient.
+                {voiceSessionState === 'connecting' ? 'Setting up voice connection...' :
+                 voiceSessionState === 'error' ? (voiceError || 'Something went wrong. Please try again.') :
+                 'Speak naturally to interact with the AI patient.'}
               </p>
 
-              {/* Voice Visualization Bars */}
+              {/* Voice Visualization / Connecting Spinner */}
               <div className="flex items-center gap-1 mb-16">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 rounded-full animate-pulse"
-                    style={{
-                      backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[1],
-                      height: `${20 + Math.random() * 40}px`,
-                      animationDelay: `${i * 0.1}s`,
-                    }}
-                  />
-                ))}
+                {voiceSessionState === 'connecting' ? (
+                  <Loader2 className="w-10 h-10 animate-spin" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[1] }} />
+                ) : voiceSessionState === 'active' ? (
+                  [...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-1 rounded-full animate-pulse"
+                      style={{
+                        backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[1],
+                        height: `${20 + Math.random() * 40}px`,
+                        animationDelay: `${i * 0.1}s`,
+                      }}
+                    />
+                  ))
+                ) : null}
               </div>
 
               {/* Control Buttons */}
               <div className="flex gap-4">
+                {/* Mute/Unmute Button — only shown when active */}
+                {voiceSessionState === 'active' && (
+                  <button
+                    onClick={() => {
+                      if (!webrtcClientRef.current) return;
+                      if (isMuted) {
+                        webrtcClientRef.current.unmute();
+                        setIsMuted(false);
+                      } else {
+                        webrtcClientRef.current.mute();
+                        setIsMuted(true);
+                      }
+                    }}
+                    className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                    style={{
+                      backgroundColor: isMuted ? '#ef4444' : UI_COLORS.button.primary,
+                    }}
+                    aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                  >
+                    {isMuted ? (
+                      <MicOff className="w-6 h-6 text-white" />
+                    ) : (
+                      <Mic className="w-6 h-6 text-white" />
+                    )}
+                  </button>
+                )}
+
                 {/* Close Voice Mode Button */}
                 <button
-                  onClick={() => setIsVoiceModeActive(false)}
+                  onClick={handleStopVoiceMode}
                   className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
                   style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[1] }}
                   aria-label="Close voice mode"
@@ -883,11 +1032,25 @@ function StudentChatPage() {
                   <X className="w-6 h-6 text-white" />
                 </button>
 
+                {/* Retry Button — shown on error */}
+                {voiceSessionState === 'error' && (
+                  <button
+                    onClick={() => {
+                      cleanupVoiceSession();
+                      handleStartVoiceMode();
+                    }}
+                    className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                    style={{ backgroundColor: UI_COLORS.button.primary }}
+                    aria-label="Retry voice connection"
+                  >
+                    <RotateCcw className="w-6 h-6 text-white" />
+                  </button>
+                )}
+
                 {/* Open Notes Button */}
                 <button
                   onClick={() => {
-                    // Scroll to notes section in sidebar or just close voice mode
-                    setIsVoiceModeActive(false);
+                    handleStopVoiceMode();
                   }}
                   className="w-16 h-16 rounded-full flex items-center justify-center transition-colors shadow-lg"
                   style={{
@@ -1001,7 +1164,7 @@ function StudentChatPage() {
             <div className="p-6" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setIsVoiceModeActive(true)}
+                  onClick={handleStartVoiceMode}
                   className="p-3 rounded-full transition-colors"
                   style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
