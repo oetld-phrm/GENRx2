@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type StudentDetails, type StudentPatientData } from '@/services/instructorService';
+import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type KeyQuestionCoverage, type StudentDetails, type StudentPatientData, type StudentProgressData } from '@/services/instructorService';
 import { type AIDebriefData } from '@/services/studentService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, HelpCircle, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
@@ -30,8 +30,7 @@ function InstructorSimulationGroupPage() {
   const [activeSection, setActiveSection] = useState<'analytics' | 'patients' | 'students' | 'rubric' | 'questionBank' | 'prompt' | 'editPatient' | 'viewStudent'>('analytics');
   const [searchQuery, setSearchQuery] = useState('');
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
-  const [questionPerformanceTimePeriod, setQuestionPerformanceTimePeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
-  const [scoreDistributionTimePeriod, setScoreDistributionTimePeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
+  const [] = useState<'week' | 'month' | 'year' | 'all'>('all');
   const [enableVoiceForAll, setEnableVoiceForAll] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [, setStudentViewTab] = useState<'overview' | 'chatHistory'>('overview');
@@ -51,6 +50,9 @@ function InstructorSimulationGroupPage() {
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
   const uploadTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const attemptPdfRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Patient Specific Analytics
+  const [studentProgress, setStudentProgress] = useState<StudentProgressData[]>([]);
 
   // Global Rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>(() =>
@@ -102,7 +104,7 @@ function InstructorSimulationGroupPage() {
         .filter(t => t !== 'patient_specific')
     )
   ).sort();
-  
+
   // Case-Specific Key Questions state
   const [caseSpecificQuestions, setCaseSpecificQuestions] = useState<GlobalRubricQuestion[]>(() =>
     selectedPatientForEdit ? instructorService.getCaseSpecificQuestions(selectedPatientForEdit) : []
@@ -145,9 +147,10 @@ function InstructorSimulationGroupPage() {
   const [user, setUser] = useState<UserData>({ name: 'Instructor', avatarUrl: undefined });
   const [simulationGroup, setSimulationGroup] = useState<any>(null);
   const [patientAnalytics, setPatientAnalytics] = useState<any[]>([]);
+  const [analyticsDateRange, setAnalyticsDateRange] = useState({ start: '', end: '' });
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [globalKeyQuestionAnalytics, setGlobalKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
+  const [keyQuestionCoverage, setKeyQuestionCoverage] = useState<KeyQuestionCoverage[]>([]);
   const [isAccessCodeDialogOpen, setIsAccessCodeDialogOpen] = useState(false);
 
   // new states for AI Debrief and loading states
@@ -174,13 +177,12 @@ function InstructorSimulationGroupPage() {
       if (!groupId) return;
 
       try {
-        const [userData, groupData, analyticsData, studentsData, patientsData, keyQuestionData] = await Promise.all([
+        const [userData, groupData, analyticsData, studentsData, patientsData] = await Promise.all([
           instructorService.getCurrentUser(),
           instructorService.getSimulationGroup(groupId),
           instructorService.getPatientAnalytics(groupId),
           instructorService.getStudents(groupId),
           instructorService.getManageablePatients(groupId),
-          instructorService.getKeyQuestionAnalytics(groupId),
         ]);
 
         setUser(userData);
@@ -188,7 +190,6 @@ function InstructorSimulationGroupPage() {
         setPatientAnalytics(analyticsData);
         setStudents(studentsData);
         setManageablePatients(patientsData);
-        setGlobalKeyQuestionAnalytics(keyQuestionData);
       } catch (error) {
         console.error('Error loading instructor data:', error);
       } finally {
@@ -198,6 +199,26 @@ function InstructorSimulationGroupPage() {
 
     loadData();
   }, [groupId]);
+
+  // Filter analytics data based on date range
+  useEffect(() => {
+    if (!groupId) return;
+    const fetchFilteredAnalytics = async () => {
+      try {
+        const [analyticsData, coverageData] = await Promise.all([
+          instructorService.getPatientAnalytics(groupId, analyticsDateRange.start, analyticsDateRange.end),
+          instructorService.getKeyQuestionCoverage(groupId, analyticsDateRange.start, analyticsDateRange.end),
+        ]);
+        setPatientAnalytics(analyticsData);
+        setKeyQuestionCoverage(coverageData);
+      } catch (error) {
+        console.error('Error fetching filtered analytics:', error);
+      }
+    };
+    if (simulationGroup) {
+      fetchFilteredAnalytics();
+    }
+  }, [groupId, analyticsDateRange.start, analyticsDateRange.end, simulationGroup]);
 
   // Load question bank data when the questionBank section is activated
   useEffect(() => {
@@ -252,25 +273,38 @@ function InstructorSimulationGroupPage() {
   const currentPatient = patientAnalytics.find(p => p.patient_id === selectedPatientId);
   const messageCountData = currentPatient
     ? [
-        { name: 'Student Messages', value: currentPatient.student_message_count },
-        { name: 'AI Messages', value: currentPatient.ai_message_count },
-      ]
+      { name: 'Student Messages', value: currentPatient.student_message_count },
+      { name: 'AI Messages', value: currentPatient.ai_message_count },
+    ]
     : [];
   const donutColors = [SIMULATION_GROUP_COLOR_PALETTE[2], SIMULATION_GROUP_COLOR_PALETTE[5]];
   const totalMessages = currentPatient ? currentPatient.student_message_count + currentPatient.ai_message_count : 0;
 
-  // Key question analytics (per patient) - uses pre-fetched data
-  const keyQuestionAnalytics = currentPatient
-    ? globalKeyQuestionAnalytics
-    : [];
+  // Key question analytics (per patient) - fetched from dedicated endpoint
+  const [keyQuestionAnalytics, setKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
 
-  // Question performance scores
-  const questionPerformanceScores = instructorService.getQuestionPerformanceScores(groupId || '1');
+  useEffect(() => {
+    if (currentPatient && groupId) {
+      instructorService.getPatientKeyQuestionAnalytics(groupId, currentPatient.patient_id, analyticsDateRange.start, analyticsDateRange.end)
+        .then(setKeyQuestionAnalytics)
+        .catch(() => setKeyQuestionAnalytics([]));
+    } else {
+      setKeyQuestionAnalytics([]);
+    }
+  }, [currentPatient?.patient_id, groupId, analyticsDateRange.start, analyticsDateRange.end]);
+
+  // useEffect to watch for patient selection changes
+  useEffect(() => {
+    if (groupId && selectedPatientId && selectedPatientId !== 'overview') {
+      instructorService.getStudentProgress(groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end)
+        .then(data => setStudentProgress(data))
+        .catch(err => console.error(err));
+    } else {
+      setStudentProgress([]);
+    }
+  }, [groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end]);
 
   // Score distribution for current patient
-  const scoreDistribution = currentPatient
-    ? instructorService.getScoreDistribution(groupId || '1', currentPatient.patient_id)
-    : [];
 
   // Fallback values
   const simulationGroupName = simulationGroup?.group_name || 'Simulation Group';
@@ -1153,10 +1187,46 @@ function InstructorSimulationGroupPage() {
         <main className="flex-1 overflow-y-auto" style={{ padding: activeSection === 'rubric' || activeSection === 'questionBank' || activeSection === 'editPatient' || activeSection === 'viewStudent' ? '0' : '2rem' }}>
           {activeSection === 'analytics' && (
             <div className="space-y-6">
-              {/* Simulation Group Title */}
-              <h2 className="text-3xl font-bold tracking-tight" style={{ color: UI_COLORS.text.heading }}>
-                {simulationGroupName}
-              </h2>
+              <div className="flex items-center justify-between">
+                {/* Simulation Group Title */}
+                <h2 className="text-3xl font-bold tracking-tight" style={{ color: UI_COLORS.text.heading }}>
+                  {simulationGroupName}
+                </h2>
+                {/* DATE FILTER RANGE */}
+                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-md border shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="startDate" className="text-sm font-medium text-gray-700">From:</label>
+                    <input
+                      type="date"
+                      id="startDate"
+                      className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
+                      max={analyticsDateRange.end || undefined}
+                      value={analyticsDateRange.start}
+                      onChange={(e) => setAnalyticsDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    />
+                  </div>
+                  <div className="h-4 w-px bg-gray-300 mx-1 border-l"></div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="endDate" className="text-sm font-medium text-gray-700">To:</label>
+                    <input
+                      type="date"
+                      id="endDate"
+                      className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
+                      min={analyticsDateRange.start || undefined}
+                      value={analyticsDateRange.end}
+                      onChange={(e) => setAnalyticsDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    />
+                  </div>
+                  {(analyticsDateRange.start || analyticsDateRange.end) && (
+                    <button
+                      onClick={() => setAnalyticsDateRange({ start: '', end: '' })}
+                      className="ml-2 text-xs text-gray-500 hover:text-gray-800 focus:outline-none"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {/* Tabs: Overview + Patient Tabs */}
               <div className="flex gap-2 border-b" style={{ borderColor: UI_COLORS.border.default }}>
@@ -1219,92 +1289,21 @@ function InstructorSimulationGroupPage() {
                     </div>
                   </div>
 
-                  {/* Global Key Questions Answered - Horizontal Bar Graph */}
+                  {/* Per-Patient Completion Percentage - Horizontal Bar Graph */}
                   <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
                     <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                      Global Key Questions &mdash; Students Answered
+                      {aiPersonaLabel} Completion Rate
                     </h3>
                     <p className="text-sm mb-6" style={{ color: UI_COLORS.text.muted }}>
-                      Number of students who answered each global key question across all personas
+                      Percentage of students who have reached the debrief with each {aiPersonaLabelLower}.
                     </p>
-                    {globalKeyQuestionAnalytics.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={Math.max(250, globalKeyQuestionAnalytics.length * 50)}>
+                    {patientAnalytics.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={Math.max(250, patientAnalytics.length * 50)}>
                         <BarChart
-                          data={globalKeyQuestionAnalytics}
-                          layout="vertical"
-                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
-                          <XAxis
-                            type="number"
-                            tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
-                            axisLine={{ stroke: UI_COLORS.border.default }}
-                            allowDecimals={false}
-                          />
-                          <YAxis
-                            type="category"
-                            dataKey="questionTitle"
-                            width={180}
-                            tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
-                            axisLine={{ stroke: UI_COLORS.border.default }}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: UI_COLORS.background.white,
-                              border: `1px solid ${UI_COLORS.border.default}`,
-                              borderRadius: '6px'
-                            }}
-                            formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Answered']}
-                          />
-                          <Bar
-                            dataKey="studentsAnswered"
-                            fill={SIMULATION_GROUP_COLOR_PALETTE[2]}
-                            radius={[0, 4, 4, 0]}
-                            barSize={28}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No key questions configured.</p>
-                    )}
-                  </div>
-
-                  {/* Question Performance Scores - Horizontal Bar */}
-                  {questionPerformanceScores.length > 0 && (
-                    <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
-                      <div className="flex items-start justify-between mb-6">
-                        <div>
-                          <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Question Performance Scores
-                          </h3>
-                          <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>
-                            Average quality score per key question across all student responses
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm font-medium whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>
-                            Time Period:
-                          </label>
-                          <select
-                            value={questionPerformanceTimePeriod}
-                            onChange={(e) => setQuestionPerformanceTimePeriod(e.target.value as 'week' | 'month' | 'year' | 'all')}
-                            className="px-3 py-2 rounded-lg border text-sm"
-                            style={{
-                              borderColor: UI_COLORS.border.default,
-                              backgroundColor: UI_COLORS.background.white,
-                              color: UI_COLORS.text.heading,
-                            }}
-                          >
-                            <option value="week">Last Week</option>
-                            <option value="month">Last Month</option>
-                            <option value="year">Last Year</option>
-                            <option value="all">All Time</option>
-                          </select>
-                        </div>
-                      </div>
-                      <ResponsiveContainer width="100%" height={Math.max(250, questionPerformanceScores.length * 50)}>
-                        <BarChart
-                          data={questionPerformanceScores}
+                          data={patientAnalytics.map(p => ({
+                            patientName: p.patient_name || p.persona_name,
+                            completionPercentage: Math.round(p.instructor_completion_percentage ?? 0),
+                          }))}
                           layout="vertical"
                           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                         >
@@ -1318,7 +1317,7 @@ function InstructorSimulationGroupPage() {
                           />
                           <YAxis
                             type="category"
-                            dataKey="questionTitle"
+                            dataKey="patientName"
                             width={180}
                             tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
                             axisLine={{ stroke: UI_COLORS.border.default }}
@@ -1329,23 +1328,74 @@ function InstructorSimulationGroupPage() {
                               border: `1px solid ${UI_COLORS.border.default}`,
                               borderRadius: '6px'
                             }}
-                            formatter={(value: number | undefined, _name: string | undefined, props: { payload?: { totalResponses?: number } }) => [
-                              `${value ?? 0}% avg (${props.payload?.totalResponses ?? 0} responses)`,
-                              'Score'
+                            formatter={(value: number | undefined) => [`${value ?? 0}%`, 'Completed']}
+                          />
+                          <Bar
+                            dataKey="completionPercentage"
+                            fill={SIMULATION_GROUP_COLOR_PALETTE[2]}
+                            radius={[0, 4, 4, 0]}
+                            barSize={28}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No {aiPersonaLabelLower}s configured.</p>
+                    )}
+                  </div>
+
+                  {/* Key Question Coverage per Patient - Horizontal Bar */}
+                  {keyQuestionCoverage.length > 0 && (
+                    <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
+                      <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                        Key Question Coverage by {aiPersonaLabel}
+                      </h3>
+                      <p className="text-sm mb-6" style={{ color: UI_COLORS.text.muted }}>
+                        Average percentage of key questions covered by students who completed their interaction.
+                      </p>
+                      <ResponsiveContainer width="100%" height={Math.max(250, keyQuestionCoverage.length * 50)}>
+                        <BarChart
+                          data={keyQuestionCoverage}
+                          layout="vertical"
+                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
+                          <XAxis
+                            type="number"
+                            domain={[0, 100]}
+                            tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
+                            axisLine={{ stroke: UI_COLORS.border.default }}
+                            tickFormatter={(val: number) => `${val}%`}
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="patientName"
+                            width={180}
+                            tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
+                            axisLine={{ stroke: UI_COLORS.border.default }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: UI_COLORS.background.white,
+                              border: `1px solid ${UI_COLORS.border.default}`,
+                              borderRadius: '6px'
+                            }}
+                            formatter={(value: number | undefined, _name: string | undefined, props: { payload?: { studentsDebriefed?: number } }) => [
+                              `${value ?? 0}% avg (${props.payload?.studentsDebriefed ?? 0} students debriefed)`,
+                              'Coverage'
                             ]}
                           />
                           <Bar
-                            dataKey="averageScore"
+                            dataKey="avgCoverage"
                             radius={[0, 4, 4, 0]}
                             barSize={28}
                           >
-                            {questionPerformanceScores.map((entry, index) => (
+                            {keyQuestionCoverage.map((entry, index) => (
                               <Cell
-                                key={`perf-${index}`}
+                                key={`cov-${index}`}
                                 fill={
-                                  entry.averageScore >= 75 ? '#22c55e' :
-                                  entry.averageScore >= 55 ? '#eab308' :
-                                  '#ef4444'
+                                  entry.avgCoverage >= 75 ? '#22c55e' :
+                                    entry.avgCoverage >= 55 ? '#eab308' :
+                                      '#ef4444'
                                 }
                               />
                             ))}
@@ -1394,14 +1444,14 @@ function InstructorSimulationGroupPage() {
                     </div>
                   </div>
 
-                  {/* Key Questions Answered - Horizontal Bar Graph (per persona) */}
+                  {/* Key Questions Asked - Horizontal Bar Graph (per persona) */}
                   {keyQuestionAnalytics.length > 0 && (
                     <div className="mt-8">
                       <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                        Key Questions &mdash; Students Answered
+                        Key Questions &mdash; Students Asked
                       </h4>
                       <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>
-                        Number of students who answered each key question for {currentPatient.patient_name}
+                        Number of students who asked each key question for {currentPatient.patient_name}.
                       </p>
                       <ResponsiveContainer width="100%" height={Math.max(250, keyQuestionAnalytics.length * 50)}>
                         <BarChart
@@ -1429,7 +1479,7 @@ function InstructorSimulationGroupPage() {
                               border: `1px solid ${UI_COLORS.border.default}`,
                               borderRadius: '6px'
                             }}
-                            formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Answered']}
+                            formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Asked']}
                           />
                           <Bar
                             dataKey="studentsAnswered"
@@ -1490,45 +1540,26 @@ function InstructorSimulationGroupPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                          Score Distribution
+                          Student Progress Status
                         </h4>
                         <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>
-                          Distribution of student scores for {currentPatient.patient_name}
+                          Distribution of student progress status for {currentPatient.patient_name}.
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>
-                          Time Period:
-                        </label>
-                        <select
-                          value={scoreDistributionTimePeriod}
-                          onChange={(e) => setScoreDistributionTimePeriod(e.target.value as 'week' | 'month' | 'year' | 'all')}
-                          className="px-3 py-2 rounded-lg border text-sm"
-                          style={{
-                            borderColor: UI_COLORS.border.default,
-                            backgroundColor: UI_COLORS.background.white,
-                            color: UI_COLORS.text.heading,
-                          }}
-                        >
-                          <option value="week">Last Week</option>
-                          <option value="month">Last Month</option>
-                          <option value="year">Last Year</option>
-                          <option value="all">All Time</option>
-                        </select>
-                      </div>
+
                     </div>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart
-                        data={scoreDistribution}
+                        data={studentProgress}
                         margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
                         barSize={50}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
                         <XAxis
-                          dataKey="range"
+                          dataKey="status"
                           tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
                           axisLine={{ stroke: UI_COLORS.border.default }}
-                          label={{ value: 'Score Range (%)', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }}
+                          label={{ value: 'Progress Status', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }}
                         />
                         <YAxis
                           tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
@@ -1540,24 +1571,73 @@ function InstructorSimulationGroupPage() {
                           contentStyle={{
                             backgroundColor: UI_COLORS.background.white,
                             border: `1px solid ${UI_COLORS.border.default}`,
-                            borderRadius: '6px'
+                            borderRadius: '6px',
+                            padding: 0,
                           }}
-                          formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Count']}
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const entry = payload[0].payload as StudentProgressData;
+                            return (
+                              <div
+                                style={{
+                                  backgroundColor: UI_COLORS.background.white,
+                                  border: `1px solid ${UI_COLORS.border.default}`,
+                                  borderRadius: '8px',
+                                  padding: '12px',
+                                  minWidth: '180px',
+                                  maxWidth: '240px',
+                                }}
+                              >
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div
+                                    style={{
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: '50%',
+                                      backgroundColor: entry.fill,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span className="font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>
+                                    {entry.status}
+                                  </span>
+                                </div>
+                                <div className="text-sm mb-2" style={{ color: UI_COLORS.text.muted }}>
+                                  {entry.count} student{entry.count !== 1 ? 's' : ''}
+                                </div>
+                                {entry.students.length > 0 && (
+                                  <div
+                                    style={{
+                                      maxHeight: '150px',
+                                      overflowY: 'auto',
+                                      borderTop: `1px solid ${UI_COLORS.border.light}`,
+                                      paddingTop: '8px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    {entry.students.map((student) => (
+                                      <div
+                                        key={student.id}
+                                        className="text-sm"
+                                        style={{ color: UI_COLORS.text.body }}
+                                      >
+                                        {student.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }}
                         />
-                        <Bar
-                          dataKey="count"
-                          radius={[4, 4, 0, 0]}
-                        >
-                          {scoreDistribution.map((_entry, index) => (
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer">
+                          {studentProgress.map((_entry, index) => (
                             <Cell
-                              key={`dist-${index}`}
-                              fill={[
-                                '#ef4444',
-                                '#f97316',
-                                '#eab308',
-                                '#22c55e',
-                                SIMULATION_GROUP_COLOR_PALETTE[2]
-                              ][index] || SIMULATION_GROUP_COLOR_PALETTE[2]}
+                              key={`progress-${index}`}
+                              fill={_entry.fill}
+                              style={{ cursor: 'pointer' }}
                             />
                           ))}
                         </Bar>
@@ -3700,11 +3780,10 @@ function InstructorSimulationGroupPage() {
                                         messages.map((message) => (
                                           <div
                                             key={message.message_id}
-                                            className={`flex gap-3 ${
-                                              message.sender_type === 'student'
-                                                ? 'justify-end'
-                                                : 'justify-start'
-                                            }`}
+                                            className={`flex gap-3 ${message.sender_type === 'student'
+                                              ? 'justify-end'
+                                              : 'justify-start'
+                                              }`}
                                           >
                                             {message.sender_type !== 'student' && (
                                               <div className="flex-shrink-0">
@@ -3716,11 +3795,10 @@ function InstructorSimulationGroupPage() {
                                               </div>
                                             )}
                                             <div
-                                              className={`max-w-[70%] rounded-lg px-4 py-3 ${
-                                                message.sender_type === 'student'
-                                                  ? 'rounded-br-none'
-                                                  : 'rounded-bl-none'
-                                              }`}
+                                              className={`max-w-[70%] rounded-lg px-4 py-3 ${message.sender_type === 'student'
+                                                ? 'rounded-br-none'
+                                                : 'rounded-bl-none'
+                                                }`}
                                               style={{
                                                 backgroundColor:
                                                   message.sender_type === 'student'
@@ -3801,12 +3879,12 @@ function InstructorSimulationGroupPage() {
                                       color: UI_COLORS.button.text,
                                     }}
                                     onMouseEnter={(e) =>
-                                      (e.currentTarget.style.backgroundColor =
-                                        UI_COLORS.button.secondaryHover)
+                                    (e.currentTarget.style.backgroundColor =
+                                      UI_COLORS.button.secondaryHover)
                                     }
                                     onMouseLeave={(e) =>
-                                      (e.currentTarget.style.backgroundColor =
-                                        UI_COLORS.button.secondary)
+                                    (e.currentTarget.style.backgroundColor =
+                                      UI_COLORS.button.secondary)
                                     }
                                     onClick={async () => {
                                       const el = attemptPdfRefs.current[String(attempt.id)];
@@ -3850,12 +3928,12 @@ function InstructorSimulationGroupPage() {
                                       color: UI_COLORS.button.text,
                                     }}
                                     onMouseEnter={(e) =>
-                                      (e.currentTarget.style.backgroundColor =
-                                        UI_COLORS.button.secondaryHover)
+                                    (e.currentTarget.style.backgroundColor =
+                                      UI_COLORS.button.secondaryHover)
                                     }
                                     onMouseLeave={(e) =>
-                                      (e.currentTarget.style.backgroundColor =
-                                        UI_COLORS.button.secondary)
+                                    (e.currentTarget.style.backgroundColor =
+                                      UI_COLORS.button.secondary)
                                     }
                                     onClick={() => handleDownloadNotesPDF(attempt.id)}
                                   >
@@ -3869,12 +3947,12 @@ function InstructorSimulationGroupPage() {
                                         color: UI_COLORS.button.text,
                                       }}
                                       onMouseEnter={(e) =>
-                                        (e.currentTarget.style.backgroundColor =
-                                          UI_COLORS.button.secondaryHover)
+                                      (e.currentTarget.style.backgroundColor =
+                                        UI_COLORS.button.secondaryHover)
                                       }
                                       onMouseLeave={(e) =>
-                                        (e.currentTarget.style.backgroundColor =
-                                          UI_COLORS.button.secondary)
+                                      (e.currentTarget.style.backgroundColor =
+                                        UI_COLORS.button.secondary)
                                       }
                                       onClick={() => handleViewAIDebrief(attempt.id)}
                                       disabled={!!isFetchingDebrief}

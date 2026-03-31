@@ -98,6 +98,28 @@ export interface QuestionPerformanceScore {
 }
 
 /**
+ * Represents per-patient key question coverage for debriefed students
+ */
+export interface KeyQuestionCoverage {
+  patientName: string;                  // Patient/persona name
+  avgCoverage: number;                  // Average % of key questions covered (0-100)
+  studentsDebriefed: number;            // Number of students who reached debrief
+}
+
+// For Patient Specific Student Progress Status - how many students have not started vs. in progress vs. reached debrief.
+export interface StudentProgressStatus {
+  status: 'Not Started' | 'In Progress' | 'Debrief Reached';
+  students: Array<{ id: string; name: string }>;
+}
+
+export interface StudentProgressData {
+  status: string;
+  count: number;
+  students: Array<{ id: string; name: string }>;
+  fill: string;
+}
+
+/**
  * Represents a bucket in a score distribution histogram
  */
 export interface ScoreDistributionBucket {
@@ -279,7 +301,7 @@ export interface InstructorDataService {
   getCurrentUser: () => Promise<UserData>;
   getSimulationGroup: (id: string) => Promise<InstructorSimulationGroup | undefined>;
   getOrganizationLabels: (simulationGroupId: string) => OrganizationLabels;
-  getPatientAnalytics: (simulationGroupId: string) => Promise<PatientAnalytics[]>;
+  getPatientAnalytics: (simulationGroupId: string, startDate?: string, endDate?: string) => Promise<PatientAnalytics[]>;
   getMessageCountData: (patientId: string) => MessageCountData[];
   generateAccessCode: (simulationGroupId: string) => Promise<string>;
   getManageablePatients: (simulationGroupId: string) => Promise<ManageablePatient[]>;
@@ -320,6 +342,8 @@ export interface InstructorDataService {
   getPatientsUsingQuestion: (questionId: string) => string[];
   isQuestionInUse: (questionId: string, questionType?: 'global' | 'patientSpecific') => boolean;
   getKeyQuestionAnalytics: (simulationGroupId: string) => Promise<KeyQuestionAnalytics[]>;
+  getKeyQuestionCoverage: (simulationGroupId: string, startDate?: string, endDate?: string) => Promise<KeyQuestionCoverage[]>;
+  getPatientKeyQuestionAnalytics: (simulationGroupId: string, personaId: string, startDate?: string, endDate?: string) => Promise<KeyQuestionAnalytics[]>;
   getQuestionPerformanceScores: (simulationGroupId: string) => QuestionPerformanceScore[];
   getScoreDistribution: (simulationGroupId: string, patientId: string) => ScoreDistributionBucket[];
   getSimulationGroupQuestions: (simulationGroupId: string, personaId?: string) => Promise<any[]>;
@@ -327,6 +351,7 @@ export interface InstructorDataService {
   unassignQuestion: (groupQuestionId: string) => Promise<any>;
   updateQuestionAssignment: (groupQuestionId: string, updates: any) => Promise<any>;
   fetchDebrief: (sessionId: string, simulationGroupId: string) => Promise<AIDebriefData | null>;
+  getStudentProgress: (simulationGroupId: string, personaId: string, startDate?: string, endDate?: string) => Promise<StudentProgressData[]>;
 }
 
 /**
@@ -811,13 +836,19 @@ function getOrganizationLabels(_simulationGroupId: string): OrganizationLabels {
 /**
  * Get patient analytics for a simulation group
  */
-async function getPatientAnalytics(simulationGroupId: string): Promise<PatientAnalytics[]> {
+async function getPatientAnalytics(
+  simulationGroupId: string,
+  startDate: string = '',
+  endDate: string = ''
+): Promise<PatientAnalytics[]> {
   try {
-    const data = await apiClient.request<any[]>(
-      `instructor/analytics?simulation_group_id=${encodeURIComponent(simulationGroupId)}`
-    );
+    let url = `instructor/analytics?simulation_group_id=${encodeURIComponent(simulationGroupId)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
 
-    return data.map((patient) => ({
+    const data = await apiClient.request<any[]>(url);
+
+    return data.map((patient: any) => ({
       patient_id: patient.persona_id,
       patient_name: patient.persona_name,
       instructor_completion_percentage: Number(patient.instructor_completion_percentage) || 0,
@@ -873,6 +904,52 @@ async function getKeyQuestionAnalytics(simulationGroupId: string): Promise<KeyQu
     });
   } catch (error) {
     console.error('Failed to fetch key question analytics:', error);
+    return [];
+  }
+}
+
+/**
+ * Get per-patient key question coverage for students who reached debrief
+ */
+async function getKeyQuestionCoverage(simulationGroupId: string, startDate: string = '', endDate: string = ''): Promise<KeyQuestionCoverage[]> {
+  try {
+    let url = `instructor/key_question_coverage?simulation_group_id=${encodeURIComponent(simulationGroupId)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+    const data = await apiClient.request<any[]>(url, { method: 'GET' });
+    return data.map((row: any) => ({
+      patientName: (row.persona_name || '').length > 30
+        ? row.persona_name.substring(0, 27) + '...'
+        : (row.persona_name || ''),
+      avgCoverage: Math.round(Number(row.avg_coverage) || 0),
+      studentsDebriefed: Number(row.students_debriefed) || 0,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch key question coverage:', error);
+    return [];
+  }
+}
+
+/**
+ * Get per-question student-asked counts for a specific patient.
+ * Uses COUNT(DISTINCT student_id) so multiple attempts by the same student count once.
+ */
+async function getPatientKeyQuestionAnalytics(simulationGroupId: string, personaId: string, startDate: string = '', endDate: string = ''): Promise<KeyQuestionAnalytics[]> {
+  try {
+    let url = `instructor/patient_key_question_analytics?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(personaId)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+    const data = await apiClient.request<any[]>(url, { method: 'GET' });
+    return data.map((row: any) => ({
+      questionTitle: (row.question_title || '').length > 30
+        ? row.question_title.substring(0, 27) + '...'
+        : (row.question_title || ''),
+      studentsAnswered: Number(row.students_answered) || 0,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch patient key question analytics:', error);
     return [];
   }
 }
@@ -1773,6 +1850,28 @@ async function fetchInstructorDebrief(sessionId: string, simulationGroupId: stri
 }
 
 /**
+ * Get student progress buckets for a specific persona
+ * Not Started / In Progress / Debrief Reached
+ */
+async function getStudentProgress(simulationGroupId: string, personaId: string, startDate: string = '', endDate: string = ''): Promise<StudentProgressData[]> {
+  try {
+    let url = `instructor/student_progress?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(personaId)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+    const data = await apiClient.request<StudentProgressData[]>(url);
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch student progress:', error);
+    return [
+      { status: 'Not Started', count: 0, students: [], fill: '#94a3b8' },
+      { status: 'In Progress', count: 0, students: [], fill: '#f59e0b' },
+      { status: 'Debrief Reached', count: 0, students: [], fill: '#22c55e' },
+    ];
+  }
+}
+
+/**
  * Instructor data service object
  */
 export const instructorService: InstructorDataService = {
@@ -1822,13 +1921,16 @@ export const instructorService: InstructorDataService = {
   getPatientsUsingQuestion,
   isQuestionInUse,
   getKeyQuestionAnalytics,
+  getKeyQuestionCoverage,
+  getPatientKeyQuestionAnalytics,
   getQuestionPerformanceScores,
   getScoreDistribution,
   getSimulationGroupQuestions,
   assignQuestionToGroup,
   unassignQuestion,
   updateQuestionAssignment,
-  fetchDebrief: fetchInstructorDebrief
+  fetchDebrief: fetchInstructorDebrief,
+  getStudentProgress: getStudentProgress
 };
 
 // Keep backward-compatible export

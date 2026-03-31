@@ -202,69 +202,105 @@ exports.handler = async (event, context) => {
         ) {
           const simulationGroupId =
             event.queryStringParameters.simulation_group_id;
+          const startDateStr = event.queryStringParameters.start_date || null;
+          const endDateStr = event.queryStringParameters.end_date || null;
+
+          let dateFilterLogsStr = sqlConnection``;
+          if (startDateStr && !endDateStr) dateFilterLogsStr = sqlConnection`AND uel.timestamp >= ${startDateStr}::timestamp`;
+          if (!startDateStr && endDateStr) dateFilterLogsStr = sqlConnection`AND uel.timestamp <= ${endDateStr}::timestamp`;
+          if (startDateStr && endDateStr) dateFilterLogsStr = sqlConnection`AND uel.timestamp >= ${startDateStr}::timestamp AND uel.timestamp <= ${endDateStr}::timestamp`;
+
+          let dateFilterMessagesStr = sqlConnection``;
+          if (startDateStr && !endDateStr) dateFilterMessagesStr = sqlConnection`AND m.sent_at >= ${startDateStr}::timestamp`;
+          if (!startDateStr && endDateStr) dateFilterMessagesStr = sqlConnection`AND m.sent_at <= ${endDateStr}::timestamp`;
+          if (startDateStr && endDateStr) dateFilterMessagesStr = sqlConnection`AND m.sent_at >= ${startDateStr}::timestamp AND m.sent_at <= ${endDateStr}::timestamp`;
+
+          let dateFilterInteractionsStr = sqlConnection``;
+          if (startDateStr && !endDateStr) dateFilterInteractionsStr = sqlConnection`AND sp.last_accessed >= ${startDateStr}::timestamp`;
+          if (!startDateStr && endDateStr) dateFilterInteractionsStr = sqlConnection`AND sp.last_accessed <= ${endDateStr}::timestamp`;
+          if (startDateStr && endDateStr) dateFilterInteractionsStr = sqlConnection`AND sp.last_accessed >= ${startDateStr}::timestamp AND sp.last_accessed <= ${endDateStr}::timestamp`;
 
           try {
             // Query to get all patients and their message counts, separated by student and AI messages
             const messageCreations = await sqlConnection`
                     SELECT p.persona_id, p.persona_name, p.persona_number, 
-                        COUNT(CASE WHEN m.sender_type = 'student' THEN 1 ELSE NULL END) AS student_message_count,
-                        COUNT(CASE WHEN m.sender_type = 'ai' THEN 1 ELSE NULL END) AS ai_message_count
+                        COALESCE(sub.student_message_count, 0) AS student_message_count,
+                        COALESCE(sub.ai_message_count, 0) AS ai_message_count
                     FROM "personas" p
-                    LEFT JOIN "student_interactions" sp ON p.persona_id = sp.persona_id
-                    LEFT JOIN "chats" c ON sp.student_interaction_id = c.student_interaction_id
-                    LEFT JOIN "messages" m ON c.chat_id = m.chat_id
-                    LEFT JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
-                    LEFT JOIN "users" u ON e.user_id = u.user_id
+                    LEFT JOIN (
+                        SELECT sp.persona_id,
+                            COUNT(CASE WHEN m.sender_type = 'student' THEN 1 ELSE NULL END) AS student_message_count,
+                            COUNT(CASE WHEN m.sender_type = 'ai' THEN 1 ELSE NULL END) AS ai_message_count
+                        FROM "student_interactions" sp
+                        JOIN "chats" c ON sp.student_interaction_id = c.student_interaction_id
+                        JOIN "messages" m ON c.chat_id = m.chat_id
+                        JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
+                        JOIN "users" u ON e.user_id = u.user_id
+                        WHERE 'student' = ANY(u.roles)
+                        ${dateFilterMessagesStr}
+                        GROUP BY sp.persona_id
+                    ) sub ON sub.persona_id = p.persona_id
                     WHERE p.simulation_group_id = ${simulationGroupId}
-                    AND 'student' = ANY(u.roles)
-                    GROUP BY p.persona_id, p.persona_name, p.persona_number
                     ORDER BY p.persona_number ASC, p.persona_name ASC;
                 `;
 
             // Query to get the number of patient accesses using User_Engagement_Log, filtering by student role
             const patientAccesses = await sqlConnection`
-                    SELECT p.persona_id, COUNT(uel.log_id) AS access_count
+                    SELECT p.persona_id, COALESCE(sub.access_count, 0) AS access_count
                     FROM "personas" p
-                    LEFT JOIN "user_engagement_log" uel ON p.persona_id = uel.persona_id
-                    LEFT JOIN "enrollments" e ON uel.enrollment_id = e.enrollment_id
-                    LEFT JOIN "users" u ON e.user_id = u.user_id
-                    WHERE p.simulation_group_id = ${simulationGroupId}
-                    AND uel.engagement_type = 'patient access'
-                    AND 'student' = ANY(u.roles)
-                    GROUP BY p.persona_id;
+                    LEFT JOIN (
+                        SELECT uel.persona_id, COUNT(uel.log_id) AS access_count
+                        FROM "user_engagement_log" uel
+                        JOIN "enrollments" e ON uel.enrollment_id = e.enrollment_id
+                        JOIN "users" u ON e.user_id = u.user_id
+                        WHERE uel.engagement_type = 'patient access'
+                        AND 'student' = ANY(u.roles)
+                        ${dateFilterLogsStr}
+                        GROUP BY uel.persona_id
+                    ) sub ON sub.persona_id = p.persona_id
+                    WHERE p.simulation_group_id = ${simulationGroupId};
                 `;
 
             // Query to get the percentage of scores evaluated by the LLM for each patient, filtering by student role
             const aiScores = await sqlConnection`
                     SELECT p.persona_id, p.llm_completion,
-                        CASE 
-                            WHEN COUNT(sp.student_interaction_id) = 0 THEN 0 
-                            ELSE COUNT(CASE WHEN sp.persona_score = 100 THEN 1 END) * 100.0 / COUNT(sp.student_interaction_id)
-                        END AS ai_score_percentage
+                        COALESCE(sub.ai_score_percentage, 0) AS ai_score_percentage
                     FROM "personas" p
-                    LEFT JOIN "student_interactions" sp ON p.persona_id = sp.persona_id
-                    LEFT JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
-                    LEFT JOIN "users" u ON e.user_id = u.user_id
-                    WHERE p.simulation_group_id = ${simulationGroupId}
-                    AND 'student' = ANY(u.roles)
-                    GROUP BY p.persona_id;
+                    LEFT JOIN (
+                        SELECT sp.persona_id,
+                            CASE 
+                                WHEN COUNT(sp.student_interaction_id) = 0 THEN 0 
+                                ELSE COUNT(CASE WHEN sp.persona_score = 100 THEN 1 END) * 100.0 / COUNT(sp.student_interaction_id)
+                            END AS ai_score_percentage
+                        FROM "student_interactions" sp
+                        JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
+                        JOIN "users" u ON e.user_id = u.user_id
+                        WHERE 'student' = ANY(u.roles)
+                        ${dateFilterInteractionsStr}
+                        GROUP BY sp.persona_id
+                    ) sub ON sub.persona_id = p.persona_id
+                    WHERE p.simulation_group_id = ${simulationGroupId};
                 `;
 
             // Query to calculate the percentage of completed interactions for each patient, filtering by student role
             const instructorCompletionPercentages = await sqlConnection`
-                    SELECT 
-                        p.persona_id, 
-                        CASE 
-                            WHEN COUNT(sp.student_interaction_id) = 0 THEN 0 
-                            ELSE COUNT(CASE WHEN sp.is_completed THEN 1 END) * 100.0 / COUNT(sp.student_interaction_id)
-                        END AS instructor_completion_percentage
+                    SELECT p.persona_id, 
+                        COALESCE(sub.instructor_completion_percentage, 0) AS instructor_completion_percentage
                     FROM "personas" p
-                    LEFT JOIN "student_interactions" sp ON p.persona_id = sp.persona_id
-                    LEFT JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
-                    LEFT JOIN "users" u ON e.user_id = u.user_id
-                    WHERE p.simulation_group_id = ${simulationGroupId}
-                    AND 'student' = ANY(u.roles)
-                    GROUP BY p.persona_id;
+                    LEFT JOIN (
+                        SELECT sp.persona_id,
+                            CASE 
+                                WHEN COUNT(sp.student_interaction_id) = 0 THEN 0 
+                                ELSE COUNT(CASE WHEN sp.is_completed THEN 1 END) * 100.0 / COUNT(sp.student_interaction_id)
+                            END AS instructor_completion_percentage
+                        FROM "student_interactions" sp
+                        JOIN "enrollments" e ON sp.enrollment_id = e.enrollment_id
+                        JOIN "users" u ON e.user_id = u.user_id
+                        WHERE 'student' = ANY(u.roles)
+                        ${dateFilterInteractionsStr}
+                        GROUP BY sp.persona_id
+                    ) sub ON sub.persona_id = p.persona_id
+                    WHERE p.simulation_group_id = ${simulationGroupId};
                 `;
 
             // Combine all data into a single response, ensuring all patients are included
@@ -1351,9 +1387,8 @@ exports.handler = async (event, context) => {
                     SELECT filename, filetype, ingestion_status
                     FROM "persona_data"
                     WHERE persona_id = ${persona_id}
-                    AND filepath LIKE ${
-                      simulation_group_id + "/" + persona_id + "/documents/%"
-                    };
+                    AND filepath LIKE ${simulation_group_id + "/" + persona_id + "/documents/%"
+              };
                 `;
 
             // Convert the results to a hashmap
@@ -1805,6 +1840,379 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify({
             error: "simulation_group_id is required",
           });
+        }
+        break;
+      case "GET /instructor/key_question_coverage":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          const simulation_group_id = event.queryStringParameters.simulation_group_id;
+          const startDateStr = event.queryStringParameters.start_date || null;
+          const endDateStr = event.queryStringParameters.end_date || null;
+
+          try {
+            let data;
+            if (startDateStr && endDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  p.persona_id,
+                  p.persona_name,
+                  AVG(
+                    CASE WHEN d.total_questions_assigned > 0
+                      THEN d.total_questions_asked * 100.0 / d.total_questions_assigned
+                      ELSE 0
+                    END
+                  ) AS avg_coverage,
+                  COUNT(DISTINCT d.student_id) AS students_debriefed
+                FROM "personas" p
+                LEFT JOIN "debriefs" d
+                  ON p.persona_id = d.persona_id
+                  AND d.simulation_group_id = ${simulation_group_id}
+                  AND d.created_at >= ${startDateStr}::timestamp
+                  AND d.created_at <= ${endDateStr}::timestamp
+                WHERE p.simulation_group_id = ${simulation_group_id}
+                GROUP BY p.persona_id, p.persona_name, p.persona_number
+                ORDER BY p.persona_number ASC, p.persona_name ASC;
+              `;
+            } else if (startDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  p.persona_id,
+                  p.persona_name,
+                  AVG(
+                    CASE WHEN d.total_questions_assigned > 0
+                      THEN d.total_questions_asked * 100.0 / d.total_questions_assigned
+                      ELSE 0
+                    END
+                  ) AS avg_coverage,
+                  COUNT(DISTINCT d.student_id) AS students_debriefed
+                FROM "personas" p
+                LEFT JOIN "debriefs" d
+                  ON p.persona_id = d.persona_id
+                  AND d.simulation_group_id = ${simulation_group_id}
+                  AND d.created_at >= ${startDateStr}::timestamp
+                WHERE p.simulation_group_id = ${simulation_group_id}
+                GROUP BY p.persona_id, p.persona_name, p.persona_number
+                ORDER BY p.persona_number ASC, p.persona_name ASC;
+              `;
+            } else if (endDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  p.persona_id,
+                  p.persona_name,
+                  AVG(
+                    CASE WHEN d.total_questions_assigned > 0
+                      THEN d.total_questions_asked * 100.0 / d.total_questions_assigned
+                      ELSE 0
+                    END
+                  ) AS avg_coverage,
+                  COUNT(DISTINCT d.student_id) AS students_debriefed
+                FROM "personas" p
+                LEFT JOIN "debriefs" d
+                  ON p.persona_id = d.persona_id
+                  AND d.simulation_group_id = ${simulation_group_id}
+                  AND d.created_at <= ${endDateStr}::timestamp
+                WHERE p.simulation_group_id = ${simulation_group_id}
+                GROUP BY p.persona_id, p.persona_name, p.persona_number
+                ORDER BY p.persona_number ASC, p.persona_name ASC;
+              `;
+            } else {
+              data = await sqlConnection`
+                SELECT
+                  p.persona_id,
+                  p.persona_name,
+                  AVG(
+                    CASE WHEN d.total_questions_assigned > 0
+                      THEN d.total_questions_asked * 100.0 / d.total_questions_assigned
+                      ELSE 0
+                    END
+                  ) AS avg_coverage,
+                  COUNT(DISTINCT d.student_id) AS students_debriefed
+                FROM "personas" p
+                LEFT JOIN "debriefs" d
+                  ON p.persona_id = d.persona_id
+                  AND d.simulation_group_id = ${simulation_group_id}
+                WHERE p.simulation_group_id = ${simulation_group_id}
+                GROUP BY p.persona_id, p.persona_name, p.persona_number
+                ORDER BY p.persona_number ASC, p.persona_name ASC;
+              `;
+            }
+            response.statusCode = 200;
+            response.body = JSON.stringify(data);
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Operation failed", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "simulation_group_id is required",
+          });
+        }
+        break;
+      case "GET /instructor/patient_key_question_analytics":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id &&
+          event.queryStringParameters.persona_id
+        ) {
+          const simulation_group_id = event.queryStringParameters.simulation_group_id;
+          const persona_id = event.queryStringParameters.persona_id;
+          const startDateStr = event.queryStringParameters.start_date || null;
+          const endDateStr = event.queryStringParameters.end_date || null;
+
+          try {
+            let data;
+            if (startDateStr && endDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  qb.question_id,
+                  COALESCE(qb.title, qb.question_text) AS question_title,
+                  COUNT(DISTINCT d.student_id) AS students_answered
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                LEFT JOIN "debriefs" d
+                  ON d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                  AND d.generated_text IS NOT NULL
+                  AND d.created_at >= ${startDateStr}::timestamp
+                  AND d.created_at <= ${endDateStr}::timestamp
+                  AND jsonb_typeof(d.generated_text::jsonb -> 'questions_addressed') = 'array'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(
+                      d.generated_text::jsonb -> 'questions_addressed'
+                    ) AS score_element
+                    WHERE (score_element->>'question_id')::uuid = qb.question_id
+                  )
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND COALESCE(sgq.persona_id, ${persona_id}) = ${persona_id}
+                GROUP BY qb.question_id, qb.title, qb.question_text
+                ORDER BY students_answered DESC;
+              `;
+            } else if (startDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  qb.question_id,
+                  COALESCE(qb.title, qb.question_text) AS question_title,
+                  COUNT(DISTINCT d.student_id) AS students_answered
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                LEFT JOIN "debriefs" d
+                  ON d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                  AND d.generated_text IS NOT NULL
+                  AND d.created_at >= ${startDateStr}::timestamp
+                  AND jsonb_typeof(d.generated_text::jsonb -> 'questions_addressed') = 'array'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(
+                      d.generated_text::jsonb -> 'questions_addressed'
+                    ) AS score_element
+                    WHERE (score_element->>'question_id')::uuid = qb.question_id
+                  )
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND COALESCE(sgq.persona_id, ${persona_id}) = ${persona_id}
+                GROUP BY qb.question_id, qb.title, qb.question_text
+                ORDER BY students_answered DESC;
+              `;
+            } else if (endDateStr) {
+              data = await sqlConnection`
+                SELECT
+                  qb.question_id,
+                  COALESCE(qb.title, qb.question_text) AS question_title,
+                  COUNT(DISTINCT d.student_id) AS students_answered
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                LEFT JOIN "debriefs" d
+                  ON d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                  AND d.generated_text IS NOT NULL
+                  AND d.created_at <= ${endDateStr}::timestamp
+                  AND jsonb_typeof(d.generated_text::jsonb -> 'questions_addressed') = 'array'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(
+                      d.generated_text::jsonb -> 'questions_addressed'
+                    ) AS score_element
+                    WHERE (score_element->>'question_id')::uuid = qb.question_id
+                  )
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND COALESCE(sgq.persona_id, ${persona_id}) = ${persona_id}
+                GROUP BY qb.question_id, qb.title, qb.question_text
+                ORDER BY students_answered DESC;
+              `;
+            } else {
+              data = await sqlConnection`
+                SELECT
+                  qb.question_id,
+                  COALESCE(qb.title, qb.question_text) AS question_title,
+                  COUNT(DISTINCT d.student_id) AS students_answered
+                FROM "simulation_group_questions" sgq
+                JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                LEFT JOIN "debriefs" d
+                  ON d.simulation_group_id = ${simulation_group_id}
+                  AND d.persona_id = ${persona_id}
+                  AND d.generated_text IS NOT NULL
+                  AND jsonb_typeof(d.generated_text::jsonb -> 'questions_addressed') = 'array'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(
+                      d.generated_text::jsonb -> 'questions_addressed'
+                    ) AS score_element
+                    WHERE (score_element->>'question_id')::uuid = qb.question_id
+                  )
+                WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND COALESCE(sgq.persona_id, ${persona_id}) = ${persona_id}
+                GROUP BY qb.question_id, qb.title, qb.question_text
+                ORDER BY students_answered DESC;
+              `;
+            }
+            response.statusCode = 200;
+            response.body = JSON.stringify(data);
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Operation failed", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({
+            error: "simulation_group_id and persona_id are required",
+          });
+        }
+        break;
+      case "GET /instructor/student_progress":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id &&
+          event.queryStringParameters.persona_id
+        ) {
+          const { simulation_group_id, persona_id } = event.queryStringParameters;
+          const startDateStr = event.queryStringParameters.start_date || null;
+          const endDateStr = event.queryStringParameters.end_date || null;
+
+          try {
+            let progressData;
+            if (startDateStr && endDateStr) {
+              progressData = await sqlConnection`
+                SELECT 
+                  u.user_id, 
+                  u.first_name || ' ' || u.last_name AS student_name,
+                  si.is_completed,
+                  si.student_interaction_id,
+                  COUNT(c.chat_id) AS chat_count
+                FROM "enrollments" e
+                JOIN "users" u ON e.user_id = u.user_id
+                LEFT JOIN "student_interactions" si 
+                  ON e.enrollment_id = si.enrollment_id 
+                  AND si.persona_id = ${persona_id}
+                LEFT JOIN "chats" c
+                  ON c.student_interaction_id = si.student_interaction_id
+                  AND c.started_at >= ${startDateStr}::timestamp
+                  AND c.started_at <= ${endDateStr}::timestamp
+                WHERE e.simulation_group_id = ${simulation_group_id}
+                AND e.enrollment_type = 'student'
+                GROUP BY u.user_id, u.first_name, u.last_name, si.is_completed, si.student_interaction_id
+                ORDER BY u.first_name, u.last_name;
+              `;
+            } else if (startDateStr) {
+              progressData = await sqlConnection`
+                SELECT 
+                  u.user_id, 
+                  u.first_name || ' ' || u.last_name AS student_name,
+                  si.is_completed,
+                  si.student_interaction_id,
+                  COUNT(c.chat_id) AS chat_count
+                FROM "enrollments" e
+                JOIN "users" u ON e.user_id = u.user_id
+                LEFT JOIN "student_interactions" si 
+                  ON e.enrollment_id = si.enrollment_id 
+                  AND si.persona_id = ${persona_id}
+                LEFT JOIN "chats" c
+                  ON c.student_interaction_id = si.student_interaction_id
+                  AND c.started_at >= ${startDateStr}::timestamp
+                WHERE e.simulation_group_id = ${simulation_group_id}
+                AND e.enrollment_type = 'student'
+                GROUP BY u.user_id, u.first_name, u.last_name, si.is_completed, si.student_interaction_id
+                ORDER BY u.first_name, u.last_name;
+              `;
+            } else if (endDateStr) {
+              progressData = await sqlConnection`
+                SELECT 
+                  u.user_id, 
+                  u.first_name || ' ' || u.last_name AS student_name,
+                  si.is_completed,
+                  si.student_interaction_id,
+                  COUNT(c.chat_id) AS chat_count
+                FROM "enrollments" e
+                JOIN "users" u ON e.user_id = u.user_id
+                LEFT JOIN "student_interactions" si 
+                  ON e.enrollment_id = si.enrollment_id 
+                  AND si.persona_id = ${persona_id}
+                LEFT JOIN "chats" c
+                  ON c.student_interaction_id = si.student_interaction_id
+                  AND c.started_at <= ${endDateStr}::timestamp
+                WHERE e.simulation_group_id = ${simulation_group_id}
+                AND e.enrollment_type = 'student'
+                GROUP BY u.user_id, u.first_name, u.last_name, si.is_completed, si.student_interaction_id
+                ORDER BY u.first_name, u.last_name;
+              `;
+            } else {
+              progressData = await sqlConnection`
+                SELECT 
+                  u.user_id, 
+                  u.first_name || ' ' || u.last_name AS student_name,
+                  si.is_completed,
+                  si.student_interaction_id,
+                  COUNT(c.chat_id) AS chat_count
+                FROM "enrollments" e
+                JOIN "users" u ON e.user_id = u.user_id
+                LEFT JOIN "student_interactions" si 
+                  ON e.enrollment_id = si.enrollment_id 
+                  AND si.persona_id = ${persona_id}
+                LEFT JOIN "chats" c
+                  ON c.student_interaction_id = si.student_interaction_id
+                WHERE e.simulation_group_id = ${simulation_group_id}
+                AND e.enrollment_type = 'student'
+                GROUP BY u.user_id, u.first_name, u.last_name, si.is_completed, si.student_interaction_id
+                ORDER BY u.first_name, u.last_name;
+              `;
+            }
+
+            const result = [
+              { status: 'Not Started', count: 0, students: [], fill: '#94a3b8' },
+              { status: 'In Progress', count: 0, students: [], fill: '#f59e0b' },
+              { status: 'Debrief Reached', count: 0, students: [], fill: '#22c55e' }
+            ];
+
+            for (const row of progressData) {
+              const studentObj = { id: row.user_id, name: row.student_name };
+
+              if (Number(row.chat_count) === 0) {
+                result[0].students.push(studentObj);
+                result[0].count++;
+              } else if (row.is_completed === true) {
+                result[2].students.push(studentObj);
+                result[2].count++;
+              } else {
+                result[1].students.push(studentObj);
+                result[1].count++;
+              }
+            }
+
+            response.statusCode = 200;
+            response.body = JSON.stringify(result);
+          } catch (err) {
+            logger.error("Failed to fetch student progress", { error: err.message, stack: err.stack });
+            response.statusCode = 500;
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id and persona_id are required" });
         }
         break;
       case "GET /instructor/get_debrief":

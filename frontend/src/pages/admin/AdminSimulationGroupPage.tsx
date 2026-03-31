@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient, type KeyQuestionAnalytics, type StudentDetails, type StudentPatientData } from '@/services/instructorService';
+import { mockInstructorDataService, type GlobalRubricQuestion, type CaseMaterial, type QuestionBankItem, instructorService, type InstructorSimulationGroup, type PatientAnalytics, type Student, type ManageablePatient, type KeyQuestionAnalytics, type KeyQuestionCoverage, type StudentDetails, type StudentPatientData, type StudentProgressData } from '@/services/instructorService';
 import { mockAdminDataService, mockGroupInstructors, mockOrganizations } from '@/services/adminService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, UserPlus, FileCode, CheckCircle, Loader2, XCircle, HelpCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
@@ -42,9 +42,8 @@ function AdminSimulationGroupPage() {
   const [studentPatientData, setStudentPatientData] = useState<StudentPatientData | null>(null);
   const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null);
   const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('');
-  const [questionPerformanceTimePeriod, setQuestionPerformanceTimePeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
-  const [scoreDistributionTimePeriod, setScoreDistributionTimePeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
-  
+
+
   // Edit Patient state
   const [selectedPatientForEdit, setSelectedPatientForEdit] = useState<string | null>(null);
   const [editPatientTab, setEditPatientTab] = useState<'info' | 'questions' | 'materials'>('info');
@@ -53,13 +52,13 @@ function AdminSimulationGroupPage() {
   const [editPatientGender, setEditPatientGender] = useState('');
   const [editPatientPrompt, setEditPatientPrompt] = useState('');
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
-  
+
   // Global Rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [rubricSearchQuery, setRubricSearchQuery] = useState('');
   const [isMainSidebarVisible, setIsMainSidebarVisible] = useState(true);
-  
+
   // Question Bank state
   const [questionBankTab, setQuestionBankTab] = useState<'global' | 'patientSpecific'>('global');
   const [includedQuestionIds, setIncludedQuestionIds] = useState<Set<string>>(new Set());
@@ -70,7 +69,7 @@ function AdminSimulationGroupPage() {
   const [selectedPatientForQuestionBank, setSelectedPatientForQuestionBank] = useState<string | null>(null);
   const [questionBankSearchQuery, setQuestionBankSearchQuery] = useState('');
   const [questionBankTagFilter, setQuestionBankTagFilter] = useState<string>('');
-  
+
   // Question Bank questions - loaded from service
   const [globalBankQuestions, setGlobalBankQuestions] = useState<QuestionBankItem[]>([]);
   const [patientSpecificBankQuestions, setPatientSpecificBankQuestions] = useState<QuestionBankItem[]>([]);
@@ -95,9 +94,9 @@ function AdminSimulationGroupPage() {
     const matchesTag = !questionBankTagFilter || (q.tags || []).includes(questionBankTagFilter);
     return matchesSearch && matchesTag;
   });
-  
+
   // Case-Specific Key Questions state
-  const [caseSpecificQuestions, setCaseSpecificQuestions] = useState<GlobalRubricQuestion[]>(() => 
+  const [caseSpecificQuestions, setCaseSpecificQuestions] = useState<GlobalRubricQuestion[]>(() =>
     selectedPatientForEdit ? mockInstructorDataService.getCaseSpecificQuestions(selectedPatientForEdit) : []
   );
   const [, setSelectedCaseQuestionId] = useState<string>(() => {
@@ -106,9 +105,9 @@ function AdminSimulationGroupPage() {
   });
   const [caseQuestionSearchQuery, setCaseQuestionSearchQuery] = useState('');
   const [globalRubricSearchQuery, setGlobalRubricSearchQuery] = useState('');
-  
+
   // Get selected case question
-  
+
   // Filter case questions based on search
   const filteredCaseQuestions = caseSpecificQuestions.filter(q =>
     q.title.toLowerCase().includes(caseQuestionSearchQuery.toLowerCase())
@@ -118,42 +117,43 @@ function AdminSimulationGroupPage() {
   const [caseMaterials, setCaseMaterials] = useState<CaseMaterial[]>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
-  
+
   // Get selected material
   const selectedMaterial = caseMaterials.find(m => m.id === selectedMaterialId);
-  
+
   // Filter materials based on search
   const filteredMaterials = caseMaterials.filter(m =>
     m.title.toLowerCase().includes(materialSearchQuery.toLowerCase())
   );
-  
+
   // Get selected question
   const selectedQuestion = globalRubricQuestions.find(q => q.id === selectedQuestionId);
-  
+
   // Filter questions based on search
   const filteredRubricQuestions = globalRubricQuestions.filter(q =>
     q.title.toLowerCase().includes(rubricSearchQuery.toLowerCase())
   );
-  
+
   // State for async-loaded data
   const [simulationGroup, setSimulationGroup] = useState<InstructorSimulationGroup | undefined>(undefined);
   const [patientAnalytics, setPatientAnalytics] = useState<PatientAnalytics[]>([]);
+  const [analyticsDateRange, setAnalyticsDateRange] = useState({ start: '', end: '' });
   const [students, setStudents] = useState<Student[]>([]);
   const [manageablePatients, setManageablePatients] = useState<ManageablePatient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [globalKeyQuestionAnalytics, setGlobalKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
+  const [keyQuestionCoverage, setKeyQuestionCoverage] = useState<KeyQuestionCoverage[]>([]);
   const [isAccessCodeDialogOpen, setIsAccessCodeDialogOpen] = useState(false);
 
   // Load data from instructor service (sync)
   const user = mockAdminDataService.getCurrentUser();
-  
+
   // Load instructors from API (real backend)
   const [instructors, setInstructors] = useState<adminApi.AdminInstructor[]>([]);
   const [instructorsLoading, setInstructorsLoading] = useState(false);
-  
+
   // Organization details (loaded from API with mock fallback)
   const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
-  
+
   // Get organization-specific labels from service
   const labels = instructorService.getOrganizationLabels(groupId || '1');
   const {
@@ -162,15 +162,15 @@ function AdminSimulationGroupPage() {
     aiPersonaLower: aiPersonaLabelLower,
     userRole: userRoleLabel,
   } = labels;
-  
+
   // Load data asynchronously
   useEffect(() => {
     const loadData = async () => {
       if (!groupId) return;
-      
+
       try {
         // Load each data source independently so one failure doesn't block the rest
-        const [adminGroupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient, keyQuestionData] = await Promise.all([
+        const [adminGroupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient] = await Promise.all([
           adminApi.getSimulationGroup(groupId).catch(err => { console.error('Failed to load group:', err); return undefined; }),
           instructorService.getPatientAnalytics(groupId).catch(err => { console.error('Failed to load analytics:', err); return [] as PatientAnalytics[]; }),
           instructorService.getStudents(groupId).catch(err => { console.error('Failed to load students:', err); return [] as Student[]; }),
@@ -179,7 +179,6 @@ function AdminSimulationGroupPage() {
             ? adminApi.getQuestionBankQuestions(organizationId).catch(err => { console.error('Failed to load global questions:', err); return [] as QuestionBankItem[]; })
             : instructorService.getGlobalQuestionBank().catch(err => { console.error('Failed to load global questions:', err); return [] as QuestionBankItem[]; }),
           Promise.resolve(instructorService.getPatientSpecificQuestionBank()),
-          instructorService.getKeyQuestionAnalytics(groupId).catch(err => { console.error('Failed to load key question analytics:', err); return [] as KeyQuestionAnalytics[]; }),
         ]);
 
         // Map admin API shape to InstructorSimulationGroup
@@ -193,7 +192,7 @@ function AdminSimulationGroupPage() {
           persona_count: adminGroupData.persona_count || 0,
           organization_id: adminGroupData.organization_id || '',
         } as InstructorSimulationGroup : undefined;
-        
+
         setSimulationGroup(groupData ? {
           simulation_group_id: groupData.simulation_group_id,
           group_name: groupData.group_name,
@@ -226,8 +225,6 @@ function AdminSimulationGroupPage() {
           setPatientSpecificBankQuestions(bankPatient);
         }
 
-        setGlobalKeyQuestionAnalytics(keyQuestionData);
-        
         // Set initial selected patient if analytics available
         if (analyticsData.length > 0) {
           setSelectedPatientId(analyticsData[0].patient_id);
@@ -253,6 +250,26 @@ function AdminSimulationGroupPage() {
 
     loadData();
   }, [groupId, organizationId]);
+
+  // Filter analytics data based on date range
+  useEffect(() => {
+    if (!groupId) return;
+    const fetchFilteredAnalytics = async () => {
+      try {
+        const [analyticsData, coverageData] = await Promise.all([
+          instructorService.getPatientAnalytics(groupId, analyticsDateRange.start, analyticsDateRange.end),
+          instructorService.getKeyQuestionCoverage(groupId, analyticsDateRange.start, analyticsDateRange.end),
+        ]);
+        setPatientAnalytics(analyticsData);
+        setKeyQuestionCoverage(coverageData);
+      } catch (error) {
+        console.error('Error fetching filtered analytics:', error);
+      }
+    };
+    if (simulationGroup) {
+      fetchFilteredAnalytics();
+    }
+  }, [groupId, analyticsDateRange.start, analyticsDateRange.end, simulationGroup]);
 
   // Load instructors from real API when section is active, fall back to mock
   useEffect(() => {
@@ -297,38 +314,51 @@ function AdminSimulationGroupPage() {
         });
     }
   }, [activeSection, groupId]);
-  
+
   // State for selected patient (for analytics tabs)
   const [selectedPatientId, setSelectedPatientId] = useState<string>('overview');
-  
+
   // Get current patient data
   const currentPatient = patientAnalytics.find(p => p.patient_id === selectedPatientId);
-  const messageCountData = currentPatient 
+  const messageCountData = currentPatient
     ? [
-        { name: 'Student Messages', value: currentPatient.student_message_count },
-        { name: 'AI Messages', value: currentPatient.ai_message_count },
-      ]
+      { name: 'Student Messages', value: currentPatient.student_message_count },
+      { name: 'AI Messages', value: currentPatient.ai_message_count },
+    ]
     : [];
   const donutColors = [SIMULATION_GROUP_COLOR_PALETTE[2], SIMULATION_GROUP_COLOR_PALETTE[5]];
   const totalMessages = currentPatient ? currentPatient.student_message_count + currentPatient.ai_message_count : 0;
-  
-  // Key question analytics (per patient) — uses pre-fetched data
-  const keyQuestionAnalytics = currentPatient
-    ? globalKeyQuestionAnalytics
-    : [];
-  
-  // Question performance scores
-  const questionPerformanceScores = mockInstructorDataService.getQuestionPerformanceScores(groupId || '1');
-  
-  // Score distribution for current patient
-  const scoreDistribution = currentPatient 
-    ? mockInstructorDataService.getScoreDistribution(groupId || '1', currentPatient.patient_id)
-    : [];
-  
+
+  // Key question analytics (per patient) - fetched from dedicated endpoint
+  const [keyQuestionAnalytics, setKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
+
+  useEffect(() => {
+    if (currentPatient && groupId) {
+      instructorService.getPatientKeyQuestionAnalytics(groupId, currentPatient.patient_id, analyticsDateRange.start, analyticsDateRange.end)
+        .then(setKeyQuestionAnalytics)
+        .catch(() => setKeyQuestionAnalytics([]));
+    } else {
+      setKeyQuestionAnalytics([]);
+    }
+  }, [currentPatient?.patient_id, groupId, analyticsDateRange.start, analyticsDateRange.end]);
+
+  // Student progress data for current patient
+  const [studentProgress, setStudentProgress] = useState<StudentProgressData[]>([]);
+
+  useEffect(() => {
+    if (groupId && selectedPatientId && selectedPatientId !== 'overview') {
+      instructorService.getStudentProgress(groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end)
+        .then(data => setStudentProgress(data))
+        .catch(err => console.error(err));
+    } else {
+      setStudentProgress([]);
+    }
+  }, [groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end]);
+
   // Fallback values
   const simulationGroupName = simulationGroup?.group_name || 'Simulation Group';
   const accessCode = simulationGroup?.group_access_code || 'XXXX-XXXX-XXXX-XXXX';
-  
+
   // Filter patients based on search query
   const filteredPatients = manageablePatients.filter(patient =>
     patient.patient_name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -343,7 +373,7 @@ function AdminSimulationGroupPage() {
   const filteredInstructors = instructors.filter(instructor => {
     const fullName = `${instructor.first_name} ${instructor.last_name}`.toLowerCase();
     return fullName.includes(instructorSearchQuery.toLowerCase()) ||
-           instructor.user_email.toLowerCase().includes(instructorSearchQuery.toLowerCase());
+      instructor.user_email.toLowerCase().includes(instructorSearchQuery.toLowerCase());
   });
 
   const handleSignOut = () => {
@@ -378,7 +408,7 @@ function AdminSimulationGroupPage() {
 
   const handleDeletePatient = (patientId: string) => {
     if (confirm(`Are you sure you want to delete this ${aiPersonaLabelLower}?`)) {
-      setManageablePatients(prevPatients => 
+      setManageablePatients(prevPatients =>
         prevPatients.filter(patient => patient.patient_id !== patientId)
       );
       mockInstructorDataService.deletePatient(patientId);
@@ -394,7 +424,7 @@ function AdminSimulationGroupPage() {
       setEditPatientGender(patient.patient_gender);
       setEditPatientPrompt(patient.patient_prompt || instructorService.getDefaultPatientPrompt());
       setEditPatientTab('info');
-      
+
       // Load patient-specific questions from API
       if (groupId) {
         instructorService.getSimulationGroupQuestions(groupId, patientId)
@@ -417,11 +447,11 @@ function AdminSimulationGroupPage() {
             setIncludedQuestionIds(new Set());
           });
       }
-      
+
       const materials = instructorService.getCaseMaterials(patientId);
       setCaseMaterials(materials);
       setSelectedMaterialId(materials[0]?.id || '');
-      
+
       setActiveSection('editPatient');
     }
   };
@@ -626,7 +656,7 @@ function AdminSimulationGroupPage() {
   };
 
   // Get the patient being edited
-  const patientBeingEdited = selectedPatientForEdit 
+  const patientBeingEdited = selectedPatientForEdit
     ? instructorService.getPatient(selectedPatientForEdit)
     : null;
 
@@ -647,7 +677,7 @@ function AdminSimulationGroupPage() {
       const updatedQuestions = instructorService.getGlobalRubricQuestions(groupId || '1');
       setGlobalRubricQuestions(updatedQuestions);
       setSelectedQuestionId(updatedQuestions[0]?.id || null);
-      
+
       setIncludedQuestionIds(prev => {
         const newSet = new Set(prev);
         newSet.delete(selectedQuestionId);
@@ -664,7 +694,7 @@ function AdminSimulationGroupPage() {
 
   const handleUpdateQuestionField = (field: keyof GlobalRubricQuestion, value: string | boolean) => {
     if (!selectedQuestionId) return;
-    setGlobalRubricQuestions(globalRubricQuestions.map(q => 
+    setGlobalRubricQuestions(globalRubricQuestions.map(q =>
       q.id === selectedQuestionId ? { ...q, [field]: value } : q
     ));
   };
@@ -674,7 +704,7 @@ function AdminSimulationGroupPage() {
 
   const handleUpdateMaterialField = (field: keyof CaseMaterial, value: string) => {
     if (!selectedMaterialId) return;
-    setCaseMaterials(caseMaterials.map(m => 
+    setCaseMaterials(caseMaterials.map(m =>
       m.id === selectedMaterialId ? { ...m, [field]: value } : m
     ));
   };
@@ -717,8 +747,8 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-${addQuestionType}-${Date.now()}`;
-    const newBankQuestion: QuestionBankItem = { 
-      id: newQuestionId, 
+    const newBankQuestion: QuestionBankItem = {
+      id: newQuestionId,
       title: question.title,
       questionText: question.keyQuestion,
       clinicalIntent: question.clinicalIntent,
@@ -729,7 +759,7 @@ function AdminSimulationGroupPage() {
       usedBySimulationGroups: [],
       usedByPatients: addQuestionType === 'patientSpecific' ? [] : undefined
     };
-    
+
     if (addQuestionType === 'global') {
       if (organizationId) {
         try {
@@ -758,7 +788,7 @@ function AdminSimulationGroupPage() {
       instructorService.addToPatientSpecificQuestionBank(newBankQuestion);
       setPatientSpecificBankQuestions(instructorService.getPatientSpecificQuestionBank());
     }
-    
+
     console.log('Saved new question to bank:', addQuestionType, question);
   };
 
@@ -771,8 +801,8 @@ function AdminSimulationGroupPage() {
     required: boolean;
   }) => {
     const newQuestionId = `bank-patient-${Date.now()}`;
-    const newBankQuestion: QuestionBankItem = { 
-      id: newQuestionId, 
+    const newBankQuestion: QuestionBankItem = {
+      id: newQuestionId,
       title: question.title,
       questionText: question.keyQuestion,
       clinicalIntent: question.clinicalIntent,
@@ -783,10 +813,10 @@ function AdminSimulationGroupPage() {
       usedBySimulationGroups: [],
       usedByPatients: []
     };
-    
+
     mockInstructorDataService.addToPatientSpecificQuestionBank(newBankQuestion);
     setPatientSpecificBankQuestions(mockInstructorDataService.getPatientSpecificQuestionBank());
-    
+
     const newCaseQuestion: GlobalRubricQuestion = {
       id: newQuestionId,
       title: question.title,
@@ -795,9 +825,9 @@ function AdminSimulationGroupPage() {
       evaluationCriteria: question.evaluationCriteria,
       required: question.required,
     };
-    
+
     instructorService.addCaseSpecificQuestion(question.patientId, newCaseQuestion);
-    
+
     if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank === question.patientId) {
       setIncludedQuestionIds(prev => {
         const newSet = new Set(prev);
@@ -845,14 +875,14 @@ function AdminSimulationGroupPage() {
     const newSet = new Set(includedQuestionIds);
     const isGlobal = questionBankTab === 'global' || questionId.startsWith('bank-global-');
     const personaId = !isGlobal ? selectedPatientForQuestionBank : undefined;
-    
+
     try {
       if (isChecked) {
         newSet.add(questionId);
-        
+
         // Call API to assign question to group (with persona for patient-specific)
         await instructorService.assignQuestionToGroup(groupId || '1', questionId, personaId || undefined);
-        
+
         if (isGlobal) {
           const existingQuestion = globalRubricQuestions.find(q => q.id === questionId);
           if (!existingQuestion) {
@@ -864,23 +894,23 @@ function AdminSimulationGroupPage() {
               evaluationCriteria: bankQuestion.evaluationCriteria,
               required: bankQuestion.isMandatory,
             };
-            
+
             instructorService.addGlobalRubricQuestion(groupId || '1', newGlobalRubricQuestion);
             setGlobalRubricQuestions(instructorService.getGlobalRubricQuestions(groupId || '1'));
           }
         }
       } else {
         newSet.delete(questionId);
-        
+
         // Call API to unassign question
         await instructorService.unassignQuestion(questionId);
-        
+
         if (isGlobal) {
           instructorService.deleteGlobalRubricQuestion(groupId || '1', questionId);
           setGlobalRubricQuestions(instructorService.getGlobalRubricQuestions(groupId || '1'));
         }
       }
-      
+
       setIncludedQuestionIds(newSet);
     } catch (err) {
       console.error('Failed to update question assignment:', err);
@@ -891,8 +921,8 @@ function AdminSimulationGroupPage() {
   const renderCaseQuestionsAccordion = () => (
     <Accordion type="single" collapsible className="space-y-2">
       {filteredCaseQuestions.map((question, index) => (
-        <AccordionItem 
-          key={question.id} 
+        <AccordionItem
+          key={question.id}
           value={question.id}
           style={{
             borderWidth: '1px',
@@ -902,7 +932,7 @@ function AdminSimulationGroupPage() {
             overflow: 'hidden'
           }}
         >
-          <AccordionTrigger 
+          <AccordionTrigger
             className="px-4 hover:no-underline"
             style={{ backgroundColor: UI_COLORS.background.white, color: UI_COLORS.text.heading }}
           >
@@ -1012,8 +1042,8 @@ function AdminSimulationGroupPage() {
     return (
       <Accordion type="single" collapsible className="space-y-2">
         {filteredGlobalRubric.map((question, index) => (
-          <AccordionItem 
-            key={question.id} 
+          <AccordionItem
+            key={question.id}
             value={question.id}
             style={{
               borderWidth: '1px',
@@ -1143,11 +1173,11 @@ function AdminSimulationGroupPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside 
+        <aside
           className="flex flex-col transition-all duration-300 ease-in-out border-r"
           aria-hidden={!isMainSidebarVisible}
-          style={{ 
-            backgroundColor: UI_COLORS.background.white, 
+          style={{
+            backgroundColor: UI_COLORS.background.white,
             borderRightWidth: isMainSidebarVisible ? '1px' : '0px',
             borderRightStyle: 'solid',
             borderRightColor: UI_COLORS.border.default,
@@ -1229,9 +1259,45 @@ function AdminSimulationGroupPage() {
         <main className="flex-1 overflow-y-auto" style={{ padding: activeSection === 'rubric' || activeSection === 'questionBank' || activeSection === 'prompts' || activeSection === 'editPatient' || activeSection === 'viewStudent' ? '0' : '2rem' }}>
           {activeSection === 'analytics' && (
             <div className="space-y-6">
-              <h2 className="text-3xl font-bold tracking-tight" style={{ color: UI_COLORS.text.heading }}>
-                {simulationGroupName}
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-3xl font-bold tracking-tight" style={{ color: UI_COLORS.text.heading }}>
+                  {simulationGroupName}
+                </h2>
+                {/* DATE FILTER RANGE */}
+                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-md border shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="startDate" className="text-sm font-medium text-gray-700">From:</label>
+                    <input
+                      type="date"
+                      id="startDate"
+                      className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
+                      max={analyticsDateRange.end || undefined}
+                      value={analyticsDateRange.start}
+                      onChange={(e) => setAnalyticsDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    />
+                  </div>
+                  <div className="h-4 w-px bg-gray-300 mx-1 border-l"></div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="endDate" className="text-sm font-medium text-gray-700">To:</label>
+                    <input
+                      type="date"
+                      id="endDate"
+                      className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
+                      min={analyticsDateRange.start || undefined}
+                      value={analyticsDateRange.end}
+                      onChange={(e) => setAnalyticsDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    />
+                  </div>
+                  {(analyticsDateRange.start || analyticsDateRange.end) && (
+                    <button
+                      onClick={() => setAnalyticsDateRange({ start: '', end: '' })}
+                      className="ml-2 text-xs text-gray-500 hover:text-gray-800 focus:outline-none"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {/* Tabs */}
               <div className="flex gap-2 border-b" style={{ borderColor: UI_COLORS.border.default }}>
@@ -1268,81 +1334,85 @@ function AdminSimulationGroupPage() {
               {selectedPatientId === 'overview' && simulationGroup && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-3 gap-6">
-                    {[
-                      { count: simulationGroup.persona_count, label: aiPersonaLabelPlural, colorIndex: 2, Icon: Users },
-                      { count: simulationGroup.student_count, label: 'Students', colorIndex: 5, Icon: Users },
-                      { count: simulationGroup.instructor_count ?? 0, label: 'Instructors', colorIndex: 4, Icon: UserCog },
-                    ].map(({ count, label, colorIndex, Icon }) => (
-                      <div key={label} className="border rounded-xl p-6 text-center" style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
-                        <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[colorIndex] + '1a' }}>
-                          <Icon className="w-6 h-6" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[colorIndex] }} />
-                        </div>
-                        <p className="text-3xl font-bold" style={{ color: UI_COLORS.text.heading }}>{count}</p>
-                        <p className="text-sm mt-1" style={{ color: UI_COLORS.text.muted }}>{label}</p>
+                    {/* Personas Card */}
+                    <div className="border rounded-xl p-4 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveSection('patients')} style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
+                      <div className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[2] + '1a' }}>
+                        <Users className="w-5 h-5" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[2] }} />
                       </div>
-                    ))}
+                      <p className="text-2xl font-bold" style={{ color: UI_COLORS.text.heading }}>{simulationGroup.persona_count}</p>
+                      <p className="text-sm mt-1" style={{ color: UI_COLORS.text.muted }}>{aiPersonaLabelPlural}</p>
+                    </div>
+                    {/* Students Card */}
+                    <div className="border rounded-xl p-4 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveSection('students')} style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
+                      <div className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[5] + '1a' }}>
+                        <Users className="w-5 h-5" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[5] }} />
+                      </div>
+                      <p className="text-2xl font-bold" style={{ color: UI_COLORS.text.heading }}>{simulationGroup.student_count}</p>
+                      <p className="text-sm mt-1" style={{ color: UI_COLORS.text.muted }}>Students</p>
+                    </div>
+                    {/* Instructors Card */}
+                    <div className="border rounded-xl p-4 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveSection('instructors')} style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}>
+                      <div className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[4] + '1a' }}>
+                        <UserCog className="w-5 h-5" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[4] }} />
+                      </div>
+                      <p className="text-2xl font-bold" style={{ color: UI_COLORS.text.heading }}>{simulationGroup.instructor_count ?? 0}</p>
+                      <p className="text-sm mt-1" style={{ color: UI_COLORS.text.muted }}>Instructors</p>
+                    </div>
                   </div>
 
-                  {/* Global Key Questions Bar */}
+                  {/* Per-Patient Completion Percentage Bar */}
                   <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
                     <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                      Global Key Questions — Students Answered
+                      {aiPersonaLabel} Completion Rate
                     </h3>
                     <p className="text-sm mb-6" style={{ color: UI_COLORS.text.muted }}>
-                      Number of students who answered each global key question across all personas
+                      Percentage of students who have reached the debrief with each {aiPersonaLabelLower}.
                     </p>
-                    {globalKeyQuestionAnalytics.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={Math.max(250, globalKeyQuestionAnalytics.length * 50)}>
-                          <BarChart data={globalKeyQuestionAnalytics} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
-                            <XAxis type="number" tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} allowDecimals={false} />
-                            <YAxis type="category" dataKey="questionTitle" width={180} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} />
-                            <Tooltip contentStyle={{ backgroundColor: UI_COLORS.background.white, border: `1px solid ${UI_COLORS.border.default}`, borderRadius: '6px' }} formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Answered']} />
-                            <Bar dataKey="studentsAnswered" fill={SIMULATION_GROUP_COLOR_PALETTE[2]} radius={[0, 4, 4, 0]} barSize={28} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No key questions configured.</p>
-                      )}
-                  </div>
-
-                  {/* Question Performance Scores */}
-                  {questionPerformanceScores.length > 0 && (
-                    <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
-                      <div className="flex items-start justify-between mb-6">
-                        <div>
-                          <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Question Performance Scores</h3>
-                          <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>Average quality score per key question across all student responses</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm font-medium whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>Time Period:</label>
-                          <select
-                            value={questionPerformanceTimePeriod}
-                            onChange={(e) => setQuestionPerformanceTimePeriod(e.target.value as 'week' | 'month' | 'year' | 'all')}
-                            className="px-3 py-2 rounded-lg border text-sm"
-                            style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white, color: UI_COLORS.text.heading }}
-                          >
-                            <option value="week">Last Week</option>
-                            <option value="month">Last Month</option>
-                            <option value="year">Last Year</option>
-                            <option value="all">All Time</option>
-                          </select>
-                        </div>
-                      </div>
-                      <ResponsiveContainer width="100%" height={Math.max(250, questionPerformanceScores.length * 50)}>
-                        <BarChart data={questionPerformanceScores} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    {patientAnalytics.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={Math.max(250, patientAnalytics.length * 50)}>
+                        <BarChart
+                          data={patientAnalytics.map(p => ({
+                            patientName: p.patient_name,
+                            completionPercentage: Math.round(p.instructor_completion_percentage ?? 0),
+                          }))}
+                          layout="vertical"
+                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
                           <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
                           <XAxis type="number" domain={[0, 100]} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} tickFormatter={(val: number) => `${val}%`} />
-                          <YAxis type="category" dataKey="questionTitle" width={180} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} />
+                          <YAxis type="category" dataKey="patientName" width={180} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} />
+                          <Tooltip contentStyle={{ backgroundColor: UI_COLORS.background.white, border: `1px solid ${UI_COLORS.border.default}`, borderRadius: '6px' }} formatter={(value: number | undefined) => [`${value ?? 0}%`, 'Completed']} />
+                          <Bar dataKey="completionPercentage" fill={SIMULATION_GROUP_COLOR_PALETTE[2]} radius={[0, 4, 4, 0]} barSize={28} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>No {aiPersonaLabelLower}s configured.</p>
+                    )}
+                  </div>
+
+                  {/* Key Question Coverage per Patient */}
+                  {keyQuestionCoverage.length > 0 && (
+                    <div className="border rounded-lg p-6" style={{ borderColor: UI_COLORS.border.default }}>
+                      <h3 className="text-xl font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                        Key Question Coverage by {aiPersonaLabel}
+                      </h3>
+                      <p className="text-sm mb-6" style={{ color: UI_COLORS.text.muted }}>
+                        Average percentage of key questions covered by students who completed their interaction.
+                      </p>
+                      <ResponsiveContainer width="100%" height={Math.max(250, keyQuestionCoverage.length * 50)}>
+                        <BarChart data={keyQuestionCoverage} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
+                          <XAxis type="number" domain={[0, 100]} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} tickFormatter={(val: number) => `${val}%`} />
+                          <YAxis type="category" dataKey="patientName" width={180} tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} />
                           <Tooltip
                             contentStyle={{ backgroundColor: UI_COLORS.background.white, border: `1px solid ${UI_COLORS.border.default}`, borderRadius: '6px' }}
-                            formatter={(value: number | undefined, _name: string | undefined, props: { payload?: { totalResponses?: number } }) => [
-                              `${value ?? 0}% avg (${props.payload?.totalResponses ?? 0} responses)`, 'Score'
+                            formatter={(value: number | undefined, _name: string | undefined, props: { payload?: { studentsDebriefed?: number } }) => [
+                              `${value ?? 0}% avg (${props.payload?.studentsDebriefed ?? 0} students debriefed)`, 'Coverage'
                             ]}
                           />
-                          <Bar dataKey="averageScore" radius={[0, 4, 4, 0]} barSize={28}>
-                            {questionPerformanceScores.map((entry, index) => (
-                              <Cell key={`perf-${index}`} fill={entry.averageScore >= 75 ? '#22c55e' : entry.averageScore >= 55 ? '#eab308' : '#ef4444'} />
+                          <Bar dataKey="avgCoverage" radius={[0, 4, 4, 0]} barSize={28}>
+                            {keyQuestionCoverage.map((entry, index) => (
+                              <Cell key={`cov-${index}`} fill={entry.avgCoverage >= 75 ? '#22c55e' : entry.avgCoverage >= 55 ? '#eab308' : '#ef4444'} />
                             ))}
                           </Bar>
                         </BarChart>
@@ -1387,7 +1457,7 @@ function AdminSimulationGroupPage() {
                   {keyQuestionAnalytics.length > 0 && (
                     <div className="mt-8">
                       <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Key Questions — Students Answered</h4>
-                      <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>Number of students who answered each key question for {currentPatient.patient_name}</p>
+                      <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>Number of students who answered each key question for {currentPatient.patient_name}.</p>
                       <ResponsiveContainer width="100%" height={Math.max(250, keyQuestionAnalytics.length * 50)}>
                         <BarChart data={keyQuestionAnalytics} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
@@ -1420,33 +1490,106 @@ function AdminSimulationGroupPage() {
                   <div className="mt-8">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>Score Distribution</h4>
-                        <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>Distribution of student scores for {currentPatient.patient_name}</p>
+                        <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                          Student Progress Status
+                        </h4>
+                        <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>
+                          Distribution of student progress status for {currentPatient.patient_name}.
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>Time Period:</label>
-                        <select
-                          value={scoreDistributionTimePeriod}
-                          onChange={(e) => setScoreDistributionTimePeriod(e.target.value as 'week' | 'month' | 'year' | 'all')}
-                          className="px-3 py-2 rounded-lg border text-sm"
-                          style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white, color: UI_COLORS.text.heading }}
-                        >
-                          <option value="week">Last Week</option>
-                          <option value="month">Last Month</option>
-                          <option value="year">Last Year</option>
-                          <option value="all">All Time</option>
-                        </select>
-                      </div>
+
                     </div>
                     <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={scoreDistribution} margin={{ top: 10, right: 30, left: 10, bottom: 20 }} barSize={50}>
+                      <BarChart
+                        data={studentProgress}
+                        margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
+                        barSize={50}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
-                        <XAxis dataKey="range" tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} label={{ value: 'Score Range (%)', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }} />
-                        <YAxis tick={{ fill: UI_COLORS.text.body, fontSize: 12 }} axisLine={{ stroke: UI_COLORS.border.default }} allowDecimals={false} label={{ value: 'Students', angle: -90, position: 'insideLeft', fill: UI_COLORS.text.muted, fontSize: 12 }} />
-                        <Tooltip contentStyle={{ backgroundColor: UI_COLORS.background.white, border: `1px solid ${UI_COLORS.border.default}`, borderRadius: '6px' }} formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Count']} />
-                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                          {scoreDistribution.map((_entry, index) => (
-                            <Cell key={`dist-${index}`} fill={(['#ef4444', '#f97316', '#eab308', '#22c55e', SIMULATION_GROUP_COLOR_PALETTE[2]] as string[])[index] || SIMULATION_GROUP_COLOR_PALETTE[2]} />
+                        <XAxis
+                          dataKey="status"
+                          tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
+                          axisLine={{ stroke: UI_COLORS.border.default }}
+                          label={{ value: 'Progress Status', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }}
+                        />
+                        <YAxis
+                          tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
+                          axisLine={{ stroke: UI_COLORS.border.default }}
+                          allowDecimals={false}
+                          label={{ value: 'Students', angle: -90, position: 'insideLeft', fill: UI_COLORS.text.muted, fontSize: 12 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: UI_COLORS.background.white,
+                            border: `1px solid ${UI_COLORS.border.default}`,
+                            borderRadius: '6px',
+                            padding: 0,
+                          }}
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const entry = payload[0].payload as StudentProgressData;
+                            return (
+                              <div
+                                style={{
+                                  backgroundColor: UI_COLORS.background.white,
+                                  border: `1px solid ${UI_COLORS.border.default}`,
+                                  borderRadius: '8px',
+                                  padding: '12px',
+                                  minWidth: '180px',
+                                  maxWidth: '240px',
+                                }}
+                              >
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div
+                                    style={{
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: '50%',
+                                      backgroundColor: entry.fill,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span className="font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>
+                                    {entry.status}
+                                  </span>
+                                </div>
+                                <div className="text-sm mb-2" style={{ color: UI_COLORS.text.muted }}>
+                                  {entry.count} student{entry.count !== 1 ? 's' : ''}
+                                </div>
+                                {entry.students.length > 0 && (
+                                  <div
+                                    style={{
+                                      maxHeight: '150px',
+                                      overflowY: 'auto',
+                                      borderTop: `1px solid ${UI_COLORS.border.light}`,
+                                      paddingTop: '8px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    {entry.students.map((student) => (
+                                      <div
+                                        key={student.id}
+                                        className="text-sm"
+                                        style={{ color: UI_COLORS.text.body }}
+                                      >
+                                        {student.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }}
+                        />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer">
+                          {studentProgress.map((_entry, index) => (
+                            <Cell
+                              key={`progress-${index}`}
+                              fill={_entry.fill}
+                              style={{ cursor: 'pointer' }}
+                            />
                           ))}
                         </Bar>
                       </BarChart>
@@ -1456,7 +1599,7 @@ function AdminSimulationGroupPage() {
               )}
             </div>
           )}
-          
+
           {activeSection === 'patients' && (
             <div className="space-y-6 max-w-4xl">
               <div className="relative">
@@ -1549,7 +1692,7 @@ function AdminSimulationGroupPage() {
               </div>
             </div>
           )}
-          
+
           {activeSection === 'students' && (
             <div className="space-y-6 max-w-4xl">
               <div className="relative">
@@ -1925,7 +2068,7 @@ function AdminSimulationGroupPage() {
               </div>
             </div>
           )}
-          
+
           {activeSection === 'rubric' && (
             <div className="flex h-full relative">
               <aside className="flex flex-col border-r overflow-y-auto" style={{ backgroundColor: UI_COLORS.background.white, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: UI_COLORS.border.default, width: '20rem', minWidth: '20rem' }}>
@@ -2417,7 +2560,7 @@ function AdminSimulationGroupPage() {
                               <div className="flex justify-end">
                                 <button className="p-2 rounded transition-transform" style={{ border: 'none', cursor: 'pointer', backgroundColor: 'transparent', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                   </svg>
                                 </button>
                               </div>
@@ -2479,7 +2622,7 @@ function AdminSimulationGroupPage() {
           )}
         </main>
       </div>
-      
+
       <AddQuestionDialog
         open={isAddQuestionDialogOpen}
         onOpenChange={setIsAddQuestionDialogOpen}
@@ -2487,14 +2630,14 @@ function AdminSimulationGroupPage() {
         existingTags={allExistingTags}
         onSave={handleSaveNewQuestion}
       />
-      
+
       <AddPatientSpecificQuestionDialog
         open={isAddPatientQuestionDialogOpen}
         onOpenChange={setIsAddPatientQuestionDialogOpen}
         patients={manageablePatients.map(p => ({ id: p.patient_id, name: p.patient_name }))}
         onSave={handleSaveNewPatientQuestion}
       />
-      
+
       <AddInstructorDialog
         open={isAddInstructorDialogOpen}
         onOpenChange={setIsAddInstructorDialogOpen}
