@@ -1894,6 +1894,70 @@ exports.handler = async (event, context) => {
           });
         }
         break;
+      case "GET /instructor/student_progress":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id &&
+          event.queryStringParameters.persona_id
+        ) {
+          const { simulation_group_id, persona_id } = event.queryStringParameters;
+          try {
+            const progressData = await sqlConnection`
+              SELECT 
+                u.user_id, 
+                u.first_name || ' ' || u.last_name AS student_name,
+                si.is_completed,
+                si.student_interaction_id,
+                COUNT(c.chat_id) AS chat_count
+              FROM "enrollments" e
+              JOIN "users" u ON e.user_id = u.user_id
+              LEFT JOIN "student_interactions" si 
+                ON e.enrollment_id = si.enrollment_id 
+                AND si.persona_id = ${persona_id}
+              LEFT JOIN "chats" c
+                ON c.student_interaction_id = si.student_interaction_id
+              WHERE e.simulation_group_id = ${simulation_group_id}
+              AND e.enrollment_type = 'student'
+              GROUP BY u.user_id, u.first_name, u.last_name, si.is_completed, si.student_interaction_id
+              ORDER BY u.first_name, u.last_name;
+            `;
+
+            const result = [
+              { status: 'Not Started', count: 0, students: [], fill: '#94a3b8' },
+              { status: 'In Progress', count: 0, students: [], fill: '#f59e0b' },
+              { status: 'Debrief Reached', count: 0, students: [], fill: '#22c55e' }
+            ];
+
+            for (const row of progressData) {
+              const studentObj = { id: row.user_id, name: row.student_name };
+
+              if (Number(row.chat_count) === 0) {
+                // student_interaction exists (created at enrollment) but no chats ever opened
+                result[0].students.push(studentObj);
+                result[0].count++;
+              } else if (row.is_completed === true) {
+                // conclude_interaction was called — student reached debrief
+                result[2].students.push(studentObj);
+                result[2].count++;
+              } else {
+                // has chats but conclude_interaction never called
+                result[1].students.push(studentObj);
+                result[1].count++;
+              }
+            }
+
+            response.statusCode = 200;
+            response.body = JSON.stringify(result);
+          } catch (err) {
+            logger.error("Failed to fetch student progress", { error: err.message, stack: err.stack });
+            response.statusCode = 500;
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id and persona_id are required" });
+        }
+        break;
       case "GET /instructor/get_debrief":
         if (
           event.queryStringParameters != null &&

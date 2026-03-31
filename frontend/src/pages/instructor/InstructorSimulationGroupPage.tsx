@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
-import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type KeyQuestionCoverage, type StudentDetails, type StudentPatientData } from '@/services/instructorService';
+import { instructorService, type GlobalRubricQuestion, type CaseMaterial, type UserData, type QuestionBankItem, type KeyQuestionAnalytics, type KeyQuestionCoverage, type StudentDetails, type StudentPatientData, type StudentProgressData } from '@/services/instructorService';
 import { type AIDebriefData } from '@/services/studentService';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Eye, Key, Copy, Search, Trash2, Edit, Plus, Menu, Camera, Upload, HelpCircle, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
@@ -50,6 +50,9 @@ function InstructorSimulationGroupPage() {
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
   const uploadTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const attemptPdfRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Patient Specific Analytics
+  const [studentProgress, setStudentProgress] = useState<StudentProgressData[]>([]);
 
   // Global Rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>(() =>
@@ -271,10 +274,18 @@ function InstructorSimulationGroupPage() {
     }
   }, [currentPatient?.patient_id, groupId]);
 
+  // useEffect to watch for patient selection changes
+  useEffect(() => {
+    if (groupId && selectedPatientId && selectedPatientId !== 'overview') {
+      instructorService.getStudentProgress(groupId, selectedPatientId)
+        .then(data => setStudentProgress(data))
+        .catch(err => console.error(err));
+    } else {
+      setStudentProgress([]);
+    }
+  }, [groupId, selectedPatientId]);
+
   // Score distribution for current patient
-  const scoreDistribution = currentPatient
-    ? instructorService.getScoreDistribution(groupId || '1', currentPatient.patient_id)
-    : [];
 
   // Fallback values
   const simulationGroupName = simulationGroup?.group_name || 'Simulation Group';
@@ -1474,10 +1485,10 @@ function InstructorSimulationGroupPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h4 className="text-lg font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                          Score Distribution
+                          Student Progress Status
                         </h4>
                         <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>
-                          Distribution of student scores for {currentPatient.patient_name}
+                          Distribution of student progress status for {currentPatient.patient_name}.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1503,16 +1514,16 @@ function InstructorSimulationGroupPage() {
                     </div>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart
-                        data={scoreDistribution}
+                        data={studentProgress}
                         margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
                         barSize={50}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke={UI_COLORS.border.light} />
                         <XAxis
-                          dataKey="range"
+                          dataKey="status"
                           tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
                           axisLine={{ stroke: UI_COLORS.border.default }}
-                          label={{ value: 'Score Range (%)', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }}
+                          label={{ value: 'Progress Status', position: 'insideBottom', offset: -10, fill: UI_COLORS.text.muted, fontSize: 12 }}
                         />
                         <YAxis
                           tick={{ fill: UI_COLORS.text.body, fontSize: 12 }}
@@ -1524,24 +1535,72 @@ function InstructorSimulationGroupPage() {
                           contentStyle={{
                             backgroundColor: UI_COLORS.background.white,
                             border: `1px solid ${UI_COLORS.border.default}`,
-                            borderRadius: '6px'
+                            borderRadius: '6px',
+                            padding: 0,
                           }}
-                          formatter={(value: number | undefined) => [`${value ?? 0} students`, 'Count']}
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const entry = payload[0].payload as StudentProgressData;
+                            return (
+                              <div
+                                style={{
+                                  backgroundColor: UI_COLORS.background.white,
+                                  border: `1px solid ${UI_COLORS.border.default}`,
+                                  borderRadius: '8px',
+                                  padding: '12px',
+                                  minWidth: '180px',
+                                  maxWidth: '240px',
+                                }}
+                              >
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div
+                                    style={{
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: '50%',
+                                      backgroundColor: entry.fill,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span className="font-semibold text-sm" style={{ color: UI_COLORS.text.heading }}>
+                                    {entry.status}
+                                  </span>
+                                </div>
+                                <div className="text-sm mb-2" style={{ color: UI_COLORS.text.muted }}>
+                                  {entry.count} student{entry.count !== 1 ? 's' : ''}
+                                </div>
+                                {entry.students.length > 0 && (
+                                  <div
+                                    style={{
+                                      maxHeight: '150px',
+                                      overflowY: 'auto',
+                                      borderTop: `1px solid ${UI_COLORS.border.light}`,
+                                      paddingTop: '8px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    {entry.students.map((student) => (
+                                      <div
+                                        key={student.id}
+                                        className="text-sm"
+                                        style={{ color: UI_COLORS.text.body }}
+                                      >
+                                        {student.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }}
                         />
-                        <Bar
-                          dataKey="count"
-                          radius={[4, 4, 0, 0]}
-                        >
-                          {scoreDistribution.map((_entry, index) => (
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {studentProgress.map((_entry, index) => (
                             <Cell
-                              key={`dist-${index}`}
-                              fill={[
-                                '#ef4444',
-                                '#f97316',
-                                '#eab308',
-                                '#22c55e',
-                                SIMULATION_GROUP_COLOR_PALETTE[2]
-                              ][index] || SIMULATION_GROUP_COLOR_PALETTE[2]}
+                              key={`progress-${index}`}
+                              fill={_entry.fill}
                             />
                           ))}
                         </Bar>

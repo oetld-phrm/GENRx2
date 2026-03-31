@@ -106,6 +106,19 @@ export interface KeyQuestionCoverage {
   studentsDebriefed: number;            // Number of students who reached debrief
 }
 
+// For Patient Specific Student Progress Status - how many students have not started vs. in progress vs. reached debrief.
+export interface StudentProgressStatus {
+  status: 'Not Started' | 'In Progress' | 'Debrief Reached';
+  students: Array<{ id: string; name: string }>;
+}
+
+export interface StudentProgressData {
+  status: string;
+  count: number;
+  students: Array<{ id: string; name: string }>;
+  fill: string;
+}
+
 /**
  * Represents a bucket in a score distribution histogram
  */
@@ -338,6 +351,7 @@ export interface InstructorDataService {
   unassignQuestion: (groupQuestionId: string) => Promise<any>;
   updateQuestionAssignment: (groupQuestionId: string, updates: any) => Promise<any>;
   fetchDebrief: (sessionId: string, simulationGroupId: string) => Promise<AIDebriefData | null>;
+  getStudentProgress: (simulationGroupId: string, personaId: string) => Promise<StudentProgressData[]>;
 }
 
 /**
@@ -1828,6 +1842,26 @@ async function fetchInstructorDebrief(sessionId: string, simulationGroupId: stri
 }
 
 /**
+ * Get student progress buckets for a specific persona
+ * Not Started / In Progress / Debrief Reached
+ */
+async function getStudentProgress(simulationGroupId: string, personaId: string): Promise<StudentProgressData[]> {
+  try {
+    const data = await apiClient.request<StudentProgressData[]>(
+      `instructor/student_progress?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(personaId)}`
+    );
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch student progress:', error);
+    return [
+      { status: 'Not Started', count: 0, students: [], fill: '#94a3b8' },
+      { status: 'In Progress', count: 0, students: [], fill: '#f59e0b' },
+      { status: 'Debrief Reached', count: 0, students: [], fill: '#22c55e' },
+    ];
+  }
+}
+
+/**
  * Instructor data service object
  */
 export const instructorService: InstructorDataService = {
@@ -1885,7 +1919,8 @@ export const instructorService: InstructorDataService = {
   assignQuestionToGroup,
   unassignQuestion,
   updateQuestionAssignment,
-  fetchDebrief: fetchInstructorDebrief
+  fetchDebrief: fetchInstructorDebrief,
+  getStudentProgress: getStudentProgress
 };
 
 // Keep backward-compatible export
