@@ -170,7 +170,7 @@ function AdminSimulationGroupPage() {
 
       try {
         // Load each data source independently so one failure doesn't block the rest
-        const [adminGroupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient, coverageData] = await Promise.all([
+        const [adminGroupData, analyticsData, studentsData, patientsData, bankGlobal, bankPatient] = await Promise.all([
           adminApi.getSimulationGroup(groupId).catch(err => { console.error('Failed to load group:', err); return undefined; }),
           instructorService.getPatientAnalytics(groupId).catch(err => { console.error('Failed to load analytics:', err); return [] as PatientAnalytics[]; }),
           instructorService.getStudents(groupId).catch(err => { console.error('Failed to load students:', err); return [] as Student[]; }),
@@ -1267,7 +1267,7 @@ function AdminSimulationGroupPage() {
                 <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-md border shadow-sm">
                   <div className="flex items-center gap-2">
                     <label htmlFor="startDate" className="text-sm font-medium text-gray-700">From:</label>
-                    <input 
+                    <input
                       type="date"
                       id="startDate"
                       className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
@@ -1279,7 +1279,7 @@ function AdminSimulationGroupPage() {
                   <div className="h-4 w-px bg-gray-300 mx-1 border-l"></div>
                   <div className="flex items-center gap-2">
                     <label htmlFor="endDate" className="text-sm font-medium text-gray-700">To:</label>
-                    <input 
+                    <input
                       type="date"
                       id="endDate"
                       className="border-none bg-transparent text-sm focus:ring-0 cursor-pointer outline-none"
@@ -1289,7 +1289,7 @@ function AdminSimulationGroupPage() {
                     />
                   </div>
                   {(analyticsDateRange.start || analyticsDateRange.end) && (
-                    <button 
+                    <button
                       onClick={() => setAnalyticsDateRange({ start: '', end: '' })}
                       className="ml-2 text-xs text-gray-500 hover:text-gray-800 focus:outline-none"
                     >
