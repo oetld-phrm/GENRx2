@@ -10,6 +10,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import uuid
 
 # Set up basic logging (matches existing GenRx pattern)
@@ -25,6 +26,7 @@ from aws_sdk_bedrock_runtime.models import (
     InvokeModelWithBidirectionalStreamOperationInput,
 )
 from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
+import boto3
 
 from audio import convert_to_16khz, INPUT_SAMPLE_RATE, OUTPUT_SAMPLE_RATE
 
@@ -169,6 +171,16 @@ async def run_session(audio_in, audio_out, region, pc_id):
     try:
         # --- Connect to Bedrock ---
         logger.info(f"Connecting to Bedrock in {region}...")
+
+        # Fetch credentials via boto3 (reads ECS task role from container metadata)
+        # and inject into env vars so EnvironmentCredentialsResolver can find them.
+        session = boto3.Session(region_name=region)
+        creds = session.get_credentials().get_frozen_credentials()
+        os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+        if creds.token:
+            os.environ["AWS_SESSION_TOKEN"] = creds.token
+
         client = BedrockRuntimeClient(
             Config(
                 endpoint_uri=f"https://bedrock-runtime.{region}.amazonaws.com",
