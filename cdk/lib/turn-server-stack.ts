@@ -69,6 +69,8 @@ export class TurnServerStack extends Stack {
     this.turnSecret.grantRead(instanceRole);
 
     // 4) EC2 instance running coturn
+    // Control Tower hook CT.EC2.PR.8 requires public IP to be set via
+    // NetworkInterfaces, not the root-level AssociatePublicIpAddress.
     const turnInstance = new ec2.Instance(this, "TurnServer", {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
@@ -79,8 +81,22 @@ export class TurnServerStack extends Stack {
       machineImage: ec2.MachineImage.latestAmazonLinux2023(),
       securityGroup: turnSg,
       role: instanceRole,
-      associatePublicIpAddress: true,
+      associatePublicIpAddress: false, // Disabled here — set via CfnInstance override below
     });
+
+    // Override the CloudFormation to use NetworkInterfaces with public IP
+    const cfnInstance = turnInstance.instance as ec2.CfnInstance;
+    cfnInstance.addPropertyOverride("NetworkInterfaces", [
+      {
+        DeviceIndex: "0",
+        AssociatePublicIpAddress: true,
+        SubnetId: vpc.publicSubnets[0].subnetId,
+        GroupSet: [turnSg.securityGroupId],
+      },
+    ]);
+    // Remove root-level properties that conflict with NetworkInterfaces
+    cfnInstance.addPropertyDeletionOverride("SubnetId");
+    cfnInstance.addPropertyDeletionOverride("SecurityGroupIds");
 
     // UserData script: install and configure coturn
     turnInstance.addUserData(
