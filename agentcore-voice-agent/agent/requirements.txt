@@ -6,6 +6,4 @@ uvicorn
 av
 aws-sdk-bedrock-runtime==0.0.2
 smithy-aws-core==0.0.3
-smithy-core==0.0.3
-smithy-http==0.0.3
 aiohttp
