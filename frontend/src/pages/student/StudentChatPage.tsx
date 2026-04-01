@@ -226,8 +226,6 @@ function StudentChatPage() {
 
     startWebRTCClient();
 
-    startWebRTCClient();
-
     function startWebRTCClient() {
     const client = new WebRTCClient({
       socket: socketRef.current,
