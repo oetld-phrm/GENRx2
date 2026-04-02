@@ -227,6 +227,11 @@ function StudentChatPage() {
     startWebRTCClient();
 
     function startWebRTCClient() {
+    if (!socketRef.current) {
+      setVoiceError('Socket connection not available.');
+      setVoiceSessionState('error');
+      return;
+    }
     const client = new WebRTCClient({
       socket: socketRef.current,
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],

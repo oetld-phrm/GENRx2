@@ -1,0 +1,630 @@
+"""Nova Sonic 2.0 bidirectional streaming session (WebSocket/stdin-stdout transport).
+
+Manages the full lifecycle of a Nova Sonic conversation:
+1. Connect to Bedrock and open a bidirectional stream
+2. Configure the session (model params, voice, system prompt)
+3. Stream audio in via stdin, send responses out via stdout
+4. Persist messages to DynamoDB + PostgreSQL
+
+This replaces the previous aiortc/WebRTC-based agent with a simple
+stdin/stdout JSON protocol that the Node.js socket server drives.
+"""
+
+import os
+import sys
+import asyncio
+import base64
+import json
+import uuid
+import random
+import logging
+
+import boto3
+import psycopg2
+from psycopg2 import pool
+from threading import Lock
+
+from aws_sdk_bedrock_runtime.client import (
+    BedrockRuntimeClient,
+    InvokeModelWithBidirectionalStreamOperationInput,
+)
+from aws_sdk_bedrock_runtime.models import (
+    InvokeModelWithBidirectionalStreamInputChunk,
+    BidirectionalInputPayloadPart,
+)
+from aws_sdk_bedrock_runtime.config import (
+    Config,
+    HTTPAuthSchemeResolver,
+    SigV4AuthScheme,
+)
+from smithy_aws_core.credentials_resolvers.environment import (
+    EnvironmentCredentialsResolver,
+)
+
+import chat_history
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# ---------------------------------------------------------------------------
+# Audio constants
+# ---------------------------------------------------------------------------
+INPUT_SAMPLE_RATE = 16000
+OUTPUT_SAMPLE_RATE = 24000
+CHANNELS = 1
+
+# ---------------------------------------------------------------------------
+# Model — Nova Sonic 2.0
+# ---------------------------------------------------------------------------
+MODEL_ID = "amazon.nova-2-sonic-v1:0"
+
+# ---------------------------------------------------------------------------
+# Database connection pool
+# ---------------------------------------------------------------------------
+pg_conn_pool = None
+pool_lock = Lock()
+
+
+def get_pg_connection():
+    """Get a connection from the pool, initialising the pool on first call."""
+    global pg_conn_pool
+    with pool_lock:
+        if pg_conn_pool is None:
+            secrets_client = boto3.client("secretsmanager")
+            db_secret_name = os.environ.get("SM_DB_CREDENTIALS")
+            rds_endpoint = os.environ.get("RDS_PROXY_ENDPOINT")
+
+            if not db_secret_name or not rds_endpoint:
+                logger.warning("Database credentials not available")
+                raise Exception("Database credentials not configured")
+
+            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+            secret = json.loads(secret_response["SecretString"])
+
+            pg_conn_pool = pool.SimpleConnectionPool(
+                1,
+                5,
+                host=rds_endpoint,
+                port=secret["port"],
+                database=secret["dbname"],
+                user=secret["username"],
+                password=secret["password"],
+            )
+
+        return pg_conn_pool.getconn()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NovaSonic — bidirectional streaming client
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class NovaSonic:
+    """Manages a single Nova Sonic 2.0 bidirectional streaming session."""
+
+    def __init__(self, voice_id=None, session_id=None, region=None):
+        self.user_id = os.getenv("USER_ID")
+        self.model_id = MODEL_ID
+        self.region = "us-east-1"  # Nova Sonic endpoint region
+        self.deployment_region = region or os.getenv("AWS_REGION", "us-east-1")
+
+        self.client = None
+        self.stream = None
+        self.response = None
+        self.is_active = False
+
+        self.prompt_name = str(uuid.uuid4())
+        self.content_name = str(uuid.uuid4())
+        self.audio_content_name = str(uuid.uuid4())
+        self.audio_queue = asyncio.Queue()
+        self.role = None
+        self.display_assistant_text = False
+
+        self.voice_id = voice_id
+        self.session_id = session_id or os.getenv("SESSION_ID", "default")
+        self.patient_name = os.getenv("PATIENT_NAME", "")
+        self.patient_prompt = os.getenv("PATIENT_PROMPT", "")
+        self.llm_completion = os.getenv("LLM_COMPLETION", "false").lower() == "true"
+        self.extra_system_prompt = os.getenv("EXTRA_SYSTEM_PROMPT", "")
+        self.patient_id = os.getenv("PATIENT_ID", "")
+
+        # Caches
+        self._cached_system_prompt = None
+        self._bedrock_client = None
+        self._chat_context = None
+        self._current_user_input = ""
+
+    # ------------------------------------------------------------------
+    # Bedrock client
+    # ------------------------------------------------------------------
+
+    def _init_client(self):
+        config = Config(
+            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
+            region=self.region,
+            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+            http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
+            http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
+        )
+        self.client = BedrockRuntimeClient(config=config)
+        logger.info("Initialized Bedrock client for %s in %s", self.model_id, self.region)
+
+    def _get_bedrock_client(self):
+        if not self._bedrock_client:
+            self._bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+        return self._bedrock_client
+
+    # ------------------------------------------------------------------
+    # Event helpers
+    # ------------------------------------------------------------------
+
+    async def send_event(self, event: dict):
+        payload = json.dumps(event, separators=(",", ":"))
+        chunk = InvokeModelWithBidirectionalStreamInputChunk(
+            value=BidirectionalInputPayloadPart(bytes_=payload.encode("utf-8"))
+        )
+        await self.stream.input_stream.send(chunk)
+
+    # ------------------------------------------------------------------
+    # System prompt
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def get_default_system_prompt(patient_name) -> str:
+        return f"""
+        You are {patient_name or 'a patient'} and you are talking to a pharmacy student who is trying to help you.
+
+        CRITICAL ROLE INSTRUCTIONS:
+        - You are ONLY the patient - never switch roles or repeat what the student says
+        - When the student speaks to you, respond as the patient would respond
+        - Do NOT echo or repeat the student's words back to them
+        - Do NOT act as the pharmacy student or provide medical advice
+        - Stay in character as the patient at all times
+
+        RESPONSE GUIDELINES:
+        - Keep responses brief (1-2 sentences maximum)
+        - Be realistic about your symptoms and concerns
+        - Don't volunteer too much information at once
+        - Ask questions a real patient would ask
+        - Focus on how you're feeling physically
+        - If the student shows empathy, respond naturally as a patient would
+
+        WHAT TO AVOID:
+        - Never repeat what the student just said
+        - Don't switch to being the pharmacy student
+        - Don't provide medical explanations
+        - Don't break character
+
+        Start by saying only "Hello." Then describe your symptoms when asked.
+        """
+
+    def get_system_prompt(self, patient_name=None, patient_prompt=None, llm_completion=None):
+        if self._cached_system_prompt:
+            return self._cached_system_prompt
+
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1"
+            )
+            result = cursor.fetchone()
+            cursor.close()
+            pg_conn_pool.putconn(conn)
+
+            if result and result[0]:
+                self._cached_system_prompt = result[0]
+                return self._cached_system_prompt
+        except Exception as e:
+            logger.error("Error retrieving system prompt: %s", e)
+
+        self._cached_system_prompt = self.get_default_system_prompt(
+            patient_name or self.patient_name
+        )
+        return self._cached_system_prompt
+
+    # ------------------------------------------------------------------
+    # Session lifecycle
+    # ------------------------------------------------------------------
+
+    async def start_session(self):
+        if not self.client:
+            self._init_client()
+
+        self.stream = await self.client.invoke_model_with_bidirectional_stream(
+            InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
+        )
+        logger.info("Bidirectional stream opened")
+        self.is_active = True
+
+        # 1) sessionStart
+        await self.send_event(
+            {
+                "event": {
+                    "sessionStart": {
+                        "inferenceConfiguration": {
+                            "maxTokens": 2048,
+                            "topP": 1.0,
+                            "temperature": 0.8,
+                            "stopSequences": [],
+                        }
+                    }
+                }
+            }
+        )
+
+        # Voice selection
+        voice_ids = {
+            "feminine": ["amy", "tiffany", "lupe"],
+            "masculine": ["matthew", "carlos"],
+        }
+        selected_voice = self.voice_id or random.choice(voice_ids["feminine"])
+
+        # 2) promptStart
+        await self.send_event(
+            {
+                "event": {
+                    "promptStart": {
+                        "promptName": self.prompt_name,
+                        "textOutputConfiguration": {"mediaType": "text/plain"},
+                        "audioOutputConfiguration": {
+                            "mediaType": "audio/lpcm",
+                            "sampleRateHertz": OUTPUT_SAMPLE_RATE,
+                            "sampleSizeBits": 16,
+                            "channelCount": 1,
+                            "voiceId": selected_voice,
+                            "encoding": "base64",
+                            "audioType": "SPEECH",
+                        },
+                    }
+                }
+            }
+        )
+
+        # 3) SYSTEM contentStart
+        await self.send_event(
+            {
+                "event": {
+                    "contentStart": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.content_name,
+                        "type": "TEXT",
+                        "interactive": True,
+                        "role": "SYSTEM",
+                        "interrupt": True,
+                        "textInputConfiguration": {"mediaType": "text/plain"},
+                    }
+                }
+            }
+        )
+
+        # Build system prompt with chat context
+        if not self._chat_context:
+            self._chat_context = chat_history.format_chat_history(self.session_id)
+
+        system_prompt = f"""
+{self.get_system_prompt()}
+{self._chat_context}
+"""
+
+        # 4) textInput
+        await self.send_event(
+            {
+                "event": {
+                    "textInput": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.content_name,
+                        "content": system_prompt,
+                    }
+                }
+            }
+        )
+
+        # 5) contentEnd
+        await self.send_event(
+            {
+                "event": {
+                    "contentEnd": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.content_name,
+                    }
+                }
+            }
+        )
+
+        # Start response processing
+        self.response = asyncio.create_task(self._process_responses())
+
+        logger.info("Nova Sonic session started (prompt=%s)", self.prompt_name)
+        _emit({"type": "text", "text": "Nova Sonic ready"})
+
+    # ------------------------------------------------------------------
+    # Audio input
+    # ------------------------------------------------------------------
+
+    async def start_audio_input(self):
+        self.audio_content_name = str(uuid.uuid4())
+        self._current_user_input = ""
+        await self.send_event(
+            {
+                "event": {
+                    "contentStart": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.audio_content_name,
+                        "type": "AUDIO",
+                        "interactive": True,
+                        "role": "USER",
+                        "audioInputConfiguration": {
+                            "mediaType": "audio/lpcm",
+                            "sampleRateHertz": INPUT_SAMPLE_RATE,
+                            "sampleSizeBits": 16,
+                            "channelCount": CHANNELS,
+                            "audioType": "SPEECH",
+                            "encoding": "base64",
+                        },
+                    }
+                }
+            }
+        )
+
+    async def send_audio_chunk(self, audio_bytes):
+        blob = base64.b64encode(audio_bytes).decode("utf-8")
+        await self.send_event(
+            {
+                "event": {
+                    "audioInput": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.audio_content_name,
+                        "content": blob,
+                    }
+                }
+            }
+        )
+
+    async def end_audio_input(self):
+        await self.send_event(
+            {
+                "event": {
+                    "contentEnd": {
+                        "promptName": self.prompt_name,
+                        "contentName": self.audio_content_name,
+                    }
+                }
+            }
+        )
+
+        # Save accumulated user input
+        if self._current_user_input and self._current_user_input.strip():
+            asyncio.create_task(self._save_user_message_async(self._current_user_input))
+            self._current_user_input = ""
+
+    async def end_session(self):
+        await self.send_event({"event": {"promptEnd": {"promptName": self.prompt_name}}})
+        await self.send_event({"event": {"sessionEnd": {}}})
+        await self.stream.input_stream.close()
+
+    # ------------------------------------------------------------------
+    # Response processing
+    # ------------------------------------------------------------------
+
+    async def _process_responses(self):
+        decoder = json.JSONDecoder()
+        buffer = ""
+
+        try:
+            while self.is_active:
+                output = await self.stream.await_output()
+                result = await output[1].receive()
+
+                if not (result.value and result.value.bytes_):
+                    continue
+
+                chunk = result.value.bytes_.decode("utf-8")
+                buffer += chunk
+
+                idx = 0
+                while True:
+                    try:
+                        obj, offset = decoder.raw_decode(buffer[idx:])
+                    except json.JSONDecodeError:
+                        break
+                    idx += offset
+                    await self._handle_event(obj)
+
+                buffer = buffer[idx:]
+
+        except Exception as e:
+            logger.error("Error in _process_responses: %s", e)
+
+    async def _handle_event(self, json_data):
+        evt = json_data.get("event", {})
+
+        # ── contentStart ──────────────────────────────────────────────
+        if "contentStart" in evt:
+            cs = evt["contentStart"]
+            self.role = cs.get("role")
+            if "additionalModelFields" in cs:
+                fields = json.loads(cs["additionalModelFields"])
+                self.display_assistant_text = fields.get("generationStage") == "SPECULATIVE"
+
+        # ── textOutput ────────────────────────────────────────────────
+        elif "textOutput" in evt:
+            text = evt["textOutput"]["content"]
+
+            # Filter interrupted marker
+            if text.strip() == '{"interrupted": true}':
+                return
+
+            # Diagnosis completion check
+            diagnosis_achieved = "SESSION COMPLETED" in text
+            if diagnosis_achieved and self.llm_completion:
+                text = text.replace("SESSION COMPLETED", "").strip()
+                text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
+
+            if self.role == "ASSISTANT":
+                _emit({"type": "text", "text": text})
+                if diagnosis_achieved and self.llm_completion:
+                    _emit({"type": "diagnosis_complete", "text": "Session completed successfully"})
+
+            elif self.role == "USER":
+                _emit({"type": "text", "text": text})
+                self._current_user_input += text
+
+            # Mirror to PostgreSQL + DynamoDB
+            try:
+                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
+                chat_history.add_message(self.session_id, normalized_role, text)
+                if self.role and self.role.upper() == "ASSISTANT":
+                    self._save_message_to_db(self.session_id, False, text, None)
+            except Exception as e:
+                logger.error("Failed to persist message: %s", e)
+
+        # ── audioOutput ───────────────────────────────────────────────
+        elif "audioOutput" in evt:
+            b64 = evt["audioOutput"]["content"]
+            audio_bytes = base64.b64decode(b64)
+            await self.audio_queue.put(audio_bytes)
+            _emit({"type": "audio", "data": b64, "size": len(audio_bytes)})
+
+    # ------------------------------------------------------------------
+    # Database helpers
+    # ------------------------------------------------------------------
+
+    async def _save_user_message_async(self, user_text):
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, self._save_message_to_db, self.session_id, True, user_text, None
+            )
+            await loop.run_in_executor(
+                None, chat_history.add_message, self.session_id, "user", user_text
+            )
+            logger.info("User audio message saved: %s…", user_text[:30])
+        except Exception as e:
+            logger.error("Failed to save user audio message: %s", e)
+
+    def _save_message_to_db(self, session_id, student_sent, message_content, empathy_evaluation=None):
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT INTO "messages" (chat_id, student_sent, message_content, time_sent) VALUES (%s, %s, %s, NOW())',
+                (session_id, student_sent, message_content),
+            )
+            conn.commit()
+            cursor.close()
+            pg_conn_pool.putconn(conn)
+            logger.info("Message saved to DB")
+        except Exception as e:
+            logger.error("Error saving message: %s", e)
+            try:
+                pg_conn_pool.putconn(conn, close=True)
+            except Exception:
+                pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# stdout helper — the Node.js socket server reads these JSON lines
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _emit(obj: dict):
+    """Write a JSON line to stdout for the socket server to relay."""
+    print(json.dumps(obj), flush=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# stdin handler — receives JSON commands from the Node.js socket server
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def handle_stdin(nova_client: NovaSonic):
+    reader = asyncio.StreamReader()
+    loop = asyncio.get_event_loop()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+    while True:
+        line = await reader.readline()
+        if not line:
+            break
+
+        try:
+            msg = json.loads(line.decode("utf-8"))
+            msg_type = msg.get("type")
+
+            if msg_type == "audio":
+                audio_bytes = base64.b64decode(msg["data"])
+                await nova_client.send_audio_chunk(audio_bytes)
+
+            elif msg_type == "start_audio":
+                await nova_client.start_audio_input()
+                logger.info("Started audio input")
+
+            elif msg_type == "end_audio":
+                await nova_client.end_audio_input()
+
+            elif msg_type == "interrupt":
+                nova_client.is_active = False
+                if nova_client.stream:
+                    try:
+                        await nova_client.stream.input_stream.close()
+                    except Exception:
+                        pass
+
+            elif msg_type == "set_voice":
+                voice_id = msg.get("voice_id")
+                logger.info("Voice change request: %s", voice_id)
+                nova_client.voice_id = voice_id
+                if nova_client.is_active:
+                    await nova_client.end_session()
+                    await nova_client.start_session()
+
+        except Exception as e:
+            logger.error("Failed to process stdin: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Entry point
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def main():
+    voice = os.getenv("VOICE_ID")
+    session_id = os.getenv("SESSION_ID", "default")
+    deployment_region = os.getenv("AWS_REGION")
+
+    nova_client = NovaSonic(
+        voice_id=voice, session_id=session_id, region=deployment_region
+    )
+
+    # Wait briefly for initial config (e.g. set_voice) from the socket server
+    reader = asyncio.StreamReader()
+    loop = asyncio.get_event_loop()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+    try:
+        line = await asyncio.wait_for(reader.readline(), 2.0)
+        if line:
+            msg = json.loads(line.decode("utf-8"))
+            if msg.get("type") == "set_voice":
+                nova_client.voice_id = msg.get("voice_id")
+                logger.info("Initial voice set to %s", nova_client.voice_id)
+    except asyncio.TimeoutError:
+        logger.info("No initial config received, using defaults")
+
+    await nova_client.start_session()
+    logger.info("Session started — listening for stdin")
+
+    await handle_stdin(nova_client)
+    await nova_client.end_session()
+    logger.info("Session ended")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -45,7 +45,7 @@ const cicdStack = new CICDStack(app, `${StackPrefix}-CICD`, {
     {
       name: "voiceAgent",
       functionName: `${StackPrefix}-VoiceAgent-VoiceAgentService`,
-      sourceDir: "agentcore-voice-agent/agent",
+      sourceDir: "cdk/voice-agent",
     },
   ],
 });
