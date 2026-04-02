@@ -23,6 +23,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+import re
+
 import kvs
 from audio import OutputTrack
 from nova_sonic import run_session
@@ -32,6 +34,21 @@ load_dotenv(override=True)
 CHANNEL_NAME = os.getenv("KVS_CHANNEL_NAME", "voice-agent-minimal")
 AWS_REGION = os.getenv("AWS_REGION", "ca-central-1")
 BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+
+def _filter_sdp_candidates(sdp):
+    """Strip non-relay ICE candidates from SDP to speed up connection.
+
+    In a VPC, host candidates (169.254.x.x, 10.x.x.x) are unreachable from
+    the browser. Keeping them forces the browser to try and fail before falling
+    back to relay candidates, adding seconds to connection time.
+    """
+    lines = sdp.split("\r\n")
+    filtered = [
+        line for line in lines
+        if not line.startswith("a=candidate:") or "relay" in line
+    ]
+    return "\r\n".join(filtered)
+
 
 # Active peer connections, keyed by pc_id
 peer_connections = {}
@@ -110,7 +127,7 @@ def _handle_ice_config():
 async def _handle_offer(data, background_tasks):
     """Accept a WebRTC offer, create a peer connection, return an answer."""
     ice_servers = kvs.get_rtc_ice_servers(
-        AWS_REGION, client_id="server", turn_only=data.get("turnOnly", False)
+        AWS_REGION, client_id="server", turn_only=True
     )
 
     # Create peer connection with output audio track
@@ -140,7 +157,7 @@ async def _handle_offer(data, background_tasks):
 
     return {
         "pc_id": pc_id,
-        "sdp": pc.localDescription.sdp,
+        "sdp": _filter_sdp_candidates(pc.localDescription.sdp),
         "type": pc.localDescription.type,
     }
 

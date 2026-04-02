@@ -73,7 +73,10 @@ async def _setup_session(stream, prompt_name):
                         "maxTokens": 1024,
                         "topP": 0.9,
                         "temperature": 0.7,
-                    }
+                    },
+                    "turnDetectionConfiguration": {
+                        "endpointingSensitivity": "HIGH",
+                    },
                 }
             }
         },
@@ -277,10 +280,11 @@ async def run_session(audio_in, audio_out, region, pc_id):
 
     recv_task = asyncio.create_task(receive_responses())
 
-    await asyncio.sleep(0.5)
-    if not ready.is_set():
-        ready.set()
-    await ready.wait()
+    # Wait for Nova Sonic to acknowledge the session before streaming audio
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=5.0)
+    except asyncio.TimeoutError:
+        logger.warning("Nova Sonic ready timeout — starting audio anyway")
     logger.info("Session ready, streaming audio")
 
     # --- Stream microphone audio to Nova Sonic ---
