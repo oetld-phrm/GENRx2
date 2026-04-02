@@ -234,18 +234,27 @@ async def run_session(audio_in, audio_out, region, pc_id):
 
     # --- Receive responses (runs concurrently with audio sending) ---
     ready = asyncio.Event()
+    stream_dead = asyncio.Event()  # Signal audio loop to stop if receive dies
     content_roles = {}  # contentId -> role
+    consecutive_errors = 0
 
     async def receive_responses():
+        nonlocal consecutive_errors
         try:
             logger.info("Receive loop started, waiting for Nova Sonic events...")
             while True:
                 try:
                     output = await stream.await_output()
                     result = await output[1].receive()
+                    consecutive_errors = 0  # Reset on success
                 except Exception as stream_err:
-                    # awscrt can throw InvalidStateError — log and continue
-                    logger.warning(f"Stream receive hiccup: {stream_err}")
+                    consecutive_errors += 1
+                    logger.warning(f"Stream receive error ({consecutive_errors}): {stream_err}")
+                    if consecutive_errors >= 3:
+                        logger.error("Stream appears dead after 3 consecutive errors, stopping")
+                        stream_dead.set()
+                        return
+                    await asyncio.sleep(0.1)
                     continue
 
                 if not (result.value and result.value.bytes_):
@@ -253,7 +262,6 @@ async def run_session(audio_in, audio_out, region, pc_id):
 
                 raw = result.value.bytes_.decode("utf-8")
                 event = json.loads(raw).get("event", {})
-                logger.info(f"Received event: {list(event.keys())}")
 
                 if not ready.is_set():
                     ready.set()
@@ -282,7 +290,8 @@ async def run_session(audio_in, audio_out, region, pc_id):
                         audio_out.clear()
                     content_roles.pop(ce.get("contentId"), None)
         except Exception as e:
-            logger.error(f"Receive error: {e}")
+            logger.error(f"Receive loop fatal error: {e}")
+            stream_dead.set()
 
     recv_task = asyncio.create_task(receive_responses())
 
@@ -296,7 +305,7 @@ async def run_session(audio_in, audio_out, region, pc_id):
     # --- Stream microphone audio to Nova Sonic ---
     try:
         frame_count = 0
-        while True:
+        while not stream_dead.is_set():
             pcm = convert_to_16khz(await audio_in.recv())
             if not pcm:
                 continue
@@ -317,6 +326,8 @@ async def run_session(audio_in, audio_out, region, pc_id):
                     }
                 },
             )
+        if stream_dead.is_set():
+            logger.info("Stream died — stopping audio send loop")
     except Exception as e:
         logger.error(f"Audio send error: {e}")
     finally:
