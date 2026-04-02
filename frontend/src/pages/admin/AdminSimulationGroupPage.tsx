@@ -394,8 +394,20 @@ function AdminSimulationGroupPage() {
   const handleStudentView = async () => {
     // If we're on a sim group page, auto-enroll as student and go directly to that group
     if (groupId && accessCode && accessCode !== 'XXXX-XXXX-XXXX-XXXX') {
-      await studentService.joinGroup(accessCode);
-      navigate(`/patients/${groupId}`);
+      try {
+        const result = await studentService.joinGroup(accessCode);
+        if (result?.success) {
+          navigate(`/patients/${groupId}`);
+        } else {
+          console.error('Failed to enroll as student in group:', { groupId, accessCode });
+          window.alert('Unable to enroll in this simulation group. Taking you to the student dashboard instead.');
+          navigate('/student');
+        }
+      } catch (error) {
+        console.error('Unexpected error while enrolling as student:', error);
+        window.alert('An unexpected error occurred while enrolling in this simulation group. Taking you to the student dashboard instead.');
+        navigate('/student');
+      }
     } else {
       navigate('/student');
     }
