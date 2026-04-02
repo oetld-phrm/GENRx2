@@ -240,8 +240,14 @@ async def run_session(audio_in, audio_out, region, pc_id):
         try:
             logger.info("Receive loop started, waiting for Nova Sonic events...")
             while True:
-                output = await stream.await_output()
-                result = await output[1].receive()
+                try:
+                    output = await stream.await_output()
+                    result = await output[1].receive()
+                except Exception as stream_err:
+                    # awscrt can throw InvalidStateError — log and continue
+                    logger.warning(f"Stream receive hiccup: {stream_err}")
+                    continue
+
                 if not (result.value and result.value.bytes_):
                     continue
 
