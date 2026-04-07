@@ -36,6 +36,8 @@ from aws_sdk_bedrock_runtime.config import (
 from smithy_aws_core.credentials_resolvers.environment import (
     EnvironmentCredentialsResolver,
 )
+from smithy_core.aio.interfaces.identity import IdentityResolver
+from smithy_aws_core.credentials import AWSCredentialsIdentity
 
 import chat_history
 
@@ -57,6 +59,32 @@ CHANNELS = 1
 # Model — Nova Sonic 2.0
 # ---------------------------------------------------------------------------
 MODEL_ID = "amazon.nova-2-sonic-v1:0"
+
+
+# ---------------------------------------------------------------------------
+# Boto3-based credentials resolver for Smithy client
+# ---------------------------------------------------------------------------
+class Boto3CredentialsResolver(IdentityResolver):
+    """Resolves AWS credentials using boto3's default credential chain.
+
+    This supports IAM roles, container credentials, instance profiles,
+    and environment variables — unlike EnvironmentCredentialsResolver
+    which only checks env vars.
+    """
+
+    def __init__(self):
+        self._session = boto3.Session()
+
+    async def get_identity(self, *, properties=None):
+        creds = self._session.get_credentials()
+        if creds is None:
+            raise Exception("No AWS credentials found via boto3")
+        frozen = creds.get_frozen_credentials()
+        return AWSCredentialsIdentity(
+            access_key_id=frozen.access_key,
+            secret_access_key=frozen.secret_key,
+            session_token=frozen.token,
+        )
 
 # ---------------------------------------------------------------------------
 # Database connection pool
@@ -161,7 +189,7 @@ class NovaSonic:
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
-            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+            aws_credentials_identity_resolver=Boto3CredentialsResolver(),
             http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
             http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
         )
