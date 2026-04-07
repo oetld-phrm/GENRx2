@@ -169,9 +169,9 @@ export interface CaseMaterial {
   id: string;                           // Unique identifier (media_id in DB)
   title: string;                        // Material title
   description: string;                  // Material description
-  materialType: string;                 // Type: image, video, document, audio, other (media_type in DB)
+  materialType: 'kaltura' | 'panopto' | 'h5p'; // Embed provider type (media_type in DB)
   contentUrl?: string;                  // URL to uploaded content (url in DB)
-  embedLink?: string;                   // H5P embed link (can be stored in url field)
+  embedLink?: string;                   // Embed URL (stored in url field)
 }
 
 /**
@@ -1701,7 +1701,7 @@ async function getCaseMaterials(patientId: string): Promise<CaseMaterial[]> {
       id: row.media_id,
       title: row.title || '',
       description: row.description || '',
-      materialType: row.media_type || 'other',
+      materialType: (row.media_type || 'kaltura') as CaseMaterial['materialType'],
       contentUrl: '',
       embedLink: row.url || '',
     }));
@@ -1731,7 +1731,7 @@ async function addCaseMaterial(patientId: string, material: CaseMaterial): Promi
     id: data.media_id,
     title: data.title || '',
     description: data.description || '',
-    materialType: data.media_type || 'other',
+    materialType: (data.media_type || 'kaltura') as CaseMaterial['materialType'],
     contentUrl: '',
     embedLink: data.url || '',
   };
@@ -1757,7 +1757,7 @@ async function updateCaseMaterial(_patientId: string, material: CaseMaterial): P
     id: data.media_id,
     title: data.title || '',
     description: data.description || '',
-    materialType: data.media_type || 'other',
+    materialType: (data.media_type || 'kaltura') as CaseMaterial['materialType'],
     contentUrl: '',
     embedLink: data.url || '',
   };

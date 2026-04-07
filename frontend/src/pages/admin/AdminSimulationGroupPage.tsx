@@ -545,9 +545,13 @@ function AdminSimulationGroupPage() {
           });
       }
 
-      const materials = instructorService.getCaseMaterials(patientId);
-      setCaseMaterials(materials);
-      setSelectedMaterialId(materials[0]?.id || '');
+      instructorService.getCaseMaterials(patientId).then((materials) => {
+        setCaseMaterials(materials);
+        setSelectedMaterialId(materials[0]?.id || '');
+      }).catch(() => {
+        setCaseMaterials([]);
+        setSelectedMaterialId('');
+      });
 
       setActiveSection('editPatient');
     }
@@ -850,20 +854,13 @@ function AdminSimulationGroupPage() {
 
 
 
-  const handleUpdateMaterialField = (field: keyof CaseMaterial, value: string) => {
-    if (!selectedMaterialId) return;
-    setCaseMaterials(caseMaterials.map(m =>
-      m.id === selectedMaterialId ? { ...m, [field]: value } : m
-    ));
-  };
-
   const handleAddNewCaseMaterial = async () => {
     if (!selectedPatientForEdit) return;
     const newMaterial: CaseMaterial = {
       id: `material-${Date.now()}`,
       title: 'New Material',
       description: '',
-      materialType: 'document',
+      materialType: 'kaltura',
       contentUrl: '',
       embedLink: '',
     };
@@ -884,14 +881,6 @@ function AdminSimulationGroupPage() {
       setCaseMaterials(prev => prev.map(m => m.id === updated.id ? updated : m));
     } catch (error) {
       console.error('Failed to save case material:', error);
-    }
-  };
-
-  const handleMaterialFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && selectedMaterialId) {
-      console.log('Uploading material file:', file.name);
-      handleUpdateMaterialField('contentUrl', URL.createObjectURL(file));
     }
   };
 
@@ -2666,38 +2655,44 @@ function AdminSimulationGroupPage() {
                                     <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Material Type</label>
                                     <select
                                       value={material.materialType}
-                                      onChange={(e) => setCaseMaterials(caseMaterials.map(m => m.id === material.id ? { ...m, materialType: e.target.value } : m))}
+                                      onChange={(e) => setCaseMaterials(caseMaterials.map(m => m.id === material.id ? { ...m, materialType: e.target.value as CaseMaterial['materialType'] } : m))}
                                       className="w-full px-3 py-3 rounded-lg text-base focus:outline-none focus:ring-2"
                                       style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white, outlineColor: UI_COLORS.border.medium }}
                                     >
-                                      {['image', 'video', 'document', 'audio', 'other'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                                      {['kaltura', 'panopto', 'h5p'].map(t => <option key={t} value={t}>{t === 'h5p' ? 'H5P' : t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Content Upload/Embed</label>
-                                    <label className="cursor-pointer">
-                                      <input type="file" onChange={(e) => { setSelectedMaterialId(material.id); handleMaterialFileUpload(e); }} className="hidden" />
-                                      <div className="inline-flex items-center gap-2 px-6 py-3 rounded-lg transition-colors font-medium" style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}>
-                                        <Upload className="w-5 h-5" />
-                                        Upload File
-                                      </div>
-                                    </label>
-                                    <p className="text-sm font-medium my-3" style={{ color: UI_COLORS.text.body }}>OR</p>
-                                    <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Enter H5P Embed Link</label>
+                                    <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Embed Link</label>
                                     <Input
                                       value={material.embedLink || ''}
                                       onChange={(e) => setCaseMaterials(caseMaterials.map(m => m.id === material.id ? { ...m, embedLink: e.target.value } : m))}
-                                      placeholder="Value"
+                                      placeholder="https://..."
                                       className="w-full py-3 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
                                       style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}
                                     />
                                   </div>
-                                  <div className="border rounded-lg p-8 flex flex-col items-center justify-center" style={{ borderColor: UI_COLORS.border.default, minHeight: '200px' }}>
+                                  <div>
                                     <div className="flex items-center gap-2 mb-2">
                                       <Eye className="w-5 h-5" style={{ color: UI_COLORS.text.body }} />
                                       <span className="font-medium" style={{ color: UI_COLORS.text.heading }}>Preview</span>
                                     </div>
-                                    <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>Rendered preview here</p>
+                                    {material.embedLink ? (
+                                      <div className="rounded-lg overflow-hidden" style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', height: 0, borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default }}>
+                                        <iframe
+                                          src={material.embedLink}
+                                          title={material.title || 'Preview'}
+                                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
+                                          allowFullScreen
+                                          allow="autoplay *; fullscreen *; encrypted-media *"
+                                          sandbox="allow-downloads allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="border rounded-lg p-8 flex items-center justify-center" style={{ borderColor: UI_COLORS.border.default, minHeight: '120px' }}>
+                                        <p className="text-sm italic" style={{ color: UI_COLORS.text.muted }}>Enter an embed link above to see a preview</p>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-4 pt-4">
                                     <Button
