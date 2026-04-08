@@ -172,6 +172,7 @@ export interface AIDebriefData {
   missedQuestions: string[];
   missedQuestionsGuidance: string;
   overallScore?: number;
+  recommendation?: string;
   recommendationFeedback: {
     strengths: string[];
     areasForImprovement: string[];
@@ -952,6 +953,7 @@ export async function fetchDebrief(sessionId: string): Promise<AIDebriefData | n
         missedQuestions: missedQuestions,
         missedQuestionsGuidance: typeof debrief.reasoning_gaps === 'string' ? debrief.reasoning_gaps : '',
         overallScore: typeof debrief.overall_score === 'number' ? debrief.overall_score : undefined,
+        recommendation: typeof debrief.recommendation === 'string' ? debrief.recommendation : undefined,
         recommendationFeedback: {
           strengths: debrief.recommendation_feedback?.strengths || [],
           areasForImprovement: debrief.recommendation_feedback?.areas_for_improvement || [],
