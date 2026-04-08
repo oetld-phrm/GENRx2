@@ -19,6 +19,8 @@ import boto3
 import psycopg2
 from psycopg2 import pool
 from threading import Lock
+from langchain_aws import BedrockEmbeddings
+from langchain_community.vectorstores import PGVector
 
 from aws_sdk_bedrock_runtime.client import (
     BedrockRuntimeClient,
@@ -189,6 +191,46 @@ class NovaSonic:
             self._bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
         return self._bedrock_client
 
+    def _get_medical_context(self):
+        """Fetch relevant medical documents from pgvector for the patient."""
+        if not self.patient_id:
+            return ""
+        try:
+            db_secret_name = os.environ.get("SM_DB_CREDENTIALS")
+            rds_endpoint = os.environ.get("RDS_PROXY_ENDPOINT")
+            if not db_secret_name or not rds_endpoint:
+                logger.warning("DB credentials not available for medical context")
+                return ""
+
+            secrets_client = boto3.client("secretsmanager")
+            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+            secret = json.loads(secret_response["SecretString"])
+
+            bedrock_client = self._get_bedrock_client()
+            embeddings = BedrockEmbeddings(
+                model_id="amazon.titan-embed-text-v1", client=bedrock_client
+            )
+
+            connection_string = (
+                f"postgresql://{secret['username']}:{secret['password']}"
+                f"@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
+            )
+            vectorstore = PGVector(
+                embedding_function=embeddings,
+                collection_name=self.patient_id,
+                connection_string=connection_string,
+            )
+
+            query = f"Patient {self.patient_name} medical history symptoms diagnosis"
+            docs = vectorstore.similarity_search(query, k=5)
+            if docs:
+                context = "\n".join([doc.page_content for doc in docs])
+                logger.info("Retrieved %d medical context docs for patient %s", len(docs), self.patient_id)
+                return context
+        except Exception as e:
+            logger.error("Failed to retrieve medical context: %s", e)
+        return ""
+
     # ------------------------------------------------------------------
     # Event helpers
     # ------------------------------------------------------------------
@@ -342,6 +384,12 @@ class NovaSonic:
             prompt_parts.append(f"\nPatient context:\n{self.patient_prompt}")
         if self.extra_system_prompt:
             prompt_parts.append(f"\n{self.extra_system_prompt}")
+
+        # Fetch medical documents from vector store
+        medical_context = self._get_medical_context()
+        if medical_context:
+            prompt_parts.append(f"\nMEDICAL CONTEXT:\n{medical_context}")
+
         if self._chat_context:
             prompt_parts.append(f"\nPrevious conversation:\n{self._chat_context}")
 
