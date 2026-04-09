@@ -154,6 +154,14 @@ class NovaSonic:
         self._chat_context = None
         self._current_user_input = ""
 
+        # AI message buffering — accumulate fragments, persist once per turn
+        self._buffered_ai_message = ""
+        self._last_persisted_ai_message = ""
+
+        # Track user audio state to correctly attribute transcribed text
+        self._user_audio_active = False
+        self._last_emitted_text = None
+
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
         config = Config(
@@ -360,6 +368,7 @@ class NovaSonic:
     async def start_audio_input(self):
         self.audio_content_name = str(uuid.uuid4())
         self._current_user_input = ""  # Track user input for empathy evaluation
+        self._user_audio_active = True
         await self.send_event({
         "event": {
             "contentStart": {
@@ -417,6 +426,17 @@ class NovaSonic:
 
     
     async def end_session(self):
+        # Flush any remaining buffered AI message before closing
+        if self._buffered_ai_message and self._buffered_ai_message != self._last_persisted_ai_message:
+            try:
+                langchain_chat_history.add_message(self.session_id, "ai", self._buffered_ai_message)
+                self._save_message_to_db(self.session_id, False, self._buffered_ai_message, None)
+                self._last_persisted_ai_message = self._buffered_ai_message
+                logger.info(f"💬 [PERSIST] AI (final) | {self.session_id} | {self._buffered_ai_message[:30]}")
+            except Exception as e:
+                logger.error(f"Failed to persist final AI message: {e}")
+            self._buffered_ai_message = ""
+
         # promptEnd
         await self.send_event({
         "event": {
@@ -474,8 +494,26 @@ class NovaSonic:
         # contentStart
         if "contentStart" in evt:
             content_start = evt["contentStart"]
-            self.role = content_start.get("role")
-            print(f"🔍 DEBUG ROLE SET: {self.role}", flush=True)
+            new_role = content_start.get("role")
+            print(f"🔍 DEBUG ROLE SET: {new_role}", flush=True)
+
+            # Flush buffered AI message when the AI turn ends
+            if self.role == "ASSISTANT" and new_role != "ASSISTANT":
+                if self._buffered_ai_message and self._buffered_ai_message != self._last_persisted_ai_message:
+                    try:
+                        langchain_chat_history.add_message(self.session_id, "ai", self._buffered_ai_message)
+                        self._save_message_to_db(self.session_id, False, self._buffered_ai_message, None)
+                        self._last_persisted_ai_message = self._buffered_ai_message
+                        logger.info(f"💬 [PERSIST] AI | {self.session_id} | {self._buffered_ai_message[:30]}")
+                    except Exception as e:
+                        logger.error(f"Failed to persist buffered AI message: {e}")
+                self._buffered_ai_message = ""
+
+            # When AI starts talking, user audio phase is over
+            if new_role and new_role.upper() == "ASSISTANT":
+                self._user_audio_active = False
+
+            self.role = new_role
             # optional SPECULATIVE check
             if "additionalModelFields" in content_start:
                 fields = json.loads(content_start["additionalModelFields"])
@@ -494,6 +532,18 @@ class NovaSonic:
             if text.strip() == '{"interrupted": true}':
                 print(f"Filtered interrupted message", flush=True)
                 return
+
+            # Deduplicate consecutive identical fragments
+            if text == self._last_emitted_text:
+                return
+            self._last_emitted_text = text
+
+            # Determine effective role — if user audio is active, any
+            # transcribed text belongs to the user even if self.role
+            # hasn't switched yet (Nova Sonic timing issue)
+            effective_role = self.role
+            if self._user_audio_active and effective_role == "ASSISTANT":
+                effective_role = "USER"
             
             # Check for diagnosis completion
             diagnosis_achieved = "SESSION COMPLETED" in text
@@ -503,7 +553,8 @@ class NovaSonic:
                 # Add completion message
                 text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
             
-            if self.role == "ASSISTANT":
+            if effective_role == "ASSISTANT":
+                self._buffered_ai_message += text
                 print(f"🔍 DEBUG: Processing ASSISTANT message", flush=True)
                 print(f"Assistant: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text, "role": "assistant"}), flush=True)
@@ -512,7 +563,7 @@ class NovaSonic:
                 if diagnosis_achieved and self.llm_completion:
                     print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
 
-            elif self.role == "USER":
+            elif effective_role == "USER":
                 print(f"🔍 DEBUG: Processing USER message - Text: {text}", flush=True)
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text, "role": "user"}), flush=True)
@@ -597,14 +648,6 @@ class NovaSonic:
 
             print(f"🔍 DEBUG: Final role processing - Role: {self.role}, Text length: {len(text)}", flush=True)
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
-
-            # Persist to DynamoDB + PostgreSQL
-            try:
-                if self.role and self.role.upper() == "ASSISTANT":
-                    langchain_chat_history.add_message(self.session_id, "ai", text)
-                    self._save_message_to_db(self.session_id, False, text, None)
-                    logger.info(f"💬 [PERSIST] AI | {self.session_id} | {text[:30]}")
-                # USER messages are persisted in _save_user_message_async (called from end_audio_input)
                 # to avoid fragment-by-fragment writes and duplicates
             except Exception as e:
                 print(f"❌ Failed to persist message: {e}", flush=True)

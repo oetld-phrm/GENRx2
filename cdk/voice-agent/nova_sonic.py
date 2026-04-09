@@ -150,6 +150,14 @@ class NovaSonic:
         self._chat_context = None
         self._current_user_input = ""
 
+        # AI message buffering — accumulate fragments, persist once per turn
+        self._buffered_ai_message = ""
+        self._last_persisted_ai_message = ""
+
+        # Track user audio state to correctly attribute transcribed text
+        self._user_audio_active = False
+        self._last_emitted_text = None
+
     # ------------------------------------------------------------------
     # WebSocket output helper
     # ------------------------------------------------------------------
@@ -440,6 +448,7 @@ class NovaSonic:
     async def start_audio_input(self):
         self.audio_content_name = str(uuid.uuid4())
         self._current_user_input = ""
+        self._user_audio_active = True
 
         # SEND TURN-START SIGNAL IMMEDIATELY for USER role
         await self._emit({"type": "turn-start", "role": "user"})
@@ -542,6 +551,17 @@ class NovaSonic:
             self._current_user_input = ""
 
     async def end_session(self):
+        # Flush any remaining buffered AI message before closing
+        if self._buffered_ai_message and self._buffered_ai_message != self._last_persisted_ai_message:
+            try:
+                chat_history.add_message(self.session_id, "ai", self._buffered_ai_message)
+                self._save_message_to_db(self.session_id, False, self._buffered_ai_message, None)
+                self._last_persisted_ai_message = self._buffered_ai_message
+                logger.info("💬 [PERSIST] AI (final) | %s | %s", self.session_id, self._buffered_ai_message[:30])
+            except Exception as e:
+                logger.error("Failed to persist final AI message: %s", e)
+            self._buffered_ai_message = ""
+
         self.is_active = False
         try:
             await self.send_event({"event": {"promptEnd": {"promptName": self.prompt_name}}})
@@ -590,7 +610,25 @@ class NovaSonic:
         if "contentStart" in evt:
             cs = evt["contentStart"]
             prev_role = self.role
-            self.role = cs.get("role")
+            new_role = cs.get("role")
+
+            # Flush buffered AI message when the AI turn ends
+            if prev_role == "ASSISTANT" and new_role != "ASSISTANT":
+                if self._buffered_ai_message and self._buffered_ai_message != self._last_persisted_ai_message:
+                    try:
+                        chat_history.add_message(self.session_id, "ai", self._buffered_ai_message)
+                        self._save_message_to_db(self.session_id, False, self._buffered_ai_message, None)
+                        self._last_persisted_ai_message = self._buffered_ai_message
+                        logger.info("💬 [PERSIST] AI | %s | %s", self.session_id, self._buffered_ai_message[:30])
+                    except Exception as e:
+                        logger.error("Failed to persist buffered AI message: %s", e)
+                self._buffered_ai_message = ""
+
+            # When AI starts talking, user audio phase is over
+            if new_role and new_role.upper() == "ASSISTANT":
+                self._user_audio_active = False
+
+            self.role = new_role
             if "additionalModelFields" in cs:
                 fields = json.loads(cs["additionalModelFields"])
                 self.display_assistant_text = fields.get("generationStage") == "SPECULATIVE"
@@ -607,36 +645,33 @@ class NovaSonic:
             if text.strip() == '{"interrupted": true}':
                 return
 
+            # Deduplicate consecutive identical fragments
+            if text == self._last_emitted_text:
+                return
+            self._last_emitted_text = text
+
+            # Determine effective role — if user audio is active, any
+            # transcribed text belongs to the user even if self.role
+            # hasn't switched yet (Nova Sonic timing issue)
+            effective_role = self.role
+            if self._user_audio_active and effective_role == "ASSISTANT":
+                effective_role = "USER"
+
             # Diagnosis completion check
             diagnosis_achieved = "SESSION COMPLETED" in text
             if diagnosis_achieved and self.llm_completion:
                 text = text.replace("SESSION COMPLETED", "").strip()
                 text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
 
-            if self.role == "ASSISTANT":
+            if effective_role == "ASSISTANT":
+                self._buffered_ai_message += text
                 await self._emit({"type": "text", "text": text, "role": "assistant"})
                 if diagnosis_achieved and self.llm_completion:
                     await self._emit({"type": "diagnosis_complete", "text": "Session completed successfully"})
 
-            elif self.role == "USER":
+            elif effective_role == "USER":
                 await self._emit({"type": "text", "text": text, "role": "user"})
                 self._current_user_input += text
-
-            # Persist to DynamoDB + PostgreSQL
-            # Track if this message has already been persisted to prevent duplicates
-            message_already_persisted = getattr(self, '_last_persisted_message', None) == text
-
-            if not message_already_persisted:
-                try:
-                    if self.role and self.role.upper() == "ASSISTANT":
-                        chat_history.add_message(self.session_id, "ai", text)
-                        self._save_message_to_db(self.session_id, False, text, None)
-                        self._last_persisted_message = text  # Track it
-                        logger.info("💬 [PERSIST] AI | %s | %s", self.session_id, text[:30])
-                    # USER messages are persisted in _save_user_message_async (called from end_audio_input)
-                    # to avoid fragment-by-fragment writes and duplicates
-                except Exception as e:
-                    logger.error("Failed to persist message: %s", e)
 
         # ── audioOutput ───────────────────────────────────────────────
         elif "audioOutput" in evt:
