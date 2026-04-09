@@ -171,10 +171,8 @@ function StudentChatPage() {
   const audioClientRef = useRef<SocketIOAudioClient | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
-  // Ref to track the current AI voice message being streamed into the chat
-  const voiceAiMessageIdRef = useRef<string | null>(null);
-  // Ref to track the current user voice message being streamed into the chat
-  const voiceUserMessageIdRef = useRef<string | null>(null);
+  // Ref for polling interval during voice mode
+  const voicePollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Session ID — set by createSession (new chat) or from route (existing chat)
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -190,6 +188,10 @@ function StudentChatPage() {
     if (socketRef.current) {
       socketRef.current.disconnect();
       socketRef.current = null;
+    }
+    if (voicePollIntervalRef.current) {
+      clearInterval(voicePollIntervalRef.current);
+      voicePollIntervalRef.current = null;
     }
     setVoiceSessionState('idle');
     setVoiceError(null);
@@ -245,69 +247,11 @@ function StudentChatPage() {
         }
         setVoiceSessionState('error');
       },
-      onTurnStart: (role) => {
-        // ALWAYS reset refs at the start of a new turn
-        if (role === 'assistant') {
-          voiceAiMessageIdRef.current = null;
-        } else {
-          voiceUserMessageIdRef.current = null;
-        }
-        console.log(`✅ Turn started for ${role}`);
+      onTurnStart: () => {
+        // Text bubbles are populated via DB polling, not real-time events
       },
-      onTextMessage: (text, role) => {
-        // Filter out system/internal messages
-        if (text.includes('Nova Sonic ready')) return;
-
-        // SAFETY: If we somehow get both roles in one message, split them
-        if (text.includes('Hello.') && text.length > 100) {
-          console.warn('⚠️ Detected potential message concatenation:', text.substring(0, 100));
-        }
-
-        if (role === 'user') {
-          // User voice transcript — append to current user bubble or create new one
-          if (!voiceUserMessageIdRef.current) {
-            const msgId = `voice-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            voiceUserMessageIdRef.current = msgId;
-            setMessages((prev) => [...prev, {
-              message_id: msgId,
-              chat_id: chatId,
-              sender_type: 'student',
-              message_content: text,
-              sent_at: new Date().toISOString(),
-            }]);
-          } else {
-            const currentId = voiceUserMessageIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.message_id === currentId
-                  ? { ...m, message_content: m.message_content + text }
-                  : m
-              )
-            );
-          }
-        } else {
-          // AI voice transcript — append to current AI bubble or create new one
-          if (!voiceAiMessageIdRef.current) {
-            const msgId = `voice-ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            voiceAiMessageIdRef.current = msgId;
-            setMessages((prev) => [...prev, {
-              message_id: msgId,
-              chat_id: chatId,
-              sender_type: 'ai',
-              message_content: text,
-              sent_at: new Date().toISOString(),
-            }]);
-          } else {
-            const currentId = voiceAiMessageIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.message_id === currentId
-                  ? { ...m, message_content: m.message_content + text }
-                  : m
-              )
-            );
-          }
-        }
+      onTextMessage: () => {
+        // Text bubbles are populated via DB polling, not real-time events
       },
     });
 
@@ -317,6 +261,18 @@ function StudentChatPage() {
       patient_name: patient?.name || '',
       patient_id: patientId || '',
       simulation_group_id: groupId || '',
+    }).then(() => {
+      // Start polling DB for messages every 2 seconds while voice mode is active
+      const sid = sessionId || routeChatId || '';
+      if (sid && !voicePollIntervalRef.current) {
+        voicePollIntervalRef.current = setInterval(() => {
+          studentService.fetchMessages(sid).then((msgs) => {
+            if (msgs.length > 0) {
+              setMessages(msgs);
+            }
+          }).catch(() => { /* ignore polling errors */ });
+        }, 2000);
+      }
     }).catch((err) => {
       console.error('[VoiceMode] Failed to connect:', err);
       const msg = err instanceof Error ? err.message : 'Failed to start voice session';
@@ -336,7 +292,14 @@ function StudentChatPage() {
   const handleStopVoiceMode = useCallback(() => {
     cleanupVoiceSession();
     setIsVoiceModeActive(false);
-  }, [cleanupVoiceSession]);
+    // Final fetch to get any remaining messages
+    const sid = sessionId || routeChatId || '';
+    if (sid) {
+      studentService.fetchMessages(sid).then((msgs) => {
+        if (msgs.length > 0) setMessages(msgs);
+      });
+    }
+  }, [cleanupVoiceSession, sessionId, routeChatId]);
 
   // Clean up WebRTC on unmount or navigation away
   useEffect(() => {
