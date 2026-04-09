@@ -147,6 +147,7 @@ class NovaSonic:
         self.llm_completion = os.getenv("LLM_COMPLETION", "false").lower() == "true"
         self.extra_system_prompt = os.getenv("EXTRA_SYSTEM_PROMPT", "")
         self.patient_id = os.getenv("PATIENT_ID", "")
+        self.simulation_group_id = os.getenv("SIMULATION_GROUP_ID", "")
         # Cache system prompt and bedrock client
         self._cached_system_prompt = None
         self._bedrock_client = None
@@ -594,16 +595,16 @@ class NovaSonic:
             print(f"🔍 DEBUG: Final role processing - Role: {self.role}, Text length: {len(text)}", flush=True)
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
 
-            # Mirror to PostgreSQL
+            # Persist to DynamoDB + PostgreSQL
             try:
-                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
-                langchain_chat_history.add_message(self.session_id, normalized_role, text)
-                # Save AI messages to messages table too
                 if self.role and self.role.upper() == "ASSISTANT":
+                    langchain_chat_history.add_message(self.session_id, "ai", text)
                     self._save_message_to_db(self.session_id, False, text, None)
-                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
+                    logger.info(f"💬 [PERSIST] AI | {self.session_id} | {text[:30]}")
+                # USER messages are persisted in _save_user_message_async (called from end_audio_input)
+                # to avoid fragment-by-fragment writes and duplicates
             except Exception as e:
-                print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
+                print(f"❌ Failed to persist message: {e}", flush=True)
 
         # audioOutput
         elif "audioOutput" in evt:
@@ -741,13 +742,45 @@ class NovaSonic:
         """Save user message to database asynchronously"""
         try:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
+            message_id = await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
             # Also add to chat history
             await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
             logger.info(f"💾 User audio message saved: {user_text[:30]}...")
+
+            # Trigger semantic matching via text generation endpoint
+            if message_id and user_text.strip():
+                await loop.run_in_executor(
+                    None, self._call_matching_endpoint, message_id, user_text
+                )
         except Exception as e:
             logger.error(f"Failed to save user audio message: {e}")
     
+    def _call_matching_endpoint(self, message_id, message_content):
+        """Call the text generation service's /match endpoint for semantic question matching."""
+        import urllib.request
+        endpoint = os.getenv("TEXT_GENERATION_ENDPOINT", "")
+        token = os.getenv("COGNITO_TOKEN", "")
+        if not endpoint:
+            logger.warning("TEXT_GENERATION_ENDPOINT not set, skipping semantic matching")
+            return
+        try:
+            url = (
+                f"{endpoint}/student/text_generation"
+                f"?simulation_group_id={self.simulation_group_id or ''}"
+                f"&session_id={self.session_id}"
+                f"&patient_id={self.patient_id or ''}"
+                f"&mode=match"
+            )
+            data = json.dumps({"message_id": message_id, "message_content": message_content}).encode()
+            req = urllib.request.Request(url, data=data, method="POST", headers={
+                "Content-Type": "application/json",
+                "Authorization": token,
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                logger.info(f"Matching endpoint responded: {resp.status}")
+        except Exception as e:
+            logger.error(f"Failed to call matching endpoint: {e}")
+
     # ── Empathy evaluation methods disabled — may be re-enabled later ──────
     # async def _evaluate_empathy(self, student_response, patient_context):
     #     """LLM-as-a-Judge empathy evaluation using Nova Pro"""
@@ -764,18 +797,20 @@ class NovaSonic:
             conn = get_pg_connection()
             cursor = conn.cursor()
             
-            empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
+            sender = "student" if student_sent else "ai"
+            msg_id = str(uuid.uuid4())
             
             cursor.execute(
-                'INSERT INTO "messages" (chat_id, student_sent, message_content, time_sent) VALUES (%s, %s, %s, NOW())',
-                (session_id, student_sent, message_content)
+                'INSERT INTO "messages" (message_id, chat_id, sender_type, message_content, sent_at) VALUES (%s, %s, %s, %s, NOW())',
+                (msg_id, session_id, sender, message_content)
             )
             
             conn.commit()
             cursor.close()
             pg_conn_pool.putconn(conn)  # Return to pool
             
-            logger.info(f"💾 Message saved to DB")
+            logger.info(f"💾 Message saved to DB: message_id={msg_id}")
+            return msg_id
                 
         except Exception as e:
             logger.error(f"Error saving message: {e}")
@@ -783,6 +818,7 @@ class NovaSonic:
                 pg_conn_pool.putconn(conn, close=True)  # Close bad connection
             except:
                 pass
+            return None
 
 
 

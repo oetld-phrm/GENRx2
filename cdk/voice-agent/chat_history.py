@@ -53,11 +53,6 @@ def add_message(
     else:
         raise ValueError(f"Invalid role '{role}'. Must be 'user' or 'ai'.")
 
-    try:
-        insert_message_to_postgres(session_id, role, content)
-    except Exception as e:
-        logger.error("Failed to insert message into PostgreSQL: %s", e)
-
 
 def get_secret(secret_name, expect_json=True):
     global db_secret

@@ -239,8 +239,11 @@ io.on("connection", (socket) => {
           patient_name: patientContext.patient_name || config.patient_name || "",
           patient_prompt: patientContext.patient_prompt || config.patient_prompt || "",
           patient_id: config.patient_id || "",
+          simulation_group_id: config.simulation_group_id || "",
           llm_completion: patientContext.llm_completion || config.llm_completion || false,
           system_prompt: patientContext.system_prompt || config.system_prompt || "",
+          cognito_token: socket.handshake.auth.token || "",
+          text_generation_endpoint: process.env.TEXT_GENERATION_ENDPOINT || "",
         });
 
         socket.agentWs = agentWs;
@@ -438,6 +441,7 @@ io.on("connection", (socket) => {
               PATIENT_NAME: config.patient_name || "",
               PATIENT_PROMPT: config.patient_prompt || "",
               PATIENT_ID: config.patient_id || "",
+              SIMULATION_GROUP_ID: config.simulation_group_id || "",
               LLM_COMPLETION: config.llm_completion ? "true" : "false",
               EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
               APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
@@ -518,6 +522,7 @@ io.on("connection", (socket) => {
           PATIENT_NAME: config.patient_name || "",
           PATIENT_PROMPT: config.patient_prompt || "",
           PATIENT_ID: config.patient_id || "",
+          SIMULATION_GROUP_ID: config.simulation_group_id || "",
           LLM_COMPLETION: config.llm_completion ? "true" : "false",
           EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
           APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",

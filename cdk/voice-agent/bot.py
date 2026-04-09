@@ -69,9 +69,12 @@ async def websocket_handler(websocket, context):
             patient_name=init_msg.get("patient_name", ""),
             patient_prompt=init_msg.get("patient_prompt", ""),
             patient_id=init_msg.get("patient_id", ""),
+            simulation_group_id=init_msg.get("simulation_group_id", ""),
             llm_completion=init_msg.get("llm_completion", False),
             extra_system_prompt=init_msg.get("system_prompt", ""),
             user_id=init_msg.get("user_id"),
+            cognito_token=init_msg.get("cognito_token", ""),
+            text_generation_endpoint=init_msg.get("text_generation_endpoint", ""),
         )
 
         # 3. Start the Nova Sonic session (opens Bedrock stream)
