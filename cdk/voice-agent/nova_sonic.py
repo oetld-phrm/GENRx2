@@ -157,6 +157,7 @@ class NovaSonic:
         # Track user audio state to correctly attribute transcribed text
         self._user_audio_active = False
         self._last_emitted_text = None
+        self._emitted_texts_this_turn = set()
 
     # ------------------------------------------------------------------
     # WebSocket output helper
@@ -534,6 +535,8 @@ class NovaSonic:
         )
 
     async def end_audio_input(self):
+        self._buffered_ai_message = ""
+
         await self.send_event(
             {
                 "event": {
@@ -544,11 +547,6 @@ class NovaSonic:
                 }
             }
         )
-
-        # Save accumulated user input
-        if self._current_user_input and self._current_user_input.strip():
-            asyncio.create_task(self._save_user_message_async(self._current_user_input))
-            self._current_user_input = ""
 
     async def end_session(self):
         # Flush any remaining buffered AI message before closing
@@ -561,6 +559,14 @@ class NovaSonic:
             except Exception as e:
                 logger.error("Failed to persist final AI message: %s", e)
             self._buffered_ai_message = ""
+
+        # Flush any remaining buffered user message
+        if self._current_user_input and self._current_user_input.strip():
+            try:
+                await self._save_user_message_async(self._current_user_input)
+            except Exception as e:
+                logger.error("Failed to persist final user message: %s", e)
+            self._current_user_input = ""
 
         self.is_active = False
         try:
@@ -624,11 +630,18 @@ class NovaSonic:
                         logger.error("Failed to persist buffered AI message: %s", e)
                 self._buffered_ai_message = ""
 
+            # Flush buffered user message when the user turn ends
+            if prev_role == "USER" and new_role != "USER":
+                if self._current_user_input and self._current_user_input.strip():
+                    asyncio.create_task(self._save_user_message_async(self._current_user_input))
+                    self._current_user_input = ""
+
             # When AI starts talking, user audio phase is over
             if new_role and new_role.upper() == "ASSISTANT":
                 self._user_audio_active = False
 
             self.role = new_role
+            self._emitted_texts_this_turn = set()
             if "additionalModelFields" in cs:
                 fields = json.loads(cs["additionalModelFields"])
                 self.display_assistant_text = fields.get("generationStage") == "SPECULATIVE"
@@ -645,10 +658,10 @@ class NovaSonic:
             if text.strip() == '{"interrupted": true}':
                 return
 
-            # Deduplicate consecutive identical fragments
-            if text == self._last_emitted_text:
+            # Deduplicate — skip any text already emitted this turn
+            if text in self._emitted_texts_this_turn:
                 return
-            self._last_emitted_text = text
+            self._emitted_texts_this_turn.add(text)
 
             # Determine effective role — if user audio is active, any
             # transcribed text belongs to the user even if self.role

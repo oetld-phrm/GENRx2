@@ -251,6 +251,7 @@ io.on("connection", (socket) => {
         agentWs.on("message", (data) => {
           try {
             const msg = JSON.parse(data.toString());
+            console.log("📨 AGENT MSG type=%s role=%s", msg.type, msg.role);
 
             if (msg.type === "audio") {
               socket.emit("audio-chunk", { data: msg.data });

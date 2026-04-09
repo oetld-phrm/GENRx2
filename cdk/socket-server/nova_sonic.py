@@ -161,6 +161,7 @@ class NovaSonic:
         # Track user audio state to correctly attribute transcribed text
         self._user_audio_active = False
         self._last_emitted_text = None
+        self._emitted_texts_this_turn = set()
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -402,6 +403,8 @@ class NovaSonic:
         })
     
     async def end_audio_input(self):
+        self._buffered_ai_message = ""
+
         await self.send_event({
         "event": {
             "contentEnd": {
@@ -410,19 +413,6 @@ class NovaSonic:
             }
         }
         })
-        
-        # Trigger empathy evaluation for the completed user audio input if enabled
-        if hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip():
-            print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
-            logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
-            
-            # Save user message to DB
-            asyncio.create_task(self._save_user_message_async(self._current_user_input))
-            
-            # Empathy evaluation disabled — may be re-enabled later
-            # asyncio.create_task(self._check_and_evaluate_empathy(self._current_user_input))
-            
-            self._current_user_input = ""  # Reset for next input
 
     
     async def end_session(self):
@@ -436,6 +426,14 @@ class NovaSonic:
             except Exception as e:
                 logger.error(f"Failed to persist final AI message: {e}")
             self._buffered_ai_message = ""
+
+        # Flush any remaining buffered user message
+        if hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip():
+            try:
+                await self._save_user_message_async(self._current_user_input)
+            except Exception as e:
+                logger.error(f"Failed to persist final user message: {e}")
+            self._current_user_input = ""
 
         # promptEnd
         await self.send_event({
@@ -509,11 +507,18 @@ class NovaSonic:
                         logger.error(f"Failed to persist buffered AI message: {e}")
                 self._buffered_ai_message = ""
 
+            # Flush buffered user message when the user turn ends
+            if self.role == "USER" and new_role != "USER":
+                if hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip():
+                    asyncio.create_task(self._save_user_message_async(self._current_user_input))
+                    self._current_user_input = ""
+
             # When AI starts talking, user audio phase is over
             if new_role and new_role.upper() == "ASSISTANT":
                 self._user_audio_active = False
 
             self.role = new_role
+            self._emitted_texts_this_turn = set()
             # optional SPECULATIVE check
             if "additionalModelFields" in content_start:
                 fields = json.loads(content_start["additionalModelFields"])
@@ -533,10 +538,10 @@ class NovaSonic:
                 print(f"Filtered interrupted message", flush=True)
                 return
 
-            # Deduplicate consecutive identical fragments
-            if text == self._last_emitted_text:
+            # Deduplicate — skip any text already emitted this turn
+            if text in self._emitted_texts_this_turn:
                 return
-            self._last_emitted_text = text
+            self._emitted_texts_this_turn.add(text)
 
             # Determine effective role — if user audio is active, any
             # transcribed text belongs to the user even if self.role
