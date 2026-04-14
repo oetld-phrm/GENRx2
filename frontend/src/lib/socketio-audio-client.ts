@@ -122,6 +122,12 @@ export class SocketIOAudioClient {
           const msg = data as { role?: string };
           if (this.config.onTurnStart) {
             const role = msg.role === 'user' ? 'user' : 'assistant';
+            // When the user starts speaking, flush any queued AI audio so
+            // the interruption feels instant instead of the AI finishing
+            // its buffered response before going quiet.
+            if (role === 'user') {
+              this.flushPlaybackQueue();
+            }
             this.config.onTurnStart(role);
           }
         };
@@ -232,6 +238,20 @@ export class SocketIOAudioClient {
   // -----------------------------------------------------------------------
 
   private nextPlayTime = 0;
+
+  /**
+   * Flush all queued AI audio so the user's interruption feels instant.
+   * Called when the user starts speaking — closes the current playback
+   * context and creates a fresh one, dropping any scheduled-but-unplayed
+   * audio buffers.
+   */
+  private flushPlaybackQueue(): void {
+    if (this.playbackContext) {
+      this.playbackContext.close().catch(() => {});
+    }
+    this.playbackContext = new AudioContext({ sampleRate: 24000 });
+    this.nextPlayTime = 0;
+  }
 
   private playAudioChunk(b64Data: string): void {
     if (!this.playbackContext) return;

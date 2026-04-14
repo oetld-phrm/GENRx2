@@ -819,9 +819,13 @@ class NovaSonic:
             if "additionalModelFields" in cs:
                 fields = json.loads(cs["additionalModelFields"])
                 self.display_assistant_text = fields.get("generationStage") == "SPECULATIVE"
-            # Signal a new turn to the frontend so it creates a new chat bubble
-            # USER turn-start is now sent earlier in start_audio_input()
-            if self.role and self.role.upper() != "USER":
+            # Signal a new turn to the frontend so it creates a new chat bubble.
+            # For USER turns detected by Nova Sonic (e.g. interruptions), we emit
+            # user-turn-start here. For ASSISTANT turns, we emit turn-start with role.
+            # The frontend uses user-turn-start to flush queued AI audio (interruption).
+            if self.role and self.role.upper() == "USER":
+                await self._emit({"type": "user-turn-start"})
+            elif self.role and self.role.upper() != "SYSTEM":
                 await self._emit({"type": "turn-start", "role": self.role.lower()})
 
         # ── textOutput ────────────────────────────────────────────────
