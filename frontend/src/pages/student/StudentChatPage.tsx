@@ -756,41 +756,40 @@ function StudentChatPage() {
             borderRightColor: UI_COLORS.border.default,
             width: isSidebarVisible ? '16rem' : '0rem',
             minWidth: isSidebarVisible ? '16rem' : '0rem',
-            overflowY: isSidebarVisible ? 'auto' : 'hidden',
-            overflowX: 'hidden',
+            overflow: 'hidden',
             opacity: isSidebarVisible ? 1 : 0,
             pointerEvents: isSidebarVisible ? 'auto' : 'none',
           }}
         >
           {/* Patient Info */}
-          <div className="p-6" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+          <div className="p-6 flex-shrink-0" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
             <h2 className="font-semibold text-lg mb-1 whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>{patient.name}</h2>
             <p className="text-sm whitespace-nowrap" style={{ color: UI_COLORS.text.body }}>{patient.gender}, {patient.age} years old</p>
           </div>
 
-          {/* Notes Section */}
-          <div className="p-4 flex flex-col flex-shrink-0" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
-            <h3 className="font-semibold text-sm mb-3 whitespace-nowrap" style={{ color: UI_COLORS.text.heading }}>Notes</h3>
-            <p className="text-xs mb-2 whitespace-nowrap" style={{ color: UI_COLORS.text.muted }}>This note saves automatically!</p>
+          {/* Notes Section - flexible, takes remaining space between patient info and buttons */}
+          <div className="p-4 flex flex-col flex-1 min-h-0" style={{ borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: UI_COLORS.border.default }}>
+            <h3 className="font-semibold text-sm mb-2 whitespace-nowrap flex-shrink-0" style={{ color: UI_COLORS.text.heading }}>Notes</h3>
+            <p className="text-xs mb-2 whitespace-nowrap flex-shrink-0" style={{ color: UI_COLORS.text.muted }}>This note saves automatically!</p>
             
             {/* Note Textarea - Auto-saves */}
             <textarea
               value={noteText}
               onChange={handleNoteChange}
               placeholder="Type your notes here..."
-              className="w-full px-3 py-2 rounded-lg resize-none focus:outline-none focus:ring-2"
+              className="w-full px-3 py-2 rounded-lg resize-none focus:outline-none focus:ring-2 flex-1"
               style={{ 
                 borderWidth: '1px', 
                 borderStyle: 'solid', 
                 borderColor: UI_COLORS.border.default,
                 outlineColor: UI_COLORS.border.medium,
-                height: '300px',
+                minHeight: '80px',
               }}
             />
           </div>
 
-          {/* Sidebar Buttons */}
-          <div className="mt-auto flex flex-col gap-3 p-4">
+          {/* Sidebar Buttons - always visible at bottom */}
+          <div className="flex flex-col gap-3 p-4 flex-shrink-0">
             <Button
               variant="outline"
               className="w-full justify-start transition-colors border-0 whitespace-nowrap"
