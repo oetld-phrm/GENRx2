@@ -71,8 +71,8 @@ function CreateSimulationGroupDialog({
   };
 
   const isValid = role === 'admin'
-    ? name.trim() && description.trim() && selectedInstructors.length > 0
-    : name.trim() && description.trim();
+    ? Boolean(name.trim() && description.trim() && selectedInstructors.length > 0)
+    : Boolean(name.trim() && description.trim());
 
   const handleCreate = () => {
     if (!isValid) return;

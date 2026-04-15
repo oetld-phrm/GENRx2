@@ -36,7 +36,7 @@ export function StudentDetailsPanel({
   onBack,
   attemptPdfRefs,
 }: StudentDetailsPanelProps) {
-  const handleDownloadNotesPDF = (attemptId: string) => {
+  const handleDownloadNotesTxt = (attemptId: string) => {
     try {
       const notes = studentPatientData?.notes[attemptId] || '';
       const blob = new Blob([notes || 'No notes available.'], { type: 'text/plain' });
@@ -116,7 +116,9 @@ export function StudentDetailsPanel({
 
         <div className="p-6 border-t" style={{ borderColor: UI_COLORS.border.default }}>
           <Button
-            className="w-full justify-center gap-2 py-2.5 h-auto font-medium transition-colors text-white"
+            className="w-full justify-center gap-2 py-2.5 h-auto font-medium transition-colors text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled
+            title="Unenrollment is not yet available"
             style={{
               backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[0],
               borderColor: SIMULATION_GROUP_COLOR_PALETTE[0],
@@ -399,9 +401,9 @@ export function StudentDetailsPanel({
                               (e.currentTarget.style.backgroundColor =
                                 UI_COLORS.button.secondary)
                             }
-                            onClick={() => handleDownloadNotesPDF(attempt.id)}
+                            onClick={() => handleDownloadNotesTxt(attempt.id)}
                           >
-                            Download Notes PDF
+                            Download Notes
                           </Button>
                           {attempt.completionStatus === 'Debrief Reached' && (
                             <Button

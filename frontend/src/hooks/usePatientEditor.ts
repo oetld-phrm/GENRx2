@@ -81,6 +81,14 @@ export function usePatientEditor({
   // Case-specific questions state
   const [caseSpecificQuestions, setCaseSpecificQuestions] = useState<GlobalRubricQuestion[]>([]);
 
+  // Clear upload timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(uploadTimers.current).forEach(clearTimeout);
+      uploadTimers.current = {};
+    };
+  }, []);
+
   // Load case materials from API when patient changes
   useEffect(() => {
     if (!selectedPatientForEdit || selectedPatientForEdit === 'new') return;
@@ -157,6 +165,8 @@ export function usePatientEditor({
   const stopEditing = () => {
     setSelectedPatientForEdit(null);
     setUploadStatus({});
+    Object.values(uploadTimers.current).forEach(clearTimeout);
+    uploadTimers.current = {};
   };
 
   /**

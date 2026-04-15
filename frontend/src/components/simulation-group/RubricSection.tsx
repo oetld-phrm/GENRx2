@@ -80,7 +80,7 @@ export function RubricSection({
 
         {/* Question List */}
         <div className="flex-1 overflow-y-auto">
-          {filteredQuestions.map((question) => (
+          {filteredQuestions.map((question, idx) => (
             <button
               key={question.id}
               onClick={() => onSelectQuestion(question.id)}
@@ -105,7 +105,7 @@ export function RubricSection({
             >
               <div className="px-6">
                 <p className="text-sm font-medium mb-1" style={{ color: UI_COLORS.text.heading }}>
-                  Q{questions.indexOf(question) + 1} - {question.title}
+                  Q{idx + 1} - {question.title}
                 </p>
                 <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>
                   [{question.required ? 'Required' : 'Optional'}]
@@ -123,7 +123,7 @@ export function RubricSection({
           {selectedQuestion ? (
             <div className="max-w-4xl space-y-6">
               <h2 className="text-2xl font-bold" style={{ color: UI_COLORS.text.heading }}>
-                Question {questions.indexOf(selectedQuestion) + 1}
+                Question {filteredQuestions.findIndex(q => q.id === selectedQuestionId) + 1}
               </h2>
 
               {/* Title */}

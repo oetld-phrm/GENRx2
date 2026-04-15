@@ -87,7 +87,10 @@ export function useSimulationGroupData({
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
-      if (!groupId) return;
+      if (!groupId) {
+        setLoading(false);
+        return;
+      }
 
       setLoading(true);
 
