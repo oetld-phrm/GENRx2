@@ -7,7 +7,7 @@ import psycopg2
 from langchain_aws import BedrockEmbeddings
 
 from helpers.vectorstore import get_vectorstore_retriever
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name, generate_debrief, cache_key_questions
+from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name, generate_debrief, generate_test_debrief, cache_key_questions
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -193,6 +193,7 @@ def handler(event, context):
     logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
     initialize_constants()
     
+    # TODO(refactor): Extract auth token extraction and JWT parsing into a helper function
     # Extract the user's Cognito token from the API Gateway event
     auth_token = None
     if 'headers' in event:
@@ -215,6 +216,7 @@ def handler(event, context):
     else:
         logger.warning(f"❌ No Authorization header found. Available headers: {list(headers.keys()) if 'headers' in locals() else 'No headers'}")
 
+    # TODO(refactor): Extract parameter extraction and validation into a helper function
     query_params = event.get("queryStringParameters", {})
     simulation_group_id = query_params.get("simulation_group_id", "")
     session_id = query_params.get("session_id", "")
@@ -237,9 +239,12 @@ def handler(event, context):
     # =========================================================================
     # MODE BRANCHING: "debrief" vs default "chat"
     # =========================================================================
+    # TODO(refactor): Extract mode branching into a helper function that dispatches to mode-specific handlers
     mode = query_params.get("mode", "chat")
 
+    # TODO(refactor): Extract CORS header construction into a helper function to eliminate repetition
     if mode == "debrief":
+        # TODO(refactor): Extract debrief mode handling into a helper function
         logger.info(f"📋 DEBRIEF MODE — generating debrief for session={session_id}")
         try:
             llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=False)
@@ -276,6 +281,7 @@ def handler(event, context):
             }
 
     if mode == "match":
+        # TODO(refactor): Extract match mode handling into a helper function
         logger.info(f"🔄 MATCH MODE — running semantic matching for session={session_id}")
         try:
             body = {} if event.get("body") is None else json.loads(event.get("body"))
@@ -345,10 +351,63 @@ def handler(event, context):
                 "body": json.dumps({"error": f"Matching failed: {str(e)}"}),
             }
 
+    if mode == "test_debrief":
+        # TODO(refactor): Extract test_debrief mode handling into a helper function
+        logger.info(f"🧪 TEST DEBRIEF MODE — generating test debrief for session={session_id}")
+        try:
+            body = json.loads(event.get("body") or "{}")
+            debrief_prompt = body.get("debrief_prompt", "").strip()
+            if not debrief_prompt:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({"error": "debrief_prompt is required"}),
+                }
+
+            llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=False)
+            result = generate_test_debrief(
+                session_id=session_id,
+                simulation_group_id=simulation_group_id,
+                persona_id=persona_id,
+                llm=llm,
+                debrief_prompt=debrief_prompt,
+                embeddings_model=embeddings,
+                ddb_table_name=TABLE_NAME,
+            )
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps(result, default=str),
+            }
+        except Exception as e:
+            logger.error(f"Test debrief generation failed: {e}")
+            logger.exception("Full test debrief error:")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({"error": f"Test debrief generation failed: {str(e)}"}),
+            }
+
     # =========================================================================
     # DEFAULT CHAT MODE — existing flow below
     # =========================================================================
 
+    # TODO(refactor): Extract system prompt and persona detail fetching into a helper function
     system_prompt = get_system_prompt(simulation_group_id)
     if system_prompt is None:
         logger.error(f"Error fetching system prompt for simulation_group_id: {simulation_group_id}")
@@ -426,6 +485,7 @@ def handler(event, context):
             'body': json.dumps('Error getting LLM from Bedrock')
         }
 
+    # TODO(refactor): Extract vectorstore config assembly into a helper function
     try:
         logger.info("Retrieving vectorstore config.")
         db_secret = get_secret(DB_SECRET_NAME)
@@ -521,6 +581,7 @@ def handler(event, context):
     
 
 
+    # TODO(refactor): Extract response formatting into a helper function
     if stream:
         logger.info("Returning streaming response.")
         return {
