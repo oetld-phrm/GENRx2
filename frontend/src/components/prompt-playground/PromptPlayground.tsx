@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Play, GitCompare, Loader2, AlertCircle, Circle } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 import { instructorService, type CompletedSession } from '@/services/instructorService';
@@ -28,6 +28,11 @@ function PromptPlayground({ simulationGroupId, currentDebriefPrompt }: PromptPla
   const [resultA, setResultA] = useState<AIDebriefData | null>(null);
   const [resultB, setResultB] = useState<AIDebriefData | null>(null);
   const [isCompareMode, setIsCompareMode] = useState(false);
+
+  // Sync playground prompt when the parent's saved prompt changes
+  useEffect(() => {
+    setPlaygroundPrompt(currentDebriefPrompt);
+  }, [currentDebriefPrompt]);
 
   const hasUnsavedChanges = playgroundPrompt !== currentDebriefPrompt;
   const isTestDisabled = !selectedSession || playgroundPrompt.trim() === '' || isLoading;

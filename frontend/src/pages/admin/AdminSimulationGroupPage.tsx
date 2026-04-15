@@ -30,6 +30,7 @@ import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecifi
 import { AddInstructorDialog } from '@/components/AddInstructorDialog';
 import AIDebriefDialog from '@/components/AIDebriefDialog';
 import PromptPlayground from '@/components/prompt-playground/PromptPlayground';
+import SystemPromptPlayground from '@/components/prompt-playground/SystemPromptPlayground';
 
 type ActiveSection = 'analytics' | 'patients' | 'students' | 'instructors' | 'prompts' | 'rubric' | 'questionBank' | 'editPatient' | 'viewStudent';
 
@@ -597,6 +598,12 @@ function AdminSimulationGroupPage() {
                     <PromptPlayground
                       simulationGroupId={groupId}
                       currentDebriefPrompt={evaluationPromptText}
+                    />
+                  )}
+                  {selectedPromptType === 'system' && groupId && (
+                    <SystemPromptPlayground
+                      simulationGroupId={groupId}
+                      currentSystemPrompt={systemPromptText}
                     />
                   )}
                 </div>
