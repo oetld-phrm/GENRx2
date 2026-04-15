@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import PageContainer from '@/components/PageContainer';
 import UserAvatar from '@/components/UserAvatar';
@@ -20,6 +20,8 @@ import PhysicalAssessmentContent from '@/components/PhysicalAssessmentContent';
 function PatientDashboardPage() {
   const navigate = useNavigate();
   const { groupId, patientId } = useParams();
+  const location = useLocation();
+  const adminReturnUrl = (location.state as any)?.adminReturnUrl as string | undefined;
   
   const { user: authUser, signOut } = useAuth();
   const user = { name: authUser?.email || 'Student', avatarUrl: undefined };
@@ -29,7 +31,7 @@ function PatientDashboardPage() {
 
   // Pagination for chat history
   const [chatPage, setChatPage] = useState(0);
-  const chatsPerPage = 5;
+  const chatsPerPage = 10;
 
   // State for delete confirmation dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -123,7 +125,7 @@ function PatientDashboardPage() {
    * Handle back to patients navigation
    */
   const handleBackToPatients = () => {
-    navigate(`/patients/${groupId}`);
+    navigate(`/patients/${groupId}`, { state: { adminReturnUrl } });
   };
 
   /**
@@ -205,7 +207,19 @@ function PatientDashboardPage() {
           </div>
         </div>
 
-        <div className="flex items-center">
+        <div className="flex items-center gap-3">
+          {adminReturnUrl && (
+            <Button
+              variant="default"
+              onClick={() => navigate(adminReturnUrl)}
+              className="px-6 transition-colors"
+              style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
+            >
+              Back to Admin View
+            </Button>
+          )}
           <Button
             variant="default"
             onClick={handleSignOut}

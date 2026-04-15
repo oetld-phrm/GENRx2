@@ -206,10 +206,11 @@ function AdminSimulationGroupPage() {
   const handleSignOut = () => navigate('/login');
   const handleBackToAllGroups = () => navigate(`/admin/organization/${organizationId}`);
   const handleStudentView = async () => {
+    const adminReturnUrl = `/admin/organization/${organizationId}/group/${groupId}`;
     if (groupId && accessCode && accessCode !== 'XXXX-XXXX-XXXX-XXXX') {
       try {
         const result = await studentService.joinGroup(accessCode);
-        if (result?.success) { navigate(`/patients/${groupId}`); return; }
+        if (result?.success) { navigate(`/patients/${groupId}`, { state: { adminReturnUrl } }); return; }
         window.alert('Unable to enroll in this simulation group. Taking you to the student dashboard instead.');
       } catch (error) {
         console.error('Unexpected error while enrolling as student:', error);

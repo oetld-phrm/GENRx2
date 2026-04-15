@@ -147,9 +147,10 @@ function InstructorSimulationGroupPage() {
   const handleSignOut = async () => { await signOut(); };
   const handleBackToAllGroups = () => navigate('/instructor');
   const handleStudentView = async () => {
+    const instructorReturnUrl = `/instructor/group/${groupId}`;
     if (groupId && accessCode && accessCode !== 'XXXX-XXXX-XXXX-XXXX') {
       const result = await studentService.joinGroup(accessCode);
-      if (result?.success) { navigate(`/patients/${groupId}`); return; }
+      if (result?.success) { navigate(`/patients/${groupId}`, { state: { adminReturnUrl: instructorReturnUrl } }); return; }
       window.alert('Unable to join this simulation group as a student. Redirecting to your student dashboard.');
     }
     navigate('/student');
