@@ -403,6 +403,105 @@ def handler(event, context):
                 "body": json.dumps({"error": f"Test debrief generation failed: {str(e)}"}),
             }
 
+    if mode == "test_system_prompt":
+        logger.info(f"🧪 TEST SYSTEM PROMPT MODE — chat with custom system prompt for persona={persona_id}")
+        try:
+            body = json.loads(event.get("body") or "{}")
+            custom_system_prompt = body.get("system_prompt", "").strip()
+            message_content = body.get("message_content", "").strip()
+
+            if not custom_system_prompt:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({"error": "system_prompt is required"}),
+                }
+
+            patient_name, patient_age, patient_prompt, llm_completion = get_persona_details(persona_id)
+            if patient_name is None:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({"error": "Persona not found"}),
+                }
+
+            if not message_content:
+                student_query = get_initial_student_query(patient_name)
+            else:
+                student_query = get_student_query(message_content)
+
+            llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=False)
+
+            db_secret = get_secret(DB_SECRET_NAME)
+            vectorstore_config_dict = {
+                'collection_name': persona_id,
+                'dbname': db_secret["dbname"],
+                'user': db_secret["username"],
+                'password': db_secret["password"],
+                'host': RDS_PROXY_ENDPOINT,
+                'port': db_secret["port"]
+            }
+
+            history_aware_retriever = get_vectorstore_retriever(
+                llm=llm,
+                vectorstore_config_dict=vectorstore_config_dict,
+                embeddings=embeddings
+            )
+
+            response = get_response(
+                query=student_query,
+                patient_name=patient_name,
+                llm=llm,
+                history_aware_retriever=history_aware_retriever,
+                table_name=TABLE_NAME,
+                session_id=session_id,
+                system_prompt=custom_system_prompt,
+                patient_age=patient_age,
+                patient_prompt=patient_prompt,
+                llm_completion=llm_completion,
+                stream=False,
+                student_user_id=student_user_id,
+                persona_id=persona_id,
+                embeddings_model=embeddings,
+                ddb_table_name=TABLE_NAME
+            )
+
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({
+                    "llm_output": response.get("llm_output", "LLM failed to create response"),
+                }),
+            }
+        except Exception as e:
+            logger.error(f"Test system prompt chat failed: {e}")
+            logger.exception("Full test system prompt error:")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({"error": f"Test system prompt chat failed: {str(e)}"}),
+            }
+
     # =========================================================================
     # DEFAULT CHAT MODE — existing flow below
     # =========================================================================
