@@ -478,7 +478,8 @@ def handler(event, context):
                 student_user_id=student_user_id,
                 persona_id=persona_id,
                 embeddings_model=embeddings,
-                ddb_table_name=TABLE_NAME
+                ddb_table_name=TABLE_NAME,
+                raw_prompt_mode=True
             )
 
             return {

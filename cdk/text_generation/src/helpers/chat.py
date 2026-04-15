@@ -199,7 +199,8 @@ def get_response(
     student_user_id: str = "",
     persona_id: str = "",
     embeddings_model=None,
-    ddb_table_name: str = None
+    ddb_table_name: str = None,
+    raw_prompt_mode: bool = False
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -230,23 +231,40 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    system_prompt = (
-        f"""
-        <|begin_of_text|>
-        <|start_header_id|>patient<|end_header_id|>
-        Please pay close attention to this: {system_prompt} 
-        Here are some additional details about your personality, symptoms, or overall condition: {patient_prompt}
-        {completion_string}
-        You are a patient named {patient_name}.
-         
-        {get_system_prompt(patient_name=patient_name).replace("{", "{{").replace("}", "}}")}
+    if raw_prompt_mode:
+        # In raw prompt mode (playground), use the provided prompts directly
+        # without appending the hardcoded patient behavior template
+        system_prompt = (
+            f"""
+            <|begin_of_text|>
+            <|start_header_id|>patient<|end_header_id|>
+            {system_prompt}
+            {patient_prompt}
+            You are named {patient_name}.
+            <|eot_id|>
+            <|start_header_id|>documents<|end_header_id|>
+            {{context}}
+            <|eot_id|>
+            """
+        )
+    else:
+        system_prompt = (
+            f"""
+            <|begin_of_text|>
+            <|start_header_id|>patient<|end_header_id|>
+            Please pay close attention to this: {system_prompt} 
+            Here are some additional details about your personality, symptoms, or overall condition: {patient_prompt}
+            {completion_string}
+            You are a patient named {patient_name}.
+             
+            {get_system_prompt(patient_name=patient_name).replace("{", "{{").replace("}", "}}")}
 
-        <|eot_id|>
-        <|start_header_id|>documents<|end_header_id|>
-        {{context}}
-        <|eot_id|>
-        """
-    )
+            <|eot_id|>
+            <|start_header_id|>documents<|end_header_id|>
+            {{context}}
+            <|eot_id|>
+            """
+        )
 
     print(f"🔍 System prompt for {patient_name}:\\n{system_prompt}")
     logger.info(f"🔍 System prompt, {patient_name}:\\n{system_prompt}")
