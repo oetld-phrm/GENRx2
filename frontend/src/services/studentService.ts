@@ -1000,9 +1000,27 @@ async function getPatients(simulationGroupId: string): Promise<Patient[]> {
     const data = await apiClient.request<any[]>(
       `student/simulation_group_page?email=${encodeURIComponent(user.email)}&simulation_group_id=${encodeURIComponent(simulationGroupId)}`
     );
-    return data.map((p) => ({
+
+    // Fetch profile picture URLs in parallel using the same get_all_files endpoint
+    // that works on the patient dashboard page
+    const profilePicPromises = data.map(async (p) => {
+      try {
+        const filesData = await apiClient.request<{
+          profile_picture_url?: string | null;
+        }>(
+          `student/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(p.persona_id)}&patient_name=patient`
+        );
+        return filesData.profile_picture_url ?? undefined;
+      } catch {
+        return undefined;
+      }
+    });
+    const profilePicUrls = await Promise.all(profilePicPromises);
+
+    return data.map((p, i) => ({
       patient_id: p.persona_id,
       patient_name: p.persona_name,
+      avatarUrl: profilePicUrls[i],
       debrief_status: p.is_completed ? 'debrief_reached' as const : 'not_started' as const,
       instructor_evaluation: p.persona_score > 0 ? 'Evaluated' : 'Not Evaluated',
     }));

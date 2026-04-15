@@ -25,7 +25,7 @@ function UserAvatar({ name, imageUrl, size = 'medium', backgroundColor }: UserAv
 
   return (
     <Avatar className={sizeClasses[size]}>
-      {imageUrl && <AvatarImage src={imageUrl} alt={name} />}
+      {imageUrl && <AvatarImage src={imageUrl} alt={name} crossOrigin="anonymous" />}
       <AvatarFallback
         className="font-semibold text-white select-none"
         style={{ backgroundColor: backgroundColor || UI_COLORS.avatar.fallback }}

@@ -69,6 +69,17 @@ def lambda_handler(event, context):
         "cbz": "application/vnd.comicbook+zip"
     }
 
+    # Allowed file types for profile pictures with their corresponding MIME types
+    allowed_profile_picture_types = {
+        'bmp': 'image/bmp', 'gif': 'image/gif',
+        'ico': 'image/vnd.microsoft.icon',
+        'jpeg': 'image/jpeg', 'jpg': 'image/jpeg',
+        'png': 'image/png',
+        'svg': 'image/svg+xml',
+        'tiff': 'image/tiff', 'tif': 'image/tiff',
+        'webp': 'image/webp',
+    }
+
     # Allowed file types for information and answer keys with their corresponding MIME types
     allowed_generic_types = {
         "pdf": "application/pdf",
