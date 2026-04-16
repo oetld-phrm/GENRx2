@@ -17,11 +17,18 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    date: 'April 16, 2026',
+    items: [
+      { feature: 'Prompt playground for admins', status: 'working', note: 'can simulate interactions with the Persona for both debrief and chat before saving it' },
+      { feature: 'Report issue dialog', status: 'not-working', note: 'UI exists but reports are not saved to the backend yet' },
+      { feature: 'Custom toast notifications', status: 'not-working', note: 'still using browser alert() dialogs — toast system not built yet' },
+      ],
+  },
+  {
     date: 'April 15, 2026',
     items: [
       { feature: 'Per-patient voice enable/disable toggle', status: 'working' },
-      { feature: 'Voice ID linked to patient persona in voice sessions', status: 'working' },
-      { feature: 'Sim group-wide voice toggle (enables/disables all patients)', status: 'working' },
+      { feature: 'Simulation group-wide toggle for voice (enables/disables all patients)', status: 'working' },
       { feature: 'Mic button hidden for students when voice is disabled', status: 'working' },
     ],
   },
