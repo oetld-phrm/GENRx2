@@ -64,6 +64,9 @@ function StudentChatPage() {
   const [sessionStatus, setSessionStatus] = useState<'active' | 'generating_debrief' | 'concluded'>('active');
   const [debriefData, setDebriefData] = useState<AIDebriefData | null>(null);
 
+  // Session completed — patient ended the conversation, student must conclude
+  const [sessionCompleted, setSessionCompleted] = useState(false);
+
   // State for content sidebar (physical assessment only)
   const [contentSidebarType, setContentSidebarType] = useState<'physical-assessment' | null>(null);
   const [personaMedia, setPersonaMedia] = useState<PersonaMedia[]>([]);
@@ -136,6 +139,7 @@ function StudentChatPage() {
    * Start a voice session when the mic button is clicked.
    */
   const handleStartVoiceMode = useCallback(() => {
+    if (sessionCompleted) return;
     setIsVoiceModeActive(true);
     setVoiceError(null);
     setVoiceSessionState('connecting');
@@ -207,6 +211,22 @@ function StudentChatPage() {
       simulation_group_id: groupId || '',
       voice_id: voiceId || '',
     }).then(() => {
+      // Listen for session completion from voice mode
+      if (socketRef.current) {
+        socketRef.current.on('diagnosis-complete', () => {
+          setSessionCompleted(true);
+          cleanupVoiceSession();
+          setIsVoiceModeActive(false);
+          // Final fetch to get remaining messages
+          const sid = sessionId || routeChatId || '';
+          if (sid) {
+            studentService.fetchMessages(sid).then((msgs) => {
+              if (msgs.length > 0) setMessages(msgs);
+            });
+          }
+        });
+      }
+
       // Start polling DB for messages every 2 seconds while voice mode is active
       const sid = sessionId || routeChatId || '';
       if (sid && !voicePollIntervalRef.current) {
@@ -257,6 +277,9 @@ function StudentChatPage() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       cleanupVoiceSession();
+      if (socketRef.current) {
+        socketRef.current.off('diagnosis-complete');
+      }
     };
   }, [cleanupVoiceSession]);
 
@@ -414,6 +437,9 @@ function StudentChatPage() {
           }]);
           setIsAiResponding(false);
         },
+        onSessionComplete: () => {
+          setSessionCompleted(true);
+        },
       },
     ).catch((err) => {
       console.error('AI greeting streaming failed:', err);
@@ -557,7 +583,7 @@ function StudentChatPage() {
    * Handle sending a message — uses AppSync streaming for real-time chunks
    */
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !groupId || !patientId || !sessionId || isAiResponding) return;
+    if (!inputMessage.trim() || !groupId || !patientId || !sessionId || isAiResponding || sessionCompleted) return;
 
     // Create student message
     const studentMessage: Message = {
@@ -621,6 +647,9 @@ function StudentChatPage() {
             );
             setIsAiResponding(false);
             cancelStreamRef.current = null;
+          },
+          onSessionComplete: () => {
+            setSessionCompleted(true);
           },
         },
       );
@@ -1067,7 +1096,7 @@ function StudentChatPage() {
           </div>
 
           {/* Message Input Area — only shown when session is active */}
-          {sessionStatus === 'active' && (
+          {sessionStatus === 'active' && !sessionCompleted && (
             <div className="p-6" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
               {isVoiceModeActive ? (
                 /* Voice mode controls — replaces text input */
@@ -1187,6 +1216,32 @@ function StudentChatPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Session completed — patient ended the conversation */}
+          {sessionStatus === 'active' && sessionCompleted && (
+            <div className="p-6" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
+              <div className="flex items-center gap-3 px-4 py-4 rounded-lg" style={{ backgroundColor: UI_COLORS.background.hoverLight }}>
+                <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: SIMULATION_GROUP_COLOR_PALETTE[1] }} />
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
+                    The patient has ended the conversation.
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: UI_COLORS.text.muted }}>
+                    Please conclude the interaction and submit your recommendations.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  className="text-white hover:opacity-90 border-0 whitespace-nowrap"
+                  style={{ backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[1] }}
+                  onClick={() => setIsConfirmConcludeOpen(true)}
+                >
+                  <CheckCircle className="w-4 h-4 mr-1.5" />
+                  Conclude Interaction
+                </Button>
+              </div>
             </div>
           )}
 

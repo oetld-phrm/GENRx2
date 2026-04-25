@@ -856,6 +856,7 @@ async function sendMessageStreaming(
     onChunk: (text: string) => void;
     onDone: (fullText: string) => void;
     onError: (error: Error) => void;
+    onSessionComplete?: () => void;
   },
 ): Promise<() => void> {
   let unsubscribe: (() => void) | null = null;
@@ -871,6 +872,9 @@ async function sendMessageStreaming(
           callbacks.onDone(event.content);
           // Clean up subscription after completion
           if (unsubscribe) unsubscribe();
+          break;
+        case 'session_complete':
+          callbacks.onSessionComplete?.();
           break;
         case 'error':
           callbacks.onError(new Error(event.content));

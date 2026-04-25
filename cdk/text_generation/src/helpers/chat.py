@@ -460,6 +460,10 @@ def generate_streaming_response(
         publish_to_appsync(session_id, {"type": "end", "content": full_response})
         ai_message_id = save_message_to_db(session_id, persona_id, 'ai', full_response)
 
+        # Signal the frontend to lock the chat if the patient ended the session
+        if "SESSION COMPLETED" in full_response:
+            publish_to_appsync(session_id, {"type": "session_complete", "content": ""})
+
         return full_response
 
     except Exception as e:
