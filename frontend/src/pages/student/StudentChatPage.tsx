@@ -111,6 +111,10 @@ function StudentChatPage() {
   // Ref for polling interval during voice mode
   const voicePollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Real-time voice bubble tracking
+  const currentVoiceBubbleRef = useRef<{ id: string; role: 'user' | 'assistant' } | null>(null);
+  const lastVoiceRoleRef = useRef<string | null>(null);
+
   // Session ID — set by createSession (new chat) or from route (existing chat)
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -195,11 +199,53 @@ function StudentChatPage() {
         }
         setVoiceSessionState('error');
       },
-      onTurnStart: () => {
-        // Text bubbles are populated via DB polling, not real-time events
+      onTurnStart: (role) => {
+        // Only create a new bubble when the role actually changes
+        if (role === lastVoiceRoleRef.current) return;
+        lastVoiceRoleRef.current = role;
+
+        const senderType = role === 'user' ? 'student' : 'ai';
+        const bubbleId = `voice-${role}-${Date.now()}`;
+        currentVoiceBubbleRef.current = { id: bubbleId, role };
+
+        setMessages((prev) => [...prev, {
+          message_id: bubbleId,
+          chat_id: chatId,
+          sender_type: senderType,
+          message_content: '',
+          sent_at: new Date().toISOString(),
+        }]);
       },
-      onTextMessage: () => {
-        // Text bubbles are populated via DB polling, not real-time events
+      onTextMessage: (text, role) => {
+        // Filter out system messages
+        if (text.includes('Nova Sonic ready')) return;
+
+        // If no bubble exists for this role, create one on the fly
+        if (!currentVoiceBubbleRef.current || currentVoiceBubbleRef.current.role !== role) {
+          const senderType = role === 'user' ? 'student' : 'ai';
+          const bubbleId = `voice-${role}-${Date.now()}`;
+          currentVoiceBubbleRef.current = { id: bubbleId, role };
+          lastVoiceRoleRef.current = role;
+
+          setMessages((prev) => [...prev, {
+            message_id: bubbleId,
+            chat_id: chatId,
+            sender_type: senderType,
+            message_content: text,
+            sent_at: new Date().toISOString(),
+          }]);
+          return;
+        }
+
+        // Append text to the active bubble
+        const bubbleId = currentVoiceBubbleRef.current.id;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.message_id === bubbleId
+              ? { ...m, message_content: m.message_content + (m.message_content ? ' ' : '') + text }
+              : m
+          )
+        );
       },
     });
 
@@ -214,33 +260,37 @@ function StudentChatPage() {
       // Listen for session completion from voice mode
       if (socketRef.current) {
         socketRef.current.on('diagnosis-complete', () => {
-          // Delay cleanup to let the AI finish speaking the goodbye message
+          // Lock input immediately so the student can't send more messages
+          setSessionCompleted(true);
+
+          // Let the AI finish speaking — wait until all scheduled audio has played.
+          // nextPlayTime tracks when the last queued audio chunk ends.
+          const client = audioClientRef.current;
+          const playbackCtx = client ? (client as unknown as { playbackContext: AudioContext | null }).playbackContext : null;
+          const nextPlay = client ? (client as unknown as { nextPlayTime: number }).nextPlayTime : 0;
+          const now = playbackCtx ? playbackCtx.currentTime : 0;
+          const remainingAudio = Math.max(0, nextPlay - now);
+          // Add a 1-second buffer after audio finishes, minimum 2 seconds
+          const delay = Math.max(2000, (remainingAudio + 1) * 1000);
+
           setTimeout(() => {
-            setSessionCompleted(true);
             cleanupVoiceSession();
             setIsVoiceModeActive(false);
-            // Final fetch to get remaining messages
+            currentVoiceBubbleRef.current = null;
+            lastVoiceRoleRef.current = null;
+            // Final fetch to replace real-time bubbles with persisted DB messages
             const sid = sessionId || routeChatId || '';
             if (sid) {
               studentService.fetchMessages(sid).then((msgs) => {
                 if (msgs.length > 0) setMessages(msgs);
               });
             }
-          }, 5000);
+          }, delay);
         });
       }
 
-      // Start polling DB for messages every 2 seconds while voice mode is active
-      const sid = sessionId || routeChatId || '';
-      if (sid && !voicePollIntervalRef.current) {
-        voicePollIntervalRef.current = setInterval(() => {
-          studentService.fetchMessages(sid).then((msgs) => {
-            if (msgs.length > 0) {
-              setMessages(msgs);
-            }
-          }).catch(() => { /* ignore polling errors */ });
-        }, 2000);
-      }
+      // DB polling removed — real-time text events populate bubbles during voice mode.
+      // Messages are fetched from DB when voice mode ends (handleStopVoiceMode).
     }).catch((err) => {
       console.error('[VoiceMode] Failed to connect:', err);
       const msg = err instanceof Error ? err.message : 'Failed to start voice session';
@@ -260,7 +310,10 @@ function StudentChatPage() {
   const handleStopVoiceMode = useCallback(() => {
     cleanupVoiceSession();
     setIsVoiceModeActive(false);
-    // Final fetch to get any remaining messages
+    // Reset voice bubble tracking
+    currentVoiceBubbleRef.current = null;
+    lastVoiceRoleRef.current = null;
+    // Final fetch to replace real-time bubbles with persisted DB messages
     const sid = sessionId || routeChatId || '';
     if (sid) {
       studentService.fetchMessages(sid).then((msgs) => {
