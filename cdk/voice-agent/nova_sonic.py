@@ -795,10 +795,11 @@ class NovaSonic:
             if prev_role == "ASSISTANT" and new_role != "ASSISTANT":
                 if self._buffered_ai_message and self._buffered_ai_message != self._last_persisted_ai_message:
                     try:
-                        chat_history.add_message(self.session_id, "ai", self._buffered_ai_message)
-                        self._save_message_to_db(self.session_id, False, self._buffered_ai_message, None)
+                        cleaned = self._clean_transcript(self._buffered_ai_message)
+                        chat_history.add_message(self.session_id, "ai", cleaned)
+                        self._save_message_to_db(self.session_id, False, cleaned, None)
                         self._last_persisted_ai_message = self._buffered_ai_message
-                        logger.info("💬 [PERSIST] AI | %s | %s", self.session_id, self._buffered_ai_message[:30])
+                        logger.info("💬 [PERSIST] AI | %s | %s", self.session_id, cleaned[:30])
                     except Exception as e:
                         logger.error("Failed to persist buffered AI message: %s", e)
                 self._buffered_ai_message = ""
@@ -858,14 +859,26 @@ class NovaSonic:
                 text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
 
             if effective_role == "ASSISTANT":
-                self._buffered_ai_message += text
+                if self._buffered_ai_message:
+                    if self._buffered_ai_message.endswith(" ") or text.startswith(" "):
+                        self._buffered_ai_message += text
+                    else:
+                        self._buffered_ai_message += " " + text
+                else:
+                    self._buffered_ai_message = text
                 await self._emit({"type": "text", "text": text, "role": "assistant"})
                 if diagnosis_achieved and self.llm_completion:
                     await self._emit({"type": "diagnosis_complete", "text": "Session completed successfully"})
 
             elif effective_role == "USER":
                 await self._emit({"type": "user-text", "text": text})
-                self._current_user_input += text
+                if self._current_user_input:
+                    if self._current_user_input.endswith(" ") or text.startswith(" "):
+                        self._current_user_input += text
+                    else:
+                        self._current_user_input += " " + text
+                else:
+                    self._current_user_input = text
 
         # ── audioOutput ───────────────────────────────────────────────
         elif "audioOutput" in evt:
@@ -876,6 +889,24 @@ class NovaSonic:
     # Database helpers
     # ------------------------------------------------------------------
 
+    def _clean_transcript(self, text):
+        """Basic capitalization and whitespace cleanup for voice transcripts.
+
+        Handles the most visible issues from speech-to-text output:
+        - Capitalizes the first letter of the message
+        - Capitalizes after sentence-ending punctuation (. ? !)
+        - Capitalizes the standalone pronoun "i"
+        - Collapses any double+ spaces into a single space
+        """
+        text = text.strip()
+        if not text:
+            return text
+        text = text[0].upper() + text[1:]
+        text = re.sub(r'([.?!]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+        text = re.sub(r'\bi\b', 'I', text)
+        text = re.sub(r' {2,}', ' ', text)
+        return text
+
     async def _save_user_message_async(self, user_text):
         """Persist a complete user message to PostgreSQL + DynamoDB, then trigger matching.
 
@@ -884,6 +915,7 @@ class NovaSonic:
         to tag which key questions this message addresses (used by debrief).
         """
         try:
+            user_text = self._clean_transcript(user_text)
             loop = asyncio.get_event_loop()
             message_id = await loop.run_in_executor(
                 None, self._save_message_to_db, self.session_id, True, user_text, None
