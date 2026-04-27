@@ -2254,7 +2254,7 @@ def generate_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.85
+        REWRITE_THRESHOLD = 0.65
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:
@@ -2590,7 +2590,7 @@ def generate_test_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.85
+        REWRITE_THRESHOLD = 0.65
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:
