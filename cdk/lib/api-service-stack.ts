@@ -1080,10 +1080,8 @@ export class ApiServiceStack extends cdk.Stack {
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-        // Cohere Embed v4 — cross-region inference from ca-central-1
+        // Cohere Embed v4 — called directly in us-east-1
         "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0",
-        `arn:aws:bedrock:${this.region}::inference-profile/us.cohere.embed-v4:0`,
-        `arn:aws:bedrock:*::foundation-model/cohere.embed-v4:0`,
         `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });

@@ -6,8 +6,8 @@ Cohere Embed v4's different API format:
   - Request: { "texts": [...], "input_type": "search_query"|"search_document", "embedding_types": ["float"] }
   - Response: { "embeddings": { "float": [[...]] } }
 
-Uses cross-region inference profile (us.cohere.embed-v4:0) when the
-model ID starts with "cohere.embed".
+Uses the direct model ID (cohere.embed-v4:0) with a bedrock-runtime
+client pointed at us-east-1 (where the model is available).
 """
 
 import json
@@ -25,11 +25,7 @@ class CohereBedrockEmbeddings(Embeddings):
     """
 
     def __init__(self, *, model_id: str, client, region_name: str):
-        # Use cross-region inference profile for Cohere models
-        if model_id.startswith("cohere.embed"):
-            self.model_id = f"us.{model_id}"
-        else:
-            self.model_id = model_id
+        self.model_id = model_id
         self.client = client
         self.region_name = region_name
         logger.info(f"CohereBedrockEmbeddings initialized with model_id={self.model_id}")

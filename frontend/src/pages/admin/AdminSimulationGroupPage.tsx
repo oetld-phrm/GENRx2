@@ -260,7 +260,15 @@ function AdminSimulationGroupPage() {
     setActiveSection('editPatient');
   };
   const handleBackFromEditPatient = () => { patientEditor.stopEditing(); setActiveSection('patients'); };
-  const handleSavePatientChanges = async () => { await patientEditor.savePatient(); };
+  const handleSavePatientChanges = async () => {
+    try {
+      await patientEditor.savePatient();
+      alert('Changes saved successfully.');
+    } catch (error) {
+      console.error('Failed to save patient changes:', error);
+      alert('Failed to save changes. Please try again.');
+    }
+  };
   const handleCreateNewPatient = () => { patientEditor.startCreating(); setActiveSection('editPatient'); };
   const handleTogglePatientVoice = async (patientId: string, enabled: boolean) => {
     groupData.setManageablePatients(prev =>
