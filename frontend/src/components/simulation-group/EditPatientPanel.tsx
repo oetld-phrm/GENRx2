@@ -337,6 +337,7 @@ function InfoTab({
                     file={file}
                     fileType={type}
                     onSaveDisplayName={patientEditor.handleDisplayNameSave}
+                    onDelete={patientEditor.handleFileDelete}
                   />
                 ))}
               </div>
@@ -371,10 +372,12 @@ function FileDisplayNameRow({
   file,
   fileType,
   onSaveDisplayName,
+  onDelete,
 }: {
   file: import('@/services/instructorService').UploadedFileInfo;
   fileType: 'llm' | 'patientInfo' | 'answerKey';
   onSaveDisplayName: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string, displayName: string) => Promise<void>;
+  onDelete: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string) => Promise<void>;
 }) {
   const [localName, setLocalName] = useState(file.displayName || '');
   const [saving, setSaving] = useState(false);
@@ -419,6 +422,16 @@ function FileDisplayNameRow({
           />
           {saving && <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: UI_COLORS.text.muted }} />}
           {saved && <CheckCircle className="w-3 h-3 flex-shrink-0" style={{ color: '#16a34a' }} />}
+          <button
+            onClick={() => onDelete(fileType, file.filename)}
+            className="p-1 rounded transition-colors flex-shrink-0"
+            style={{ color: UI_COLORS.text.muted }}
+            onMouseEnter={(e) => e.currentTarget.style.color = '#dc2626'}
+            onMouseLeave={(e) => e.currentTarget.style.color = UI_COLORS.text.muted}
+            title="Delete file"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </div>
