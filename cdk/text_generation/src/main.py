@@ -27,6 +27,10 @@ APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm", region_name=REGION)
 bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
+# Cohere Embed v4 cross-region inference (us.*) requires a US source region.
+# When deployed outside the US (e.g. ca-central-1), route embedding calls to us-east-1.
+BEDROCK_EMBEDDING_REGION = os.environ.get("BEDROCK_EMBEDDING_REGION", "us-east-1")
+bedrock_embedding_client = boto3.client("bedrock-runtime", region_name=BEDROCK_EMBEDDING_REGION)
 
 # Cached resources
 connection = None
@@ -76,14 +80,14 @@ def initialize_constants():
         if EMBEDDING_MODEL_ID.startswith("cohere.embed"):
             embeddings = CohereBedrockEmbeddings(
                 model_id=EMBEDDING_MODEL_ID,
-                client=bedrock_runtime,
-                region_name=REGION,
+                client=bedrock_embedding_client,
+                region_name=BEDROCK_EMBEDDING_REGION,
             )
         else:
             embeddings = BedrockEmbeddings(
                 model_id=EMBEDDING_MODEL_ID,
-                client=bedrock_runtime,
-                region_name=REGION,
+                client=bedrock_embedding_client,
+                region_name=BEDROCK_EMBEDDING_REGION,
             )
     
     create_dynamodb_history_table(TABLE_NAME)
