@@ -5,6 +5,7 @@ import boto3
 import logging
 import psycopg
 from langchain_aws import BedrockEmbeddings
+from helpers.cohere_embeddings import CohereBedrockEmbeddings
 
 from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table
 
@@ -72,11 +73,18 @@ def initialize_constants():
     TABLE_NAME = get_parameter(TABLE_NAME_PARAM, TABLE_NAME)
 
     if embeddings is None:
-        embeddings = BedrockEmbeddings(
-            model_id=EMBEDDING_MODEL_ID,
-            client=bedrock_runtime,
-            region_name=REGION,
-        )
+        if EMBEDDING_MODEL_ID.startswith("cohere.embed"):
+            embeddings = CohereBedrockEmbeddings(
+                model_id=EMBEDDING_MODEL_ID,
+                client=bedrock_runtime,
+                region_name=REGION,
+            )
+        else:
+            embeddings = BedrockEmbeddings(
+                model_id=EMBEDDING_MODEL_ID,
+                client=bedrock_runtime,
+                region_name=REGION,
+            )
     
     create_dynamodb_history_table(TABLE_NAME)
 

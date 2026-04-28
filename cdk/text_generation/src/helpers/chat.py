@@ -1011,7 +1011,7 @@ def match_message_to_questions(
 ) -> list[dict]:
     """
     Compute embedding for a student message, compare against cached question
-    embeddings, and persist matches that exceed the 0.55 threshold.
+    embeddings, and persist matches that exceed the 0.40 threshold.
 
     Classification tiers:
         >= 0.70  → "high"

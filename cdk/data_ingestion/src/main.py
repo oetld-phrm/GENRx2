@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple
 
 from helpers.vectorstore import update_vectorstore
+from helpers.cohere_embeddings import CohereBedrockEmbeddings
 from langchain_aws import BedrockEmbeddings
 
 # Set up basic logging
@@ -273,11 +274,19 @@ def update_vectorstore_from_s3(bucket, simulation_group_id, persona_id, file_pat
         logger.error("Database connection failed. Unable to query embeddings.")
         raise
     
-    embeddings = BedrockEmbeddings(
-        model_id=get_parameter(), 
-        client=bedrock_runtime,
-        region_name=REGION
-    )
+    embedding_model_id = get_parameter()
+    if embedding_model_id.startswith("cohere.embed"):
+        embeddings = CohereBedrockEmbeddings(
+            model_id=embedding_model_id,
+            client=bedrock_runtime,
+            region_name=REGION,
+        )
+    else:
+        embeddings = BedrockEmbeddings(
+            model_id=embedding_model_id, 
+            client=bedrock_runtime,
+            region_name=REGION
+        )
 
     secret = get_secret()
 
