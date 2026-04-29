@@ -220,7 +220,8 @@ def get_response(
     persona_id: str = "",
     embeddings_model=None,
     ddb_table_name: str = None,
-    raw_prompt_mode: bool = False
+    raw_prompt_mode: bool = False,
+    is_initial_prompt: bool = False
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -229,8 +230,11 @@ def get_response(
     
     # Save the student's message for non-streaming only;
     # streaming path saves are handled inside generate_streaming_response.
+    # Skip saving and matching for the initial system-generated prompt that
+    # kicks off the AI patient — it is not a real student message and should
+    # never appear in debrief suggested rewrites.
     student_message_id = None
-    if not stream:
+    if not stream and not is_initial_prompt:
         student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
         if student_message_id is not None and embeddings_model is not None and query.strip():
             run_matching_async(
@@ -321,7 +325,8 @@ def get_response(
                 student_user_id=student_user_id,
                 persona_id=persona_id,
                 embeddings_model=embeddings_model,
-                ddb_table_name=ddb_table_name
+                ddb_table_name=ddb_table_name,
+                is_initial_prompt=is_initial_prompt
             )
         else:
             response = generate_response(
@@ -366,7 +371,8 @@ def generate_streaming_response(
     student_user_id: str = "",
     persona_id: str = "",
     embeddings_model=None,
-    ddb_table_name: str = None
+    ddb_table_name: str = None,
+    is_initial_prompt: bool = False
 ) -> str:
     """
     Streams an answer via AppSync as fast as possible.
@@ -407,15 +413,18 @@ def generate_streaming_response(
     try:
         logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")
         # Empathy evaluation disabled
-        student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
-        if student_message_id is not None and embeddings_model is not None and query.strip():
-            run_matching_async(
-                message_content=query,
-                session_id=session_id,
-                message_id=student_message_id,
-                embeddings_model=embeddings_model,
-                table_name=ddb_table_name,
-            )
+        # Skip saving and matching for the initial system-generated prompt —
+        # it is not a real student message.
+        if not is_initial_prompt:
+            student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
+            if student_message_id is not None and embeddings_model is not None and query.strip():
+                run_matching_async(
+                    message_content=query,
+                    session_id=session_id,
+                    message_id=student_message_id,
+                    embeddings_model=embeddings_model,
+                    table_name=ddb_table_name,
+                )
 
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 
@@ -1151,8 +1160,11 @@ def flush_matching_threads(session_id: str, timeout: float = 30.0) -> None:
 
 def fetch_tagged_messages(session_id: str) -> list[dict]:
     """
-    Fetch messages with non-NULL matched_question_ids for a session.
+    Fetch student messages with non-NULL matched_question_ids for a session.
     Returns list of {message_id, message_content, sender_type, sent_at, matched_question_ids}.
+
+    Only student messages are included — AI/system messages should never
+    appear in debrief question matching or suggested rewrites.
     """
     try:
         conn = _get_db_connection()
@@ -1160,9 +1172,9 @@ def fetch_tagged_messages(session_id: str) -> list[dict]:
         cursor.execute(
             'SELECT message_id, message_content, sender_type, sent_at, matched_question_ids '
             'FROM "messages" '
-            'WHERE chat_id = %s AND matched_question_ids IS NOT NULL '
+            'WHERE chat_id = %s AND matched_question_ids IS NOT NULL AND sender_type = %s '
             'ORDER BY sent_at ASC',
-            (session_id,)
+            (session_id, 'student')
         )
         rows = cursor.fetchall()
         cursor.close()
