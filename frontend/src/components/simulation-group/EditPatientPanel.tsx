@@ -6,7 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import UserAvatar from '@/components/UserAvatar';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import type { UsePatientEditorReturn } from '@/hooks/usePatientEditor';
-import { instructorService, type OrganizationLabels, type GlobalRubricQuestion, type CaseMaterial } from '@/services/instructorService';
+import { instructorService, type OrganizationLabels, type GlobalRubricQuestion, type CaseMaterial, type UploadedFileInfo } from '@/services/instructorService';
 
 export interface EditPatientPanelProps {
   patientEditor: UsePatientEditorReturn;
@@ -159,6 +159,8 @@ function InfoTab({
   labels: OrganizationLabels;
   onSavePatient: () => Promise<void>;
 }) {
+  const [previewFile, setPreviewFile] = useState<UploadedFileInfo | null>(null);
+
   return (
     <div className="space-y-6 max-w-2xl">
       <h3 className="text-2xl font-semibold" style={{ color: UI_COLORS.text.heading }}>
@@ -328,18 +330,50 @@ function InfoTab({
               </div>
             </div>
 
-            {/* Uploaded files list with display name inputs */}
+            {/* Uploaded files list / inline preview */}
             {patientEditor.uploadedFiles[type].length > 0 && (
-              <div className="space-y-2 pt-1">
-                {patientEditor.uploadedFiles[type].map((file) => (
-                  <FileDisplayNameRow
-                    key={file.filename}
-                    file={file}
-                    fileType={type}
-                    onSaveDisplayName={patientEditor.handleDisplayNameSave}
-                    onDelete={patientEditor.handleFileDelete}
-                  />
-                ))}
+              <div className="pt-1">
+                {previewFile && patientEditor.uploadedFiles[type].some(f => f.filename === previewFile.filename) ? (
+                  <div className="flex flex-col">
+                    <button
+                      onClick={() => setPreviewFile(null)}
+                      className="flex items-center gap-1 text-sm mb-3 bg-transparent border-0 cursor-pointer p-0 transition-colors"
+                      style={{ color: UI_COLORS.text.body }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = UI_COLORS.text.heading}
+                      onMouseLeave={(e) => e.currentTarget.style.color = UI_COLORS.text.body}
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Back to files
+                    </button>
+                    <h4 className="font-semibold text-sm mb-2" style={{ color: UI_COLORS.text.heading }}>
+                      {previewFile.displayName || previewFile.filename}
+                    </h4>
+                    {previewFile.url ? (
+                      <iframe
+                        src={previewFile.url}
+                        title={previewFile.displayName || previewFile.filename}
+                        className="w-full rounded border"
+                        style={{ borderColor: UI_COLORS.border.default, minHeight: '400px' }}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <p className="text-xs" style={{ color: UI_COLORS.text.muted }}>No preview available for this file.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {patientEditor.uploadedFiles[type].map((file) => (
+                      <FileDisplayNameRow
+                        key={file.filename}
+                        file={file}
+                        fileType={type}
+                        onSaveDisplayName={patientEditor.handleDisplayNameSave}
+                        onDelete={patientEditor.handleFileDelete}
+                        onPreview={setPreviewFile}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -373,11 +407,13 @@ function FileDisplayNameRow({
   fileType,
   onSaveDisplayName,
   onDelete,
+  onPreview,
 }: {
   file: import('@/services/instructorService').UploadedFileInfo;
   fileType: 'llm' | 'patientInfo' | 'answerKey';
   onSaveDisplayName: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string, displayName: string) => Promise<void>;
   onDelete: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string) => Promise<void>;
+  onPreview: (file: import('@/services/instructorService').UploadedFileInfo) => void;
 }) {
   const [localName, setLocalName] = useState(file.displayName || '');
   const [saving, setSaving] = useState(false);
@@ -422,6 +458,16 @@ function FileDisplayNameRow({
           />
           {saving && <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: UI_COLORS.text.muted }} />}
           {saved && <CheckCircle className="w-3 h-3 flex-shrink-0" style={{ color: '#16a34a' }} />}
+          <button
+            onClick={() => onPreview(file)}
+            className="p-1 rounded transition-colors flex-shrink-0"
+            style={{ color: UI_COLORS.text.muted }}
+            onMouseEnter={(e) => e.currentTarget.style.color = UI_COLORS.text.heading}
+            onMouseLeave={(e) => e.currentTarget.style.color = UI_COLORS.text.muted}
+            title="Preview file"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={() => onDelete(fileType, file.filename)}
             className="p-1 rounded transition-colors flex-shrink-0"
