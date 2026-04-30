@@ -36,7 +36,7 @@ from aws_sdk_bedrock_runtime.config import (
     HTTPAuthSchemeResolver,
     SigV4AuthScheme,
 )
-from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
+from smithy_aws_core.identity import EnvironmentCredentialsResolver
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("voice_preview_tts")
@@ -76,8 +76,8 @@ def make_client() -> BedrockRuntimeClient:
         endpoint_uri=f"https://bedrock-runtime.{REGION}.amazonaws.com",
         region=REGION,
         aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
-        http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
-        http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
+        auth_scheme_resolver=HTTPAuthSchemeResolver(),
+        auth_schemes={"aws.auth#sigv4": SigV4AuthScheme(service="bedrock")},
     )
     return BedrockRuntimeClient(config=config)
 
