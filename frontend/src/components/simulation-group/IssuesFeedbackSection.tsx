@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trash2, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import type { IssueReport, DebriefFeedback } from '@/services/adminApiService';
 
 export interface IssuesFeedbackSectionProps {
@@ -53,6 +54,16 @@ export function IssuesFeedbackSection({
   const [expandedReportIds, setExpandedReportIds] = useState<Set<string>>(new Set());
   const [expandedFeedbackIds, setExpandedFeedbackIds] = useState<Set<string>>(new Set());
 
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'issue' | 'feedback'; id: string } | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.type === 'issue') onDeleteIssueReport(deleteTarget.id);
+    else onDeleteDebriefFeedback(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
   // Summary stats
   const totalReports = issueReports.length;
   const totalFeedback = debriefFeedback.length;
@@ -62,7 +73,7 @@ export function IssuesFeedbackSection({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <p style={{ color: UI_COLORS.text.muted }}>Loading issues &amp; feedback...</p>
+        <LoadingIndicator size="md" message="Loading issues & feedback..." />
       </div>
     );
   }
@@ -221,7 +232,7 @@ export function IssuesFeedbackSection({
                     </div>
                     <div>
                       <button
-                        onClick={() => onDeleteIssueReport(report.report_id)}
+                        onClick={() => setDeleteTarget({ type: 'issue', id: report.report_id })}
                         className="p-2 rounded-md transition-colors"
                         style={{ border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
                         onMouseEnter={(e) => {
@@ -354,7 +365,7 @@ export function IssuesFeedbackSection({
                     </div>
                     <div>
                       <button
-                        onClick={() => onDeleteDebriefFeedback(fb.feedback_id)}
+                        onClick={() => setDeleteTarget({ type: 'feedback', id: fb.feedback_id })}
                         className="p-2 rounded-md transition-colors"
                         style={{ border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
                         onMouseEnter={(e) => {
@@ -388,6 +399,40 @@ export function IssuesFeedbackSection({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: UI_COLORS.background.overlay }}>
+          <div className="rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4" style={{ backgroundColor: UI_COLORS.background.white }}>
+            <h2 className="text-2xl font-bold mb-4" style={{ color: UI_COLORS.text.heading }}>
+              Delete {deleteTarget.type === 'issue' ? 'Issue Report' : 'Debrief Feedback'}
+            </h2>
+            <p className="text-base mb-8" style={{ color: UI_COLORS.text.body }}>
+              Are you sure you want to delete this {deleteTarget.type === 'issue' ? 'issue report' : 'feedback entry'}? This action is irreversible.
+            </p>
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="px-6 py-3 rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: UI_COLORS.button.primary, color: UI_COLORS.button.text }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-6 py-3 rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: UI_COLORS.status.error, color: UI_COLORS.button.text }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

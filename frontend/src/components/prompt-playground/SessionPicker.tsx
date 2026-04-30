@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { instructorService, type CompletedSession } from '@/services/instructorService';
 
 interface SessionPickerProps {
@@ -119,8 +120,7 @@ function SessionPicker({ simulationGroupId, onSessionSelect, selectedSession }: 
         >
           {isLoading ? (
             <span className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading sessions...
+              <LoadingIndicator size="sm" message="Loading sessions..." />
             </span>
           ) : selectedSession ? (
             <span className="truncate">

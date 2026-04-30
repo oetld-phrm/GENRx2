@@ -10,6 +10,7 @@ import {type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
 import * as adminApi from '@/services/adminApiService';
+import LoadingIndicator from '@/components/LoadingIndicator';
 
 /**
  * AdminOrganizationPage Component
@@ -191,7 +192,7 @@ function AdminOrganizationPage() {
     return (
       <PageContainer>
         <div className="flex items-center justify-center h-full">
-          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+          <LoadingIndicator size="lg" message="Loading..." />
         </div>
       </PageContainer>
     );

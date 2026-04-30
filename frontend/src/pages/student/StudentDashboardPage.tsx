@@ -6,6 +6,7 @@ import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import JoinGroupDialog from '@/components/JoinGroupDialog';
 import { studentService, type SimulationGroup, type UserData } from '@/services/studentService';
 import { useAuth } from '@/App';
+import LoadingIndicator from '@/components/LoadingIndicator';
 
 /**
  * StudentDashboardPage Component
@@ -98,7 +99,7 @@ function StudentDashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-lg text-gray-500">Loading dashboard...</div>
+        <LoadingIndicator size="lg" message="Loading dashboard..." />
       </div>
     );
   }

@@ -6,6 +6,7 @@ import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
 import { useAuth } from '@/App';
+import LoadingIndicator from '@/components/LoadingIndicator';
 
 /**
  * InstructorDashboardPage Component
@@ -95,7 +96,7 @@ function InstructorDashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-500">Loading...</div>
+        <LoadingIndicator size="lg" message="Loading..." />
       </div>
     );
   }

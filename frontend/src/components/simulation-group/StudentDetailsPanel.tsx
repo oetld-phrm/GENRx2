@@ -1,6 +1,7 @@
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import UserAvatar from '@/components/UserAvatar';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import type { StudentDetails, StudentPatientData, OrganizationLabels } from '@/services/instructorService';
 
@@ -89,8 +90,7 @@ export function StudentDetailsPanel({
         <nav className="flex-1 px-6 space-y-4">
           {studentDetailsLoading ? (
             <div className="flex items-center gap-2 text-sm" style={{ color: UI_COLORS.text.muted }}>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading...
+              <LoadingIndicator size="sm" message="Loading..." />
             </div>
           ) : studentDetails ? (
             <>
@@ -425,7 +425,7 @@ export function StudentDetailsPanel({
                             >
                               {isFetchingDebrief === attempt.id ? (
                                 <span className="flex items-center gap-2">
-                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <LoadingIndicator size="sm" />
                                   Loading...
                                 </span>
                               ) : (

@@ -1,6 +1,7 @@
 // Initialize Amplify config before anything else
 import '@/config/aws-config';
 
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import LoginPage from './pages/LoginPage';
@@ -44,7 +45,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-500">Loading...</div>
+        <LoadingIndicator size="lg" message="Loading..." />
       </div>
     );
   }

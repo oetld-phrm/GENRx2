@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { UI_COLORS } from '@/lib/colors';
 import { getAllInstructors, type AdminInstructor } from '@/services/adminApiService';
+import LoadingIndicator from '@/components/LoadingIndicator';
 
 export type AdminCreateData = { name: string; description: string; instructors: string; systemPrompt: string; active: boolean; enableVoice: boolean };
 export type InstructorCreateData = { name: string; description: string; active: boolean };
@@ -215,8 +216,8 @@ function CreateSimulationGroupDialog({
                     }}
                   >
                     {loadingInstructors ? (
-                      <div className="px-3 py-2 text-sm" style={{ color: UI_COLORS.text.muted }}>
-                        Loading instructors...
+                      <div className="px-3 py-2">
+                        <LoadingIndicator size="sm" message="Loading instructors..." />
                       </div>
                     ) : availableInstructors.length === 0 ? (
                       <div className="px-3 py-2 text-sm" style={{ color: UI_COLORS.text.muted }}>
