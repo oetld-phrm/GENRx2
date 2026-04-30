@@ -36,7 +36,7 @@ from aws_sdk_bedrock_runtime.config import (
     HTTPAuthSchemeResolver,
     SigV4AuthScheme,
 )
-from smithy_aws_core.identity import EnvironmentCredentialsResolver
+from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("voice_preview_tts")
@@ -58,24 +58,13 @@ def emit(obj: dict):
 
 
 def make_client() -> BedrockRuntimeClient:
-    # Inject boto3 credentials into env for the Bedrock SDK
-    session = boto3.Session()
-    creds = session.get_credentials()
-    if creds:
-        frozen = creds.get_frozen_credentials()
-        if frozen.access_key:
-            os.environ["AWS_ACCESS_KEY_ID"] = frozen.access_key
-        if frozen.secret_key:
-            os.environ["AWS_SECRET_ACCESS_KEY"] = frozen.secret_key
-        if frozen.token:
-            os.environ["AWS_SESSION_TOKEN"] = frozen.token
-
+    # Credentials come from env vars set by server.js (STS via Cognito)
     config = Config(
         endpoint_uri=f"https://bedrock-runtime.{REGION}.amazonaws.com",
         region=REGION,
         aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
-        auth_scheme_resolver=HTTPAuthSchemeResolver(),
-        auth_schemes={"aws.auth#sigv4": SigV4AuthScheme(service="bedrock")},
+        http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
+        http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
     )
     return BedrockRuntimeClient(config=config)
 
