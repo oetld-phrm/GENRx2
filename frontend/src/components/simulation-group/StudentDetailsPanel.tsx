@@ -1,4 +1,4 @@
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import UserAvatar from '@/components/UserAvatar';
 import LoadingIndicator from '@/components/LoadingIndicator';

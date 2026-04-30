@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronDown, RefreshCw } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { instructorService, type CompletedSession } from '@/services/instructorService';
