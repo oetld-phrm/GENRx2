@@ -162,7 +162,46 @@ async def run_tts(voice_id: str, text: str):
         }
     })
 
-    # 4) User text input — the text to speak
+    # 4) Dummy audio input to satisfy Nova Sonic's "at least one audio content" requirement
+    audio_content = str(uuid.uuid4())
+    await send_event(stream, {
+        "event": {
+            "contentStart": {
+                "promptName": prompt_name,
+                "contentName": audio_content,
+                "type": "AUDIO",
+                "role": "USER",
+                "audioInputConfiguration": {
+                    "mediaType": "audio/lpcm",
+                    "sampleRateHertz": 16000,
+                    "sampleSizeBits": 16,
+                    "channelCount": 1,
+                    "audioType": "SPEECH",
+                    "encoding": "base64",
+                },
+            }
+        }
+    })
+    # Send 0.1s of silence (16000 Hz × 2 bytes × 0.1s = 3200 zero bytes)
+    await send_event(stream, {
+        "event": {
+            "audioInput": {
+                "promptName": prompt_name,
+                "contentName": audio_content,
+                "content": base64.b64encode(b"\x00" * 3200).decode("utf-8"),
+            }
+        }
+    })
+    await send_event(stream, {
+        "event": {
+            "contentEnd": {
+                "promptName": prompt_name,
+                "contentName": audio_content,
+            }
+        }
+    })
+
+    # 5) User text input — the text to speak
     user_content = str(uuid.uuid4())
     await send_event(stream, {
         "event": {
@@ -194,6 +233,7 @@ async def run_tts(voice_id: str, text: str):
         }
     })
 
+    # 6) Signal that the prompt is complete
     await send_event(stream, {
         "event": {
             "promptEnd": {
@@ -204,7 +244,7 @@ async def run_tts(voice_id: str, text: str):
 
     emit({"type": "ready"})
 
-    # 5) Read audio from the response stream
+    # 7) Read audio from the response stream
     decoder = json.JSONDecoder()
     buffer = ""
     audio_count = 0
