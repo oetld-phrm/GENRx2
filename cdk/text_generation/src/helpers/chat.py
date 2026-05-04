@@ -10,6 +10,15 @@ logger.setLevel(logging.INFO)
 _matching_threads_lock = threading.Lock()
 _matching_threads: dict[str, list[threading.Thread]] = {}  # session_id -> [threads]
 
+# Stream callback URL — when set, publish_stream_event() POSTs chunks here
+# instead of AppSync. Set by main.py from the stream_callback_url query param.
+_stream_callback_url: str | None = None
+
+def set_stream_callback_url(url: str | None):
+    """Set the callback URL for streaming events. Called by main.py per request."""
+    global _stream_callback_url
+    _stream_callback_url = url
+
 from langchain_aws import ChatBedrock
 from langchain_aws import BedrockLLM
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -479,21 +488,35 @@ def get_cognito_token():
         return None
 
 def publish_to_appsync(session_id: str, data: dict):
-    """Publish streaming data to AppSync subscription using Cognito User Pool authentication."""
-    # TODO(refactor): Extract AppSync GraphQL mutation construction into a helper function
-    # TODO(refactor): Extract AppSync authentication header setup into a helper function
+    """Publish a streaming event to the frontend.
+
+    When a stream callback URL is configured (ECS Socket.IO server), POST the
+    event there — this is a fast, VPC-internal call with no auth overhead.
+    Otherwise fall back to the legacy AppSync GraphQL mutation path.
+    """
     import requests
     import json
     import os
-    
-    try:        
+
+    # ── Fast path: ECS callback ──────────────────────────────────────────
+    if _stream_callback_url:
+        try:
+            requests.post(
+                f"{_stream_callback_url}/stream-callback",
+                json={"session_id": session_id, "data": data},
+                timeout=5,
+            )
+        except Exception as e:
+            logger.error(f"Failed to POST stream event to callback URL: {e}")
+        return
+
+    # ── Legacy path: AppSync ─────────────────────────────────────────────
+    try:
         appsync_url = os.environ.get('APPSYNC_GRAPHQL_URL')
         if not appsync_url:
             logger.error("AppSync GraphQL URL not available in environment")
             return
-            
-        logger.info(f"🔗 Using AppSync URL: {appsync_url}")
-            
+
         mutation = """
         mutation PublishTextStream($sessionId: String!, $data: AWSJSON!) {
             publishTextStream(sessionId: $sessionId, data: $data) {
@@ -502,7 +525,7 @@ def publish_to_appsync(session_id: str, data: dict):
             }
         }
         """
-        
+
         payload = {
             'query': mutation,
             'variables': {
@@ -510,28 +533,23 @@ def publish_to_appsync(session_id: str, data: dict):
                 'data': json.dumps(data)
             }
         }
-        
+
         token = get_cognito_token()
         if not token:
             logger.error("No Cognito token available for AppSync authentication")
             return
-            
+
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Authorization': token
         }
-        
-        logger.info("🔑 Using Cognito User Pool token for authentication")
-        
-        logger.info(f"📶 Making AppSync request to: {appsync_url}")
+
         response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
-        
+
         if response.status_code != 200:
-            logger.error(f"Request payload: {json.dumps(payload, indent=2)}")
-        else:
-            logger.info(f"📝 Response DEPLOYMENT TEST v3: {response.text[:200]}...")
-        
+            logger.error(f"AppSync publish failed: {response.status_code}")
+
     except Exception as e:
         logger.error(f"Failed to publish to AppSync: {e}")
         logger.exception("Full AppSync error:")

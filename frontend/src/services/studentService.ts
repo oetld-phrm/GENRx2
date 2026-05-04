@@ -8,7 +8,7 @@
 import { getSimulationGroupColor } from '@/lib/colors';
 import { apiClient } from '@/lib/api-client';
 import { authService } from '@/lib/auth';
-import { subscribeToTextStream, type TextStreamEvent } from '@/lib/appsync-client';
+import type { Socket } from 'socket.io-client';
 
 /**
  * Represents a medical simulation group that students can join
@@ -839,13 +839,13 @@ async function sendMessage(
 }
 
 /**
- * Send a message with real-time streaming via AppSync subscription.
+ * Send a message with real-time streaming via the ECS Socket.IO server.
  *
- * 1. Subscribes to onTextStream(sessionId) to receive chunks
- * 2. Fires the REST POST with stream=true to trigger backend generation
- * 3. Calls onChunk for each text chunk, onDone when complete
+ * Emits a 'text-generation' event to the socket server, which calls the
+ * text generation Lambda. The Lambda POSTs chunks back to the socket server,
+ * which relays them as 'text-stream' events on this connection.
  *
- * Returns a cancel function to tear down the subscription early.
+ * Returns a cancel function to stop listening for events.
  */
 async function sendMessageStreaming(
   simulationGroupId: string,
@@ -858,55 +858,59 @@ async function sendMessageStreaming(
     onError: (error: Error) => void;
     onSessionComplete?: () => void;
   },
+  socket?: Socket | null,
 ): Promise<() => void> {
-  let unsubscribe: (() => void) | null = null;
-
-  try {
-    // Step 1: subscribe before triggering generation
-    unsubscribe = await subscribeToTextStream(sessionId, (event: TextStreamEvent) => {
-      switch (event.type) {
-        case 'chunk':
-          callbacks.onChunk(event.content);
-          break;
-        case 'end':
-          callbacks.onDone(event.content);
-          // Don't unsubscribe yet — session_complete may follow.
-          // Set a fallback timeout to clean up if it doesn't arrive.
-          setTimeout(() => { if (unsubscribe) unsubscribe(); }, 3000);
-          break;
-        case 'session_complete':
-          callbacks.onSessionComplete?.();
-          if (unsubscribe) unsubscribe();
-          break;
-        case 'error':
-          callbacks.onError(new Error(event.content));
-          if (unsubscribe) unsubscribe();
-          break;
-        // 'start' and 'empathy' are informational — ignore for now
-      }
-    });
-
-    // Step 2: fire the REST call with stream=true to kick off generation
-    apiClient.request(
-      `student/text_generation?simulation_group_id=${encodeURIComponent(simulationGroupId)}&patient_id=${encodeURIComponent(patientId)}&session_id=${encodeURIComponent(sessionId)}&stream=true`,
-      {
-        method: 'POST',
-        body: { message_content: messageContent },
-      },
-    ).catch((err) => {
-      callbacks.onError(err instanceof Error ? err : new Error(String(err)));
-      if (unsubscribe) unsubscribe();
-    });
-
-    return () => { if (unsubscribe) unsubscribe(); };
-  } catch (err) {
-    // Subscription setup failed — fall back to non-streaming
-    console.warn('Streaming subscription failed, falling back to non-streaming:', err);
+  if (!socket || !socket.connected) {
+    // No socket available — fall back to non-streaming REST call
+    console.warn('No socket connection, falling back to non-streaming');
     sendMessage(simulationGroupId, patientId, sessionId, messageContent)
       .then((res) => callbacks.onDone(res.llm_output))
       .catch((e) => callbacks.onError(e instanceof Error ? e : new Error(String(e))));
     return () => {};
   }
+
+  const handler = (data: { type: string; content: string }) => {
+    switch (data.type) {
+      case 'chunk':
+        callbacks.onChunk(data.content);
+        break;
+      case 'end':
+        callbacks.onDone(data.content);
+        // Don't clean up yet — session_complete may follow shortly
+        setTimeout(cleanup, 3000);
+        break;
+      case 'session_complete':
+        callbacks.onSessionComplete?.();
+        cleanup();
+        break;
+      case 'error':
+        callbacks.onError(new Error(data.content));
+        cleanup();
+        break;
+      // 'start' and 'empathy' are informational — ignore
+    }
+  };
+
+  const cleanup = () => {
+    socket.off('text-stream', handler);
+  };
+
+  // Listen for chunks before emitting the request
+  socket.on('text-stream', handler);
+
+  // Get the auth token to pass to the socket server
+  const token = await authService.getIdToken();
+
+  // Emit the text generation request to the ECS socket server
+  socket.emit('text-generation', {
+    simulation_group_id: simulationGroupId,
+    patient_id: patientId,
+    session_id: sessionId,
+    message: messageContent,
+    token: token || '',
+  });
+
+  return cleanup;
 }
 
 /**

@@ -7,7 +7,7 @@ import psycopg
 from langchain_aws import BedrockEmbeddings
 from helpers.cohere_embeddings import CohereBedrockEmbeddings
 
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table
+from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, set_stream_callback_url
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -233,6 +233,11 @@ def handler(event, context):
     persona_id = query_params.get("patient_id", "")
     session_name = query_params.get("session_name", "New Chat")
     student_user_id = event.get('requestContext', {}).get('authorizer', {}).get('userId', '')
+
+    # When the ECS socket server calls us, it passes its own URL so we can
+    # POST streaming chunks there instead of going through AppSync.
+    stream_callback_url = query_params.get("stream_callback_url", "")
+    set_stream_callback_url(stream_callback_url or None)
 
     if not simulation_group_id or not session_id or not persona_id:
         return {

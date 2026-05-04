@@ -102,6 +102,29 @@ app.get("/health", (req, res) => {
   res.json({ status: "healthy" });
 });
 
+// ─── Text Stream Callback ─────────────────────────────────────────────────────
+// The text generation Lambda POSTs streaming chunks here instead of AppSync.
+// Maps sessionId → Socket.IO socket so we can relay chunks to the right client.
+const textStreamSockets = new Map(); // sessionId -> socket
+
+app.use(express.json());
+
+app.post("/stream-callback", (req, res) => {
+  const { session_id, data } = req.body;
+  if (!session_id || !data) {
+    return res.status(400).json({ error: "session_id and data required" });
+  }
+
+  const socket = textStreamSockets.get(session_id);
+  if (socket && socket.connected) {
+    socket.emit("text-stream", data);
+  } else {
+    console.warn(`⚠️ No socket found for session ${session_id}`);
+  }
+
+  res.status(200).json({ ok: true });
+});
+
 // ─── TURN Credential Generation (RFC 5389) ───────────────────────────────────
 /**
  * Generate time-limited TURN credentials using HMAC-SHA1.
@@ -542,9 +565,17 @@ io.on("connection", (socket) => {
   socket.on("text-generation", async (data) => {
     console.log("🚀 Text generation request:", data);
 
+    const sessionId = data.session_id;
+
+    // Register this socket so /stream-callback can find it
+    textStreamSockets.set(sessionId, socket);
+
+    // Build the self URL so the Lambda can POST chunks back to us
+    const selfUrl = process.env.SELF_URL || `http://localhost:${PORT}`;
+
     try {
       const response = await fetch(
-        `${process.env.TEXT_GENERATION_ENDPOINT}/student/text_generation?simulation_group_id=${data.simulation_group_id}&session_id=${data.session_id}&patient_id=${data.patient_id}&session_name=${data.session_name}&stream=true`,
+        `${process.env.TEXT_GENERATION_ENDPOINT}/student/text_generation?simulation_group_id=${encodeURIComponent(data.simulation_group_id)}&session_id=${encodeURIComponent(sessionId)}&patient_id=${encodeURIComponent(data.patient_id)}&session_name=${encodeURIComponent(data.session_name || "")}&stream=true&stream_callback_url=${encodeURIComponent(selfUrl)}`,
         {
           method: "POST",
           headers: {
@@ -559,33 +590,17 @@ io.on("connection", (socket) => {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const eventData = JSON.parse(line.slice(6));
-              socket.emit("text-stream", eventData);
-            } catch (e) {
-              console.warn("Failed to parse SSE:", line);
-            }
-          }
-        }
-      }
+      // Lambda returns after all chunks have been POSTed to /stream-callback.
+      // Nothing to read from the response body — chunks were already relayed.
+      console.log("✅ Text generation complete for session:", sessionId);
     } catch (error) {
       console.error("Text generation error:", error);
       socket.emit("text-stream", {
         type: "error",
         content: "Failed to generate response",
       });
+    } finally {
+      textStreamSockets.delete(sessionId);
     }
   });
 
