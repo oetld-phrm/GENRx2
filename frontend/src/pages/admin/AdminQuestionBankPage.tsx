@@ -10,6 +10,7 @@ import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionBankDialog } from '@/components/AddPatientSpecificQuestionBankDialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { type QuestionBankItem } from '@/services/instructorService';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { getQuestionBankQuestions, getOrganization, createQuestionBankQuestion, deleteQuestionBankQuestion } from '@/services/adminApiService';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 
@@ -228,7 +229,7 @@ function AdminQuestionBankPage() {
       
       {loading && (
         <div className="flex-1 flex items-center justify-center p-8">
-          <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>Loading question bank...</p>
+          <LoadingIndicator size="md" message="Loading question bank..." />
         </div>
       )}
 

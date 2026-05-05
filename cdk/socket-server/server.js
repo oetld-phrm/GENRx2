@@ -621,6 +621,107 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ─── Voice Preview (mic-based — no agent, no DB) ─────────────────────────
+  let ttsProcess = null;
+  let ttsReady = false;
+
+  socket.on("voice-preview", (config = {}) => {
+    console.log("🎙️ Voice preview requested:", config.voice_id);
+
+    // Kill any previous TTS process for this socket
+    if (ttsProcess) {
+      ttsProcess.kill();
+      ttsProcess = null;
+    }
+    ttsReady = false;
+
+    const pythonCmd = process.env.PYTHON_CMD || "python3";
+
+    try {
+      ttsProcess = spawn(pythonCmd, ["voice_preview_tts.py"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Failed to spawn TTS process:", error.message);
+      socket.emit("nova-error", { error: "Failed to start voice preview" });
+      return;
+    }
+
+    // Send initial config (voice_id) — stdin stays open for audio
+    ttsProcess.stdin.write(
+      JSON.stringify({ voice_id: config.voice_id || "amy" }) + "\n",
+    );
+
+    // Read JSON lines from stdout
+    ttsProcess.stdout.on("data", (data) => {
+      data.toString().split("\n").filter(Boolean).forEach((line) => {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === "audio") {
+            socket.emit("audio-chunk", { data: msg.data });
+          } else if (msg.type === "ready") {
+            ttsReady = true;
+            socket.emit("voice-preview-ready", {});
+          } else if (msg.type === "done") {
+            socket.emit("voice-preview-done", {});
+          } else if (msg.type === "error") {
+            socket.emit("nova-error", { error: msg.error });
+          }
+        } catch {
+          console.log("[tts]", line);
+        }
+      });
+    });
+
+    ttsProcess.stderr.on("data", (data) => {
+      console.warn("⚠️ TTS stderr:", data.toString().trim());
+    });
+
+    ttsProcess.on("error", (error) => {
+      console.error("❌ TTS process error:", error.message);
+      socket.emit("nova-error", { error: "Voice preview failed" });
+    });
+
+    ttsProcess.on("close", (code) => {
+      console.log("🎙️ TTS process exited with code:", code);
+      ttsProcess = null;
+      ttsReady = false;
+    });
+  });
+
+  // Relay mic audio to the voice preview process
+  socket.on("voice-preview-audio", (msg) => {
+    if (ttsProcess && ttsProcess.stdin.writable && ttsReady) {
+      ttsProcess.stdin.write(JSON.stringify({ type: "audio", data: msg.data }) + "\n");
+    }
+  });
+
+  socket.on("voice-preview-start-audio", () => {
+    if (ttsProcess && ttsProcess.stdin.writable && ttsReady) {
+      ttsProcess.stdin.write(JSON.stringify({ type: "start_audio" }) + "\n");
+      console.log("🎬 Voice preview: start_audio");
+    }
+  });
+
+  socket.on("voice-preview-end-audio", () => {
+    if (ttsProcess && ttsProcess.stdin.writable && ttsReady) {
+      ttsProcess.stdin.write(JSON.stringify({ type: "end_audio" }) + "\n");
+      console.log("🛑 Voice preview: end_audio");
+    }
+  });
+
+  socket.on("stop-voice-preview", () => {
+    if (ttsProcess) {
+      ttsProcess.kill();
+      ttsProcess = null;
+      ttsReady = false;
+      console.log("🛑 Voice preview stopped by client");
+    }
+  });
+
   // ─── Optional Stop event ────────────────────────────────────────────────
   socket.on("stop-nova-sonic", () => {
     console.log("🛑 Stop requested by client");
@@ -646,6 +747,12 @@ io.on("connection", (socket) => {
   // ─── Disconnect cleanup ──────────────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log("🔌 CLIENT DISCONNECTED:", socket.id);
+
+    // Clean up TTS preview process if present
+    if (ttsProcess) {
+      ttsProcess.kill();
+      ttsProcess = null;
+    }
 
     // Clean up AgentCore WebSocket session if present
     if (socket.agentWs) {

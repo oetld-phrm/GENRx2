@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { mockAdminDataService, mockOrganizations } from '@/services/adminService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import * as adminApi from '@/services/adminApiService';
+import LoadingIndicator from '@/components/LoadingIndicator';
 
 /**
  * AdminHomePage Component
@@ -125,7 +126,7 @@ function AdminHomePage() {
         {/* Organizations grid */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <p style={{ color: UI_COLORS.text.muted }}>Loading organizations...</p>
+            <LoadingIndicator size="md" message="Loading organizations..." />
           </div>
         ) : organizations.length === 0 ? (
           <div className="flex items-center justify-center py-12">

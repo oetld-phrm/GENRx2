@@ -1,6 +1,7 @@
 import os
 import json
 import boto3
+from botocore.config import Config
 import psycopg2
 import logging
 from datetime import datetime, timezone
@@ -28,7 +29,7 @@ ssm_client = boto3.client("ssm")
 # Cohere Embed v4 cross-region inference (us.*) requires a US source region.
 # When deployed outside the US (e.g. ca-central-1), route embedding calls to us-east-1.
 BEDROCK_EMBEDDING_REGION = os.environ.get("BEDROCK_EMBEDDING_REGION", "us-east-1")
-bedrock_runtime = boto3.client("bedrock-runtime", region_name=BEDROCK_EMBEDDING_REGION)
+bedrock_runtime = boto3.client("bedrock-runtime", region_name=BEDROCK_EMBEDDING_REGION, config=Config(retries={"mode": "adaptive", "total_max_attempts": 10}))
 
 # Cached resources
 connection = None
@@ -382,7 +383,47 @@ def handler(event, context):
                     "body": json.dumps(f"Error inserting file {file_name}.{file_type}: {e}")
                 }
         else:
-            logger.info(f"File {file_name}.{file_type} is being deleted. Deleting files from database does not occur here.")
+            logger.info(f"File {file_name}.{file_type} is being deleted.")
+            # Clean up embeddings for embeddable file types
+            if file_category in ("documents", "info", "answer_key"):
+                try:
+                    connection = connect_to_db()
+                    if connection is None:
+                        logger.error("Database connection failed. Unable to delete embeddings.")
+                    else:
+                        cur = connection.cursor()
+
+                        # Get the collection UUID for this persona
+                        cur.execute(
+                            'SELECT uuid FROM langchain_pg_collection WHERE name = %s',
+                            (persona_id,)
+                        )
+                        collection = cur.fetchone()
+
+                        if collection:
+                            # Build the exact source string used during ingestion
+                            file_source = f"s3://{EMBEDDING_BUCKET_NAME}/{simulation_group_id}/{persona_id}/{file_category}/{file_name}.{file_type}"
+
+                            cur.execute(
+                                """DELETE FROM langchain_pg_embedding
+                                   WHERE collection_id = %s
+                                   AND cmetadata->>'source' = %s""",
+                                (collection[0], file_source)
+                            )
+                            deleted_count = cur.rowcount
+                            connection.commit()
+                            logger.info(f"Deleted {deleted_count} embeddings for {file_name}.{file_type} from persona {persona_id}.")
+                        else:
+                            logger.info(f"No embedding collection found for persona {persona_id}, skipping embedding cleanup.")
+
+                        cur.close()
+                except Exception as e:
+                    logger.error(f"Error deleting embeddings for {file_name}.{file_type}: {e}")
+            
+            return {
+                "statusCode": 200,
+                "body": json.dumps(f"File {file_name}.{file_type} deleted, embeddings cleaned up.")
+            }
         
         # Update embeddings for persona after the file is successfully inserted into the database. Only if document file
         if file_category in ("documents", "info", "answer_key"):

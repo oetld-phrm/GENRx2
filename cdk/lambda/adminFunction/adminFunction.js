@@ -1142,7 +1142,7 @@ exports.handler = async (event, context) => {
           try {
             const { organization_id } = event.queryStringParameters;
             // Resolve created_by: look up user_id from users table using the authenticated email
-            const authEmail = event.requestContext?.authorizer?.userEmail;
+            const authEmail = event.requestContext?.authorizer?.email;
             if (!authEmail) {
               response.statusCode = 401;
               response.body = JSON.stringify({ error: "Unable to determine user identity" });
@@ -1320,6 +1320,147 @@ exports.handler = async (event, context) => {
         } else {
           response.statusCode = 400;
           response.body = JSON.stringify({ error: "simulation_group_id and request body are required" });
+        }
+        break;
+      // ── Issue Reports & Debrief Feedback ─────────────────────────────
+      case "GET /admin/issue_reports":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          try {
+            const { simulation_group_id } = event.queryStringParameters;
+
+            const reports = await sqlConnectionTableCreator`
+              SELECT
+                ir.report_id,
+                ir.simulation_group_id,
+                ir.persona_id,
+                ir.chat_id,
+                ir.user_id,
+                ir.issue_categories,
+                ir.details,
+                ir.submitted_at,
+                u.user_email AS student_email,
+                u.first_name AS student_first_name,
+                u.last_name AS student_last_name,
+                p.persona_name AS patient_name
+              FROM "issue_reports" ir
+              LEFT JOIN "users" u ON ir.user_id = u.user_id
+              LEFT JOIN "personas" p ON ir.persona_id = p.persona_id
+              WHERE ir.simulation_group_id = ${simulation_group_id}
+              ORDER BY ir.submitted_at DESC;
+            `;
+
+            response.body = JSON.stringify(reports);
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Failed to fetch issue reports", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id is required" });
+        }
+        break;
+      case "DELETE /admin/issue_report":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.report_id
+        ) {
+          try {
+            const { report_id } = event.queryStringParameters;
+
+            const deleted = await sqlConnectionTableCreator`
+              DELETE FROM "issue_reports"
+              WHERE report_id = ${report_id}
+              RETURNING report_id;
+            `;
+
+            if (deleted.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Issue report not found" });
+            } else {
+              response.body = JSON.stringify({ message: "Issue report deleted successfully." });
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Failed to delete issue report", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "report_id is required" });
+        }
+        break;
+      case "GET /admin/debrief_feedback":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          try {
+            const { simulation_group_id } = event.queryStringParameters;
+
+            const feedback = await sqlConnectionTableCreator`
+              SELECT
+                df.feedback_id,
+                df.simulation_group_id,
+                df.persona_id,
+                df.chat_id,
+                df.user_id,
+                df.is_helpful,
+                df.comment,
+                df.submitted_at,
+                u.user_email AS student_email,
+                u.first_name AS student_first_name,
+                u.last_name AS student_last_name,
+                p.persona_name AS patient_name
+              FROM "debrief_feedback" df
+              LEFT JOIN "users" u ON df.user_id = u.user_id
+              LEFT JOIN "personas" p ON df.persona_id = p.persona_id
+              WHERE df.simulation_group_id = ${simulation_group_id}
+              ORDER BY df.submitted_at DESC;
+            `;
+
+            response.body = JSON.stringify(feedback);
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Failed to fetch debrief feedback", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id is required" });
+        }
+        break;
+      case "DELETE /admin/debrief_feedback":
+        if (
+          event.queryStringParameters != null &&
+          event.queryStringParameters.feedback_id
+        ) {
+          try {
+            const { feedback_id } = event.queryStringParameters;
+
+            const deleted = await sqlConnectionTableCreator`
+              DELETE FROM "debrief_feedback"
+              WHERE feedback_id = ${feedback_id}
+              RETURNING feedback_id;
+            `;
+
+            if (deleted.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Debrief feedback not found" });
+            } else {
+              response.body = JSON.stringify({ message: "Debrief feedback deleted successfully." });
+            }
+          } catch (err) {
+            response.statusCode = 500;
+            logger.error("Failed to delete debrief feedback", { error: err.message, stack: err.stack });
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "feedback_id is required" });
         }
         break;
       default:

@@ -25,6 +25,7 @@ export interface UsePatientEditorReturn {
   editPatientAge: string;
   editPatientGender: string;
   editPatientPrompt: string;
+  editPatientVoiceId: string;
   uploadStatus: Record<string, 'idle' | 'uploading' | 'success' | 'error'>;
   uploadedFiles: Record<'llm' | 'patientInfo' | 'answerKey', UploadedFileInfo[]>;
   editPatientProfilePicUrl: string | null;
@@ -38,6 +39,7 @@ export interface UsePatientEditorReturn {
   setEditPatientAge: (age: string) => void;
   setEditPatientGender: (gender: string) => void;
   setEditPatientPrompt: (prompt: string) => void;
+  setEditPatientVoiceId: (voiceId: string) => void;
   setSelectedMaterialId: (id: string) => void;
   setCaseMaterials: React.Dispatch<React.SetStateAction<CaseMaterial[]>>;
   setCaseSpecificQuestions: React.Dispatch<React.SetStateAction<GlobalRubricQuestion[]>>;
@@ -50,6 +52,7 @@ export interface UsePatientEditorReturn {
   autoSaveNewPatient: () => Promise<string | null>;
   handleEditPatientTabSwitch: (tab: 'info' | 'questions' | 'materials') => Promise<void>;
   handleFileUpload: (fileType: 'llm' | 'patientInfo' | 'answerKey', e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+  handleFileDelete: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string) => Promise<void>;
   handleDisplayNameSave: (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string, displayName: string) => Promise<void>;
   handlePhotoUpload: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   handlePhotoDelete: () => Promise<void>;
@@ -75,6 +78,7 @@ export function usePatientEditor({
   const [editPatientAge, setEditPatientAge] = useState('');
   const [editPatientGender, setEditPatientGender] = useState('');
   const [editPatientPrompt, setEditPatientPrompt] = useState('');
+  const [editPatientVoiceId, setEditPatientVoiceId] = useState('');
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Record<'llm' | 'patientInfo' | 'answerKey', UploadedFileInfo[]>>({ llm: [], patientInfo: [], answerKey: [] });
   const [editPatientProfilePicUrl, setEditPatientProfilePicUrl] = useState<string | null>(null);
@@ -141,6 +145,7 @@ export function usePatientEditor({
     setEditPatientAge(((patient as any).patient_age || (patient as any).age || '').toString());
     setEditPatientGender((patient as any).patient_gender || (patient as any).gender || '');
     setEditPatientPrompt((patient as any).patient_prompt || instructorService.getDefaultPatientPrompt());
+    setEditPatientVoiceId((patient as any).voice_id || 'tiffany');
     setEditPatientTab('info');
 
     if (role === 'admin' && groupId) {
@@ -181,6 +186,7 @@ export function usePatientEditor({
     setEditPatientAge('');
     setEditPatientGender('');
     setEditPatientPrompt(instructorService.getDefaultPatientPrompt());
+    setEditPatientVoiceId('');
     setEditPatientTab('info');
     setCaseMaterials([]);
     setSelectedMaterialId('');
@@ -216,6 +222,7 @@ export function usePatientEditor({
         patient_age: parseInt(editPatientAge) || 0,
         patient_gender: editPatientGender,
         patient_prompt: editPatientPrompt,
+        voice_id: editPatientVoiceId || undefined,
       });
       setSelectedPatientForEdit(newPersonaId);
       setManageablePatients(await instructorService.getManageablePatients(groupId));
@@ -250,6 +257,7 @@ export function usePatientEditor({
         patient_age: parseInt(editPatientAge) || 0,
         patient_gender: editPatientGender,
         patient_prompt: editPatientPrompt,
+        voice_id: editPatientVoiceId || undefined,
       });
       setSelectedPatientForEdit(newPersonaId);
     } else {
@@ -259,6 +267,7 @@ export function usePatientEditor({
         patient_age: parseInt(editPatientAge) || 0,
         patient_gender: editPatientGender,
         patient_prompt: editPatientPrompt,
+        voice_id: editPatientVoiceId || undefined,
       });
     }
 
@@ -336,6 +345,30 @@ export function usePatientEditor({
   };
 
   /**
+   * Handle file delete (remove file from S3, embeddings, and persona_data)
+   */
+  const handleFileDelete = async (fileType: 'llm' | 'patientInfo' | 'answerKey', filename: string) => {
+    if (!selectedPatientForEdit || selectedPatientForEdit === 'new' || !groupId) return;
+    if (!confirm(`Are you sure you want to delete "${filename}"? This will also remove its embeddings.`)) return;
+
+    const lastDot = filename.lastIndexOf('.');
+    const baseName = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+    const ext = lastDot > 0 ? filename.substring(lastDot + 1).toLowerCase() : '';
+    const folderType = fileType === 'llm' ? 'documents' : fileType === 'patientInfo' ? 'info' : 'answer_key' as const;
+
+    try {
+      await instructorService.deletePatientFile(groupId, selectedPatientForEdit, baseName, ext, folderType);
+      // Remove from local state immediately
+      setUploadedFiles(prev => ({
+        ...prev,
+        [fileType]: prev[fileType].filter(f => f.filename !== filename),
+      }));
+    } catch (error) {
+      console.error('Failed to delete patient file', { fileType, filename, error });
+    }
+  };
+
+  /**
    * Add a new case material
    */
   const handleAddNewCaseMaterial = async () => {
@@ -401,6 +434,7 @@ export function usePatientEditor({
     editPatientAge,
     editPatientGender,
     editPatientPrompt,
+    editPatientVoiceId,
     uploadStatus,
     uploadedFiles,
     editPatientProfilePicUrl,
@@ -414,6 +448,7 @@ export function usePatientEditor({
     setEditPatientAge,
     setEditPatientGender,
     setEditPatientPrompt,
+    setEditPatientVoiceId,
     setSelectedMaterialId,
     setCaseMaterials,
     setCaseSpecificQuestions,
@@ -426,6 +461,7 @@ export function usePatientEditor({
     autoSaveNewPatient,
     handleEditPatientTabSwitch,
     handleFileUpload,
+    handleFileDelete,
     handleDisplayNameSave,
     handlePhotoUpload,
     handlePhotoDelete,

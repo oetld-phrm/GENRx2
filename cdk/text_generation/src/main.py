@@ -461,8 +461,10 @@ def handler(event, context):
 
             if not message_content:
                 student_query = get_initial_student_query(patient_name)
+                is_playground_initial = True
             else:
                 student_query = get_student_query(message_content)
+                is_playground_initial = False
 
             llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=False)
 
@@ -498,7 +500,8 @@ def handler(event, context):
                 persona_id=persona_id,
                 embeddings_model=embeddings,
                 ddb_table_name=TABLE_NAME,
-                raw_prompt_mode=True
+                raw_prompt_mode=True,
+                is_initial_prompt=is_playground_initial
             )
 
             return {
@@ -574,6 +577,7 @@ def handler(event, context):
     if not question:
         logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
         student_query = get_initial_student_query(patient_name)
+        is_initial_prompt = True
         # Cache key questions on first message for real-time matching
         try:
             cache_key_questions(
@@ -588,6 +592,7 @@ def handler(event, context):
     else:
         logger.info(f"Processing student question: {question}")
         student_query = get_student_query(question)
+        is_initial_prompt = False
         
     logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
     
@@ -678,7 +683,8 @@ def handler(event, context):
             student_user_id=student_user_id,
             persona_id=persona_id,
             embeddings_model=embeddings,
-            ddb_table_name=TABLE_NAME
+            ddb_table_name=TABLE_NAME,
+            is_initial_prompt=is_initial_prompt
         )
     except Exception as e:
         logger.error(f"Error getting response: {e}")

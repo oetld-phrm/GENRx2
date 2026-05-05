@@ -326,6 +326,7 @@ export interface InstructorDataService {
   deletePatientPhoto: (simulationGroupId: string, patientId: string) => Promise<void>;
   fetchProfilePictures: (simulationGroupId: string) => Promise<Record<string, string>>;
   uploadPatientFile: (simulationGroupId: string, patientId: string, file: File, folderType: 'documents' | 'info' | 'answer_key') => Promise<void>;
+  deletePatientFile: (simulationGroupId: string, patientId: string, fileName: string, fileType: string, folderType: 'documents' | 'info' | 'answer_key') => Promise<void>;
   fetchPatientUploadedFiles: (simulationGroupId: string, patientId: string) => Promise<{ files: Record<'llm' | 'patientInfo' | 'answerKey', import('@/services/instructorService').UploadedFileInfo[]>; profilePictureUrl: string | null }>;
   updateFileDisplayName: (patientId: string, filename: string, filetype: string, displayName: string) => Promise<void>;
   updatePatientLLMEvaluation: (patientId: string, enabled: boolean) => Promise<void>;
@@ -783,6 +784,7 @@ async function updatePatient(simulationGroupId: string, patientData: PatientUpda
         persona_gender: patientData.patient_gender,
         persona_prompt: patientData.patient_prompt,
         voice_enabled: patientData.voice_enabled,
+        voice_id: patientData.voice_id,
       },
     });
 
@@ -844,6 +846,30 @@ async function uploadPatientFile(
   folderType: 'documents' | 'info' | 'answer_key'
 ): Promise<void> {
   await uploadFileToS3(simulationGroupId, patientId, file, folderType);
+}
+
+/**
+ * Delete a patient file (document, info, or answer key) from S3 and clean up embeddings
+ */
+async function deletePatientFile(
+  simulationGroupId: string,
+  patientId: string,
+  fileName: string,
+  fileType: string,
+  folderType: 'documents' | 'info' | 'answer_key'
+): Promise<void> {
+  const queryParams = new URLSearchParams({
+    simulation_group_id: simulationGroupId,
+    persona_id: patientId,
+    file_name: fileName,
+    file_type: fileType,
+    folder_type: folderType,
+  });
+
+  await apiClient.request(
+    `instructor/delete_file?${queryParams.toString()}`,
+    { method: 'DELETE' }
+  );
 }
 
 /**
@@ -1964,6 +1990,7 @@ export const instructorService: InstructorDataService = {
   deletePatientPhoto,
   fetchProfilePictures,
   uploadPatientFile,
+  deletePatientFile,
   fetchPatientUploadedFiles,
   updateFileDisplayName,
   updatePatientLLMEvaluation,

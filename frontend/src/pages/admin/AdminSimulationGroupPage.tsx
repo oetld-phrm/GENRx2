@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BarChart3, Users, UserCog, FileText, Search, Trash2, Plus, Menu, UserPlus, FileCode, HelpCircle } from 'lucide-react';
+import { ArrowLeft, BarChart3, Users, UserCog, FileText, Search, Trash2, Plus, Menu, UserPlus, FileCode, HelpCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -31,8 +31,14 @@ import { AddInstructorDialog } from '@/components/AddInstructorDialog';
 import AIDebriefDialog from '@/components/AIDebriefDialog';
 import PromptPlayground from '@/components/prompt-playground/PromptPlayground';
 import SystemPromptPlayground from '@/components/prompt-playground/SystemPromptPlayground';
+import VoicePreview from '@/components/prompt-playground/VoicePreview';
 
-type ActiveSection = 'analytics' | 'patients' | 'students' | 'instructors' | 'prompts' | 'rubric' | 'questionBank' | 'editPatient' | 'viewStudent';
+import { IssuesFeedbackSection } from '@/components/simulation-group/IssuesFeedbackSection';
+import type { IssueReport, DebriefFeedback } from '@/services/adminApiService';
+
+import LoadingIndicator from '@/components/LoadingIndicator';
+
+type ActiveSection = 'analytics' | 'patients' | 'students' | 'instructors' | 'prompts' | 'rubric' | 'questionBank' | 'editPatient' | 'viewStudent' | 'issuesFeedback';
 
 /**
  * AdminSimulationGroupPage — thin shell composing shared hooks and components.
@@ -89,7 +95,7 @@ function AdminSimulationGroupPage() {
   const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
 
   // Admin-specific state: prompts
-  const [selectedPromptType, setSelectedPromptType] = useState<'system' | 'evaluation'>('system');
+  const [selectedPromptType, setSelectedPromptType] = useState<'system' | 'evaluation' | 'voice'>('system');
   const [systemPromptText, setSystemPromptText] = useState('Pretend to be a patient with the context you are given. You are helping the pharmacist practice their skills interacting with a patient.');
   const [evaluationPromptText, setEvaluationPromptText] = useState('');
   const [, setIsPromptUnsaved] = useState(false);
@@ -101,6 +107,11 @@ function AdminSimulationGroupPage() {
 
   // Global rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>([]);
+
+  // Issues & Feedback state
+  const [issueReports, setIssueReports] = useState<IssueReport[]>([]);
+  const [debriefFeedbackList, setDebriefFeedbackList] = useState<DebriefFeedback[]>([]);
+  const [issuesFeedbackLoading, setIssuesFeedbackLoading] = useState(false);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [rubricSearchQuery, setRubricSearchQuery] = useState('');
   const [isAccessCodeDialogOpen, setIsAccessCodeDialogOpen] = useState(false);
@@ -183,6 +194,20 @@ function AdminSimulationGroupPage() {
         .then(setInstructors)
         .catch(err => { console.error('Failed to load group instructors, using mock data:', err); setInstructors(mockGroupInstructors); })
         .finally(() => setInstructorsLoading(false));
+    }
+  }, [activeSection, groupId]);
+
+  // ── Load issues & feedback ──
+  useEffect(() => {
+    if (activeSection === 'issuesFeedback' && groupId) {
+      setIssuesFeedbackLoading(true);
+      Promise.all([
+        adminApi.getIssueReports(groupId).catch(err => { console.error('Failed to load issue reports:', err); return [] as IssueReport[]; }),
+        adminApi.getDebriefFeedback(groupId).catch(err => { console.error('Failed to load debrief feedback:', err); return [] as DebriefFeedback[]; }),
+      ]).then(([reports, feedback]) => {
+        setIssueReports(reports);
+        setDebriefFeedbackList(feedback);
+      }).finally(() => setIssuesFeedbackLoading(false));
     }
   }, [activeSection, groupId]);
 
@@ -433,7 +458,7 @@ function AdminSimulationGroupPage() {
     return (
       <PageContainer>
         <div className="flex items-center justify-center h-full">
-          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+          <LoadingIndicator size="lg" message="Loading..." />
         </div>
       </PageContainer>
     );
@@ -473,6 +498,7 @@ function AdminSimulationGroupPage() {
             { id: 'instructors', label: 'Manage Instructors', icon: <UserPlus className="w-5 h-5" /> },
             { id: 'rubric', label: 'Global Rubric', icon: <FileText className="w-5 h-5" /> },
             { id: 'questionBank', label: 'Question Bank', icon: <HelpCircle className="w-5 h-5" /> },
+            { id: 'issuesFeedback', label: 'Issues and Feedback', icon: <AlertTriangle className="w-5 h-5" /> },
             { id: 'prompts', label: 'Manage Prompts', icon: <FileCode className="w-5 h-5" /> },
           ]}
           accessCode={accessCode}
@@ -482,7 +508,7 @@ function AdminSimulationGroupPage() {
           onToggleVisibility={() => setIsMainSidebarVisible(!isMainSidebarVisible)}
         />
 
-        <main className="flex-1 overflow-y-auto" style={{ padding: ['rubric', 'questionBank', 'prompts', 'editPatient', 'viewStudent'].includes(activeSection) ? '0' : '2rem' }}>
+        <main className="flex-1 overflow-y-auto" style={{ padding: ['rubric', 'questionBank', 'prompts', 'editPatient', 'viewStudent', 'issuesFeedback'].includes(activeSection) ? '0' : '2rem' }}>
           {activeSection === 'analytics' && <AnalyticsSection patientAnalytics={patientAnalytics} analyticsDateRange={analyticsDateRange} onDateRangeChange={setAnalyticsDateRange} keyQuestionCoverage={keyQuestionCoverage} keyQuestionAnalytics={keyQuestionAnalytics} studentProgress={studentProgress} selectedPatientId={selectedPatientId} onPatientSelect={setSelectedPatientId} labels={labels} simulationGroup={simulationGroup} onNavigateToSection={section => setActiveSection(section as ActiveSection)} />}
 
           {activeSection === 'patients' && (
@@ -531,7 +557,7 @@ function AdminSimulationGroupPage() {
                   {['Instructor Name', 'Email Address', 'Actions'].map(h => <div key={h} className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>{h}</div>)}
                 </div>
                 {instructorsLoading ? (
-                  <div className="px-6 py-8 text-center" style={{ color: UI_COLORS.text.muted }}>Loading instructors...</div>
+                  <div className="px-6 py-8 text-center"><LoadingIndicator size="sm" message="Loading instructors..." /></div>
                 ) : filteredInstructors.length === 0 ? (
                   <div className="px-6 py-8 text-center" style={{ color: UI_COLORS.text.muted }}>{instructorSearchQuery ? 'No instructors match your search.' : 'No instructors assigned to this group yet.'}</div>
                 ) : filteredInstructors.map(instructor => (
@@ -568,21 +594,48 @@ function AdminSimulationGroupPage() {
             />
           )}
 
+          {activeSection === 'issuesFeedback' && (
+            <IssuesFeedbackSection
+              issueReports={issueReports}
+              debriefFeedback={debriefFeedbackList}
+              loading={issuesFeedbackLoading}
+              onDeleteIssueReport={async (reportId) => {
+                try {
+                  await adminApi.deleteIssueReport(reportId);
+                  setIssueReports((prev) => prev.filter((r) => r.report_id !== reportId));
+                } catch (err) {
+                  console.error('Failed to delete issue report:', err);
+                }
+              }}
+              onDeleteDebriefFeedback={async (feedbackId) => {
+                try {
+                  await adminApi.deleteDebriefFeedback(feedbackId);
+                  setDebriefFeedbackList((prev) => prev.filter((f) => f.feedback_id !== feedbackId));
+                } catch (err) {
+                  console.error('Failed to delete debrief feedback:', err);
+                }
+              }}
+            />
+          )}
+
           {activeSection === 'prompts' && (
             <div className="flex h-full relative">
               <aside className="flex flex-col border-r" style={{ backgroundColor: UI_COLORS.background.white, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: UI_COLORS.border.default, width: '16rem', minWidth: '16rem' }}>
                 <div className="p-6">
                   <h3 className="text-sm font-semibold mb-4" style={{ color: UI_COLORS.text.heading }}>Prompt Type</h3>
                   <div className="space-y-2">
-                    {(['system', 'evaluation'] as const).map(type => (
+                    {(['system', 'evaluation', 'voice'] as const).map(type => (
                       <Button key={type} onClick={() => setSelectedPromptType(type)} variant="ghost" className="w-full justify-start gap-3 px-4 py-2.5 h-auto font-medium" style={{ backgroundColor: selectedPromptType === type ? UI_COLORS.background.tableHeader : 'transparent', color: UI_COLORS.text.heading }}>
-                        {type === 'system' ? 'System Prompt' : 'Debrief Prompt'}
+                        {type === 'system' ? 'System Prompt' : type === 'evaluation' ? 'Debrief Prompt' : 'Voice Preview'}
                       </Button>
                     ))}
                   </div>
                 </div>
               </aside>
               <div className="flex-1 overflow-y-auto p-8">
+                {selectedPromptType === 'voice' ? (
+                  <VoicePreview />
+                ) : (
                 <div className="max-w-4xl space-y-8">
                   <div>
                     <h2 className="text-2xl font-bold mb-6" style={{ color: UI_COLORS.text.heading }}>{selectedPromptType === 'system' ? 'System Prompt' : 'Debrief Prompt'}</h2>
@@ -626,6 +679,7 @@ function AdminSimulationGroupPage() {
                     />
                   )}
                 </div>
+                )}
               </div>
             </div>
           )}

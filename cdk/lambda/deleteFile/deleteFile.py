@@ -48,6 +48,52 @@ def connect_to_db():
             raise
     return connection
 
+def delete_embeddings_for_file(persona_id, simulation_group_id, folder_type, file_name, file_type):
+    """Delete embeddings from pgvector for a specific file."""
+    connection = connect_to_db()
+    if connection is None:
+        logger.error("No database connection available for embedding deletion.")
+        return
+
+    try:
+        cur = connection.cursor()
+
+        # Get the collection UUID for this persona
+        cur.execute(
+            'SELECT uuid FROM langchain_pg_collection WHERE name = %s',
+            (persona_id,)
+        )
+        collection = cur.fetchone()
+
+        if not collection:
+            logger.info(f"No embedding collection found for persona {persona_id}, skipping embedding cleanup.")
+            cur.close()
+            return
+
+        # Source stored during ingestion: s3://{bucket}/{group}/{persona}/{folder}/{filename}.{ext}
+        # Match on the path suffix since we don't have the embedding bucket name
+        source_suffix = f"{simulation_group_id}/{persona_id}/{folder_type}/{file_name}.{file_type}"
+
+        cur.execute(
+            """DELETE FROM langchain_pg_embedding
+               WHERE collection_id = %s
+               AND cmetadata->>'source' LIKE %s""",
+            (collection[0], f"%{source_suffix}")
+        )
+        deleted_count = cur.rowcount
+
+        connection.commit()
+        cur.close()
+        logger.info(f"Deleted {deleted_count} embeddings for {file_name}.{file_type} from persona {persona_id}.")
+
+    except Exception as e:
+        if cur:
+            cur.close()
+        connection.rollback()
+        logger.error(f"Error deleting embeddings for {file_name}.{file_type}: {e}")
+        raise
+
+
 def delete_file_from_db(persona_id, file_name, file_type):
     connection = connect_to_db()
     if connection is None:
@@ -151,6 +197,24 @@ def lambda_handler(event, context):
         
         logger.info(f"S3 Response: {response}")
         logger.info(f"File {file_name}.{file_type} and any associated files deleted successfully from S3.")
+
+        # Delete embeddings for embeddable file types
+        if folder_type in ("documents", "info", "answer_key"):
+            try:
+                delete_embeddings_for_file(persona_id, simulation_group_id, folder_type, file_name, file_type)
+                logger.info(f"Embeddings deleted for {file_name}.{file_type}.")
+            except Exception as e:
+                logger.error(f"Error deleting embeddings for {file_name}.{file_type}: {e}")
+                return {
+                    'statusCode': 500,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    'body': json.dumps(f"File deleted from S3 but error cleaning up embeddings for {file_name}.{file_type}")
+                }
 
         # Delete the file from the database (skip for profile pictures — no persona_data row)
         if folder_type != "profile_picture":

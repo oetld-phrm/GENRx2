@@ -8,6 +8,7 @@ import UserAvatar from '@/components/UserAvatar';
 import { useAuth } from '@/App';
 import { instructorService, type GlobalRubricQuestion, type QuestionBankItem } from '@/services/instructorService';
 import { studentService } from '@/services/studentService';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS } from '@/lib/colors';
 import { useSimulationGroupData } from '@/hooks/useSimulationGroupData';
 import { usePatientEditor } from '@/hooks/usePatientEditor';
@@ -305,7 +306,7 @@ function InstructorSimulationGroupPage() {
     return (
       <PageContainer>
         <div className="flex items-center justify-center h-full">
-          <p style={{ color: UI_COLORS.text.muted }}>Loading...</p>
+          <LoadingIndicator size="lg" message="Loading..." />
         </div>
       </PageContainer>
     );

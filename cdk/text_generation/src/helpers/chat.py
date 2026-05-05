@@ -71,10 +71,12 @@ def get_bedrock_llm(
     streaming: bool = False
 ) -> ChatBedrock:
     """
-    Retrieve a Bedrock LLM instance with optional guardrail support and streaming.
-    """
-    guardrail_id = os.environ.get('BEDROCK_GUARDRAIL_ID')
+    Retrieve a Bedrock LLM instance.
     
+    Guardrails are NOT applied at the LLM level to avoid blocking the
+    trusted system prompt. Instead, use apply_text_guardrail() to screen
+    student input before the LLM call and AI output after.
+    """
     # Hardcoded to us-east-1 where Claude Sonnet 4.6 is available
     region = 'us-east-1'
     
@@ -85,16 +87,48 @@ def get_bedrock_llm(
         "region_name": region
     }
     
-    if guardrail_id and guardrail_id.strip():
-        logger.info(f"Using Bedrock guardrail: {guardrail_id}")
-        base_kwargs["guardrails"] = {
-            "guardrailIdentifier": guardrail_id,
-            "guardrailVersion": "DRAFT"
-        }
-    else:
-        logger.info("Using system prompt protection (no guardrail configured)")
-    
     return ChatBedrock(**base_kwargs)
+
+
+def apply_text_guardrail(text: str, source: str) -> tuple:
+    """Screen text through Bedrock Guardrails using the ApplyGuardrail API.
+
+    Called on student input (source='INPUT') before the LLM and on AI
+    output (source='OUTPUT') before returning to the client. The system
+    prompt is intentionally NOT screened — it is instructor-controlled
+    trusted content.
+
+    Args:
+        text: The text to evaluate.
+        source: 'INPUT' for student messages, 'OUTPUT' for AI responses.
+
+    Returns:
+        (passed: bool, replacement: str | None)
+        If passed is False, replacement contains the guardrail's blocked message.
+    """
+    guardrail_id = os.environ.get('BEDROCK_GUARDRAIL_ID', '')
+    if not guardrail_id or not guardrail_id.strip():
+        return True, None
+    if not text or not text.strip():
+        return True, None
+    try:
+        client = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
+        response = client.apply_guardrail(
+            guardrailIdentifier=guardrail_id,
+            guardrailVersion='DRAFT',
+            source=source,
+            content=[{'text': {'text': text}}],
+        )
+        action = response.get('action', '')
+        if action == 'GUARDRAIL_INTERVENED':
+            blocked_msg = response.get('outputs', [{}])[0].get('text', "I'm sorry, I can't respond to that.")
+            logger.warning("Guardrail INTERVENED (%s): %s → %s", source, text[:60], blocked_msg)
+            return False, blocked_msg
+        return True, None
+    except Exception as e:
+        logger.error("Guardrail check failed (%s): %s", source, e)
+        # Fail open — don't block the conversation if the guardrail API is unreachable
+        return True, None
 
 def get_student_query(raw_query: str) -> str:
     """Format the student's raw query into a specific template suitable for processing."""
@@ -226,17 +260,35 @@ def get_response(
     persona_id: str = "",
     embeddings_model=None,
     ddb_table_name: str = None,
-    raw_prompt_mode: bool = False
+    raw_prompt_mode: bool = False,
+    is_initial_prompt: bool = False
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
+    # Screen student input through guardrails (skip the initial system-generated prompt
+    # which is trusted instructor content, not student input)
+    if not is_initial_prompt:
+        passed, blocked_msg = apply_text_guardrail(query, "INPUT")
+        if not passed:
+            logger.warning("Guardrail blocked student input: %s", query[:60])
+            if stream:
+                # Publish the blocked message through AppSync so the frontend
+                # receives the full start → chunk → end sequence and stops loading.
+                publish_to_appsync(session_id, {"type": "start", "content": ""})
+                publish_to_appsync(session_id, {"type": "chunk", "content": blocked_msg})
+                publish_to_appsync(session_id, {"type": "end", "content": blocked_msg})
+            return {"llm_output": blocked_msg, "session_name": "Chat", "llm_verdict": False}
+    
     # Save the student's message for non-streaming only;
     # streaming path saves are handled inside generate_streaming_response.
+    # Skip saving and matching for the initial system-generated prompt that
+    # kicks off the AI patient — it is not a real student message and should
+    # never appear in debrief suggested rewrites.
     student_message_id = None
-    if not stream:
+    if not stream and not is_initial_prompt:
         student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
         if student_message_id is not None and embeddings_model is not None and query.strip():
             run_matching_async(
@@ -327,7 +379,8 @@ def get_response(
                 student_user_id=student_user_id,
                 persona_id=persona_id,
                 embeddings_model=embeddings_model,
-                ddb_table_name=ddb_table_name
+                ddb_table_name=ddb_table_name,
+                is_initial_prompt=is_initial_prompt
             )
         else:
             response = generate_response(
@@ -345,6 +398,10 @@ def get_response(
     if stream:
         # AI message already saved inside generate_streaming_response
         return {"llm_output": response, "session_name": "Chat", "llm_verdict": False}
+    
+    # No output guardrail for text mode — the AI response is generated from
+    # a trusted system prompt with prompt-level role guardrails. Screening
+    # the output would flag legitimate patient dialogue about medical topics.
     
     result = get_llm_output(response, llm_completion)
     
@@ -372,7 +429,8 @@ def generate_streaming_response(
     student_user_id: str = "",
     persona_id: str = "",
     embeddings_model=None,
-    ddb_table_name: str = None
+    ddb_table_name: str = None,
+    is_initial_prompt: bool = False
 ) -> str:
     """
     Streams an answer via AppSync as fast as possible.
@@ -413,15 +471,18 @@ def generate_streaming_response(
     try:
         logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")
         # Empathy evaluation disabled
-        student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
-        if student_message_id is not None and embeddings_model is not None and query.strip():
-            run_matching_async(
-                message_content=query,
-                session_id=session_id,
-                message_id=student_message_id,
-                embeddings_model=embeddings_model,
-                table_name=ddb_table_name,
-            )
+        # Skip saving and matching for the initial system-generated prompt —
+        # it is not a real student message.
+        if not is_initial_prompt:
+            student_message_id = save_message_to_db(session_id, student_user_id, 'student', query)
+            if student_message_id is not None and embeddings_model is not None and query.strip():
+                run_matching_async(
+                    message_content=query,
+                    session_id=session_id,
+                    message_id=student_message_id,
+                    embeddings_model=embeddings_model,
+                    table_name=ddb_table_name,
+                )
 
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 
@@ -653,7 +714,7 @@ def split_into_sentences(paragraph: str) -> list[str]:
     """
     Splits a given paragraph into individual sentences using a regular expression to detect sentence boundaries.
     """
-    sentence_endings = r'(?<!\\w\\.\\w.)(?<![A-Z][a-z]\\.)(?<=\\.|\\?|\\!)\\s'
+    sentence_endings = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s'
     sentences = re.split(sentence_endings, paragraph)
     return sentences
 
@@ -1166,8 +1227,11 @@ def flush_matching_threads(session_id: str, timeout: float = 30.0) -> None:
 
 def fetch_tagged_messages(session_id: str) -> list[dict]:
     """
-    Fetch messages with non-NULL matched_question_ids for a session.
+    Fetch student messages with non-NULL matched_question_ids for a session.
     Returns list of {message_id, message_content, sender_type, sent_at, matched_question_ids}.
+
+    Only student messages are included — AI/system messages should never
+    appear in debrief question matching or suggested rewrites.
     """
     try:
         conn = _get_db_connection()
@@ -1175,9 +1239,9 @@ def fetch_tagged_messages(session_id: str) -> list[dict]:
         cursor.execute(
             'SELECT message_id, message_content, sender_type, sent_at, matched_question_ids '
             'FROM "messages" '
-            'WHERE chat_id = %s AND matched_question_ids IS NOT NULL '
+            'WHERE chat_id = %s AND matched_question_ids IS NOT NULL AND sender_type = %s '
             'ORDER BY sent_at ASC',
-            (session_id,)
+            (session_id, 'student')
         )
         rows = cursor.fetchall()
         cursor.close()
