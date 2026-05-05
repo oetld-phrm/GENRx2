@@ -5,8 +5,9 @@ import boto3
 import logging
 import psycopg
 from langchain_aws import BedrockEmbeddings
+from helpers.cohere_embeddings import CohereBedrockEmbeddings
 
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table
+from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, set_stream_callback_url
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +27,10 @@ APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm", region_name=REGION)
 bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
+# Cohere Embed v4 cross-region inference (us.*) requires a US source region.
+# When deployed outside the US (e.g. ca-central-1), route embedding calls to us-east-1.
+BEDROCK_EMBEDDING_REGION = os.environ.get("BEDROCK_EMBEDDING_REGION", "us-east-1")
+bedrock_embedding_client = boto3.client("bedrock-runtime", region_name=BEDROCK_EMBEDDING_REGION)
 
 # Cached resources
 connection = None
@@ -72,11 +77,18 @@ def initialize_constants():
     TABLE_NAME = get_parameter(TABLE_NAME_PARAM, TABLE_NAME)
 
     if embeddings is None:
-        embeddings = BedrockEmbeddings(
-            model_id=EMBEDDING_MODEL_ID,
-            client=bedrock_runtime,
-            region_name=REGION,
-        )
+        if EMBEDDING_MODEL_ID.startswith("cohere.embed"):
+            embeddings = CohereBedrockEmbeddings(
+                model_id=EMBEDDING_MODEL_ID,
+                client=bedrock_embedding_client,
+                region_name=BEDROCK_EMBEDDING_REGION,
+            )
+        else:
+            embeddings = BedrockEmbeddings(
+                model_id=EMBEDDING_MODEL_ID,
+                client=bedrock_embedding_client,
+                region_name=BEDROCK_EMBEDDING_REGION,
+            )
     
     create_dynamodb_history_table(TABLE_NAME)
 
@@ -221,6 +233,11 @@ def handler(event, context):
     persona_id = query_params.get("patient_id", "")
     session_name = query_params.get("session_name", "New Chat")
     student_user_id = event.get('requestContext', {}).get('authorizer', {}).get('userId', '')
+
+    # When the ECS socket server calls us, it passes its own URL so we can
+    # POST streaming chunks there instead of going through AppSync.
+    stream_callback_url = query_params.get("stream_callback_url", "")
+    set_stream_callback_url(stream_callback_url or None)
 
     if not simulation_group_id or not session_id or not persona_id:
         return {

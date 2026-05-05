@@ -10,6 +10,15 @@ logger.setLevel(logging.INFO)
 _matching_threads_lock = threading.Lock()
 _matching_threads: dict[str, list[threading.Thread]] = {}  # session_id -> [threads]
 
+# Stream callback URL — when set, publish_stream_event() POSTs chunks here
+# instead of AppSync. Set by main.py from the stream_callback_url query param.
+_stream_callback_url: str | None = None
+
+def set_stream_callback_url(url: str | None):
+    """Set the callback URL for streaming events. Called by main.py per request."""
+    global _stream_callback_url
+    _stream_callback_url = url
+
 from langchain_aws import ChatBedrock
 from langchain_aws import BedrockLLM
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -68,11 +77,8 @@ def get_bedrock_llm(
     trusted system prompt. Instead, use apply_text_guardrail() to screen
     student input before the LLM call and AI output after.
     """
-    deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-    if 'nova' in bedrock_llm_id.lower():
-        region = 'us-east-1'
-    else:
-        region = deployment_region
+    # Hardcoded to us-east-1 where Claude Sonnet 4.6 is available
+    region = 'us-east-1'
     
     base_kwargs = {
         "model_id": bedrock_llm_id,
@@ -543,21 +549,35 @@ def get_cognito_token():
         return None
 
 def publish_to_appsync(session_id: str, data: dict):
-    """Publish streaming data to AppSync subscription using Cognito User Pool authentication."""
-    # TODO(refactor): Extract AppSync GraphQL mutation construction into a helper function
-    # TODO(refactor): Extract AppSync authentication header setup into a helper function
+    """Publish a streaming event to the frontend.
+
+    When a stream callback URL is configured (ECS Socket.IO server), POST the
+    event there — this is a fast, VPC-internal call with no auth overhead.
+    Otherwise fall back to the legacy AppSync GraphQL mutation path.
+    """
     import requests
     import json
     import os
-    
-    try:        
+
+    # ── Fast path: ECS callback ──────────────────────────────────────────
+    if _stream_callback_url:
+        try:
+            requests.post(
+                f"{_stream_callback_url}/stream-callback",
+                json={"session_id": session_id, "data": data},
+                timeout=5,
+            )
+        except Exception as e:
+            logger.error(f"Failed to POST stream event to callback URL: {e}")
+        return
+
+    # ── Legacy path: AppSync ─────────────────────────────────────────────
+    try:
         appsync_url = os.environ.get('APPSYNC_GRAPHQL_URL')
         if not appsync_url:
             logger.error("AppSync GraphQL URL not available in environment")
             return
-            
-        logger.info(f"🔗 Using AppSync URL: {appsync_url}")
-            
+
         mutation = """
         mutation PublishTextStream($sessionId: String!, $data: AWSJSON!) {
             publishTextStream(sessionId: $sessionId, data: $data) {
@@ -566,7 +586,7 @@ def publish_to_appsync(session_id: str, data: dict):
             }
         }
         """
-        
+
         payload = {
             'query': mutation,
             'variables': {
@@ -574,28 +594,23 @@ def publish_to_appsync(session_id: str, data: dict):
                 'data': json.dumps(data)
             }
         }
-        
+
         token = get_cognito_token()
         if not token:
             logger.error("No Cognito token available for AppSync authentication")
             return
-            
+
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Authorization': token
         }
-        
-        logger.info("🔑 Using Cognito User Pool token for authentication")
-        
-        logger.info(f"📶 Making AppSync request to: {appsync_url}")
+
         response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
-        
+
         if response.status_code != 200:
-            logger.error(f"Request payload: {json.dumps(payload, indent=2)}")
-        else:
-            logger.info(f"📝 Response DEPLOYMENT TEST v3: {response.text[:200]}...")
-        
+            logger.error(f"AppSync publish failed: {response.status_code}")
+
     except Exception as e:
         logger.error(f"Failed to publish to AppSync: {e}")
         logger.exception("Full AppSync error:")
@@ -1072,13 +1087,13 @@ def match_message_to_questions(
 ) -> list[dict]:
     """
     Compute embedding for a student message, compare against cached question
-    embeddings, and persist matches that exceed the 0.55 threshold.
+    embeddings, and persist matches that exceed the 0.45 threshold.
 
     Classification tiers:
         >= 0.70  → "high"
-        0.55-0.69 → "moderate"
-        0.40-0.54 → "low"
-        < 0.40  → discarded
+        0.60-0.69 → "moderate"
+        0.45-0.59 → "low"
+        < 0.45  → discarded
 
     Writes the matched_question_ids JSONB to the messages table for the given
     message_id and returns the list of match dicts.
@@ -1107,11 +1122,11 @@ def match_message_to_questions(
         logger.info(
             f"🔍 Similarity: message='{message_content[:60]}' vs question='{q.get('question_text', '')[:60]}' → score={score:.4f}"
         )
-        if score >= 0.65:
+        if score >= 0.70:
             confidence = "high"
-        elif score >= 0.55:
+        elif score >= 0.60:
             confidence = "moderate"
-        elif score >= 0.40:
+        elif score >= 0.45:
             confidence = "low"
         else:
             continue  # discard below threshold
@@ -2321,7 +2336,7 @@ def generate_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.65
+        REWRITE_THRESHOLD = 0.70
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:
@@ -2657,7 +2672,7 @@ def generate_test_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.65
+        REWRITE_THRESHOLD = 0.70
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:

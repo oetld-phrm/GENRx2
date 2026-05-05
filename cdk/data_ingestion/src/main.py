@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple
 
 from helpers.vectorstore import update_vectorstore
+from helpers.cohere_embeddings import CohereBedrockEmbeddings
 from langchain_aws import BedrockEmbeddings
 
 # Set up basic logging
@@ -25,16 +26,10 @@ EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm")
-bedrock_runtime = boto3.client(
-    "bedrock-runtime",
-    region_name=REGION,
-    config=Config(
-        retries={
-            "mode": "adaptive",
-            "total_max_attempts": 10
-        }
-    )
-)
+# Cohere Embed v4 cross-region inference (us.*) requires a US source region.
+# When deployed outside the US (e.g. ca-central-1), route embedding calls to us-east-1.
+BEDROCK_EMBEDDING_REGION = os.environ.get("BEDROCK_EMBEDDING_REGION", "us-east-1")
+bedrock_runtime = boto3.client("bedrock-runtime", region_name=BEDROCK_EMBEDDING_REGION, config=Config(retries={"mode": "adaptive", "total_max_attempts": 10}))
 
 # Cached resources
 connection = None
@@ -283,11 +278,19 @@ def update_vectorstore_from_s3(bucket, simulation_group_id, persona_id, file_pat
         logger.error("Database connection failed. Unable to query embeddings.")
         raise
     
-    embeddings = BedrockEmbeddings(
-        model_id=get_parameter(), 
-        client=bedrock_runtime,
-        region_name=REGION
-    )
+    embedding_model_id = get_parameter()
+    if embedding_model_id.startswith("cohere.embed"):
+        embeddings = CohereBedrockEmbeddings(
+            model_id=embedding_model_id,
+            client=bedrock_runtime,
+            region_name=BEDROCK_EMBEDDING_REGION,
+        )
+    else:
+        embeddings = BedrockEmbeddings(
+            model_id=embedding_model_id, 
+            client=bedrock_runtime,
+            region_name=BEDROCK_EMBEDDING_REGION
+        )
 
     secret = get_secret()
 

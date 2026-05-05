@@ -148,6 +148,13 @@ export class EcsSocketStack extends Stack {
       executionRole: taskRole, // ← should be a separate, minimal execution role
     });
 
+    // 3) Network Load Balancer on TCP 80 (created before container so SELF_URL can reference it)
+    const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
+      vpc,
+      internetFacing: true,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+    });
+
     // 4) Container listening on port 80
     taskDef.addContainer("SocketContainer", {
       image: ecs.ContainerImage.fromEcrRepository(socketServerRepo, "latest"),
@@ -158,6 +165,7 @@ export class EcsSocketStack extends Stack {
       }),
       environment: {
         NODE_ENV: "production",
+        SELF_URL: `http://${nlb.loadBalancerDnsName}`,
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
         SM_COGNITO_CREDENTIALS: apiServiceStack.secret.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -187,7 +195,7 @@ export class EcsSocketStack extends Stack {
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 2, // Fixed count — no auto-scaling policy. Add Application Auto Scaling for production traffic.
+      desiredCount: 1, // Single task — textStreamSockets map is in-memory, requires all traffic on one container
       assignPublicIp: true,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
@@ -211,12 +219,7 @@ export class EcsSocketStack extends Stack {
       "Allow NLB to reach ECS service"
     );
 
-    // 6) Network Load Balancer on TCP 80
-    const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
-      vpc,
-      internetFacing: true,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-    });
+    // 6) NLB listener and target group
     // REVIEW: The NLB listener is on port 80 (unencrypted). WebSocket traffic from CloudFront
     // arrives over HTTP. While CloudFront enforces HTTPS on the viewer side (REDIRECT_TO_HTTPS),
     // the origin connection is HTTP_ONLY. Consider adding a TLS listener (port 443) with an

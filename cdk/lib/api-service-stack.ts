@@ -881,7 +881,7 @@ export class ApiServiceStack extends cdk.Stack {
       {
         parameterName: `/${id}/GenRx/BedrockLLMId`,
         description: "Parameter containing the Bedrock LLM ID",
-        stringValue: "meta.llama3-70b-instruct-v1:0",
+        stringValue: "us.anthropic.claude-sonnet-4-6",
       }
     );
 
@@ -891,7 +891,7 @@ export class ApiServiceStack extends cdk.Stack {
       {
         parameterName: `/${id}/GenRx/EmbeddingModelId`,
         description: "Parameter containing the Embedding Model ID",
-        stringValue: "amazon.titan-embed-text-v2:0",
+        stringValue: "cohere.embed-v4:0",
       }
     );
 
@@ -1255,8 +1255,19 @@ export class ApiServiceStack extends cdk.Stack {
       .defaultChild as lambda.CfnFunction;
     cfnTextGenDockerFunc.overrideLogicalId("TextGenLambdaDockerFunc");
 
-    // Add the permission to the Lambda function's policy to allow API Gateway access
-    textGenLambdaDockerFunc.addPermission("AllowApiGatewayInvoke", {
+    // Create alias with provisioned concurrency to eliminate cold starts
+    const textGenAlias = new lambda.Alias(this, `${id}-TextGenLiveAlias`, {
+      aliasName: 'live',
+      version: textGenLambdaDockerFunc.currentVersion,
+      provisionedConcurrentExecutions: 1,
+    });
+
+    // Override the Logical ID of the alias so the OpenAPI spec can reference it
+    const cfnTextGenAlias = textGenAlias.node.defaultChild as lambda.CfnAlias;
+    cfnTextGenAlias.overrideLogicalId("TextGenLambdaDockerFuncLiveAlias");
+
+    // Add the permission to the alias to allow API Gateway access
+    textGenAlias.addPermission("AllowApiGatewayInvokeAlias", {
       principal: new iam.ServicePrincipal("apigateway.amazonaws.com"),
       action: "lambda:InvokeFunction",
       sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/*/student*`,
@@ -1272,13 +1283,15 @@ export class ApiServiceStack extends cdk.Stack {
         "bedrock:ApplyGuardrail", // Required for guardrails
       ],
       resources: [
-        "arn:aws:bedrock:" +
-          this.region +
-          "::foundation-model/meta.llama3-70b-instruct-v1:0",
+        // Claude Sonnet 4.6 — US cross-region inference profile
+        "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6",
         "arn:aws:bedrock:" +
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
+        // Cohere Embed v4 — called directly in us-east-1
+        "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0",
         `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });

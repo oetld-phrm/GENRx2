@@ -151,8 +151,9 @@ function StudentChatPage() {
     setVoiceError(null);
     setVoiceSessionState('connecting');
 
-    // Create Socket.IO connection (or reuse existing)
+    // Reuse the existing Socket.IO connection (created on mount)
     if (!socketRef.current || !socketRef.current.connected) {
+      // Socket not ready — try to connect now as fallback
       const socketUrl = import.meta.env.VITE_SOCKET_URL || '';
       authService.getIdToken().then((token) => {
         socketRef.current = io(socketUrl, {
@@ -352,7 +353,7 @@ function StudentChatPage() {
     }
   }, [cleanupVoiceSession, sessionId, routeChatId]);
 
-  // Clean up WebRTC on unmount or navigation away
+  // Clean up WebRTC and socket on unmount or navigation away
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (audioClientRef.current) {
@@ -365,6 +366,8 @@ function StudentChatPage() {
       cleanupVoiceSession();
       if (socketRef.current) {
         socketRef.current.off('diagnosis-complete');
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
     };
   }, [cleanupVoiceSession]);
@@ -438,6 +441,33 @@ function StudentChatPage() {
 
     return () => { cancelled = true; };
   }, [groupId, patientId, routeChatId]);
+
+  // Establish Socket.IO connection on mount for text streaming (and voice reuse)
+  useEffect(() => {
+    if (socketRef.current?.connected) return;
+
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || '';
+    let cancelled = false;
+
+    authService.getIdToken().then((token) => {
+      if (cancelled) return;
+      const socket = io(socketUrl, {
+        transports: ['websocket'],
+        auth: { token: token || '' },
+      });
+      socketRef.current = socket;
+
+      socket.on('connect_error', (err) => {
+        console.warn('Socket.IO connection error:', err.message);
+      });
+    }).catch((err) => {
+      console.warn('Failed to establish socket connection:', err);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load notes from API when session is available
   useEffect(() => {
@@ -538,6 +568,7 @@ function StudentChatPage() {
           setSessionCompleted(true);
         },
       },
+      socketRef.current,
     ).catch((err) => {
       console.error('AI greeting streaming failed:', err);
       setMessages([{
@@ -740,6 +771,7 @@ function StudentChatPage() {
             setSessionCompleted(true);
           },
         },
+        socketRef.current,
       );
       cancelStreamRef.current = cancel;
     } catch (error) {
