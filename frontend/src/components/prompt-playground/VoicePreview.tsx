@@ -188,6 +188,7 @@ export default function VoicePreview({ value, onChange }: VoicePreviewProps = {}
       socketRef.current = socket;
 
       socket.on('audio-chunk', (data: { data: string }) => {
+        stopMic();
         setPreviewState('playing');
         playAudioChunk(data.data);
 
