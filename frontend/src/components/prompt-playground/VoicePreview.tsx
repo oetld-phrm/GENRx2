@@ -293,7 +293,7 @@ export default function VoicePreview({ value, onChange }: VoicePreviewProps = {}
             Voice Preview
           </h2>
           <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>
-            Select a voice, connect, then tap the mic and say hello to hear how it sounds.
+            These voices are provided by Amazon Nova Sonic 2. Select a voice, connect, then tap the mic and say hello to hear how it sounds.
           </p>
         </div>
 

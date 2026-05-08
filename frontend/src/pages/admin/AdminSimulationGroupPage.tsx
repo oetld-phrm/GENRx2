@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BarChart3, Users, UserCog, FileText, Search, Trash2, Plus, Menu, UserPlus, FileCode, HelpCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -106,6 +106,9 @@ function AdminSimulationGroupPage() {
 
   // Global rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>([]);
+
+  // Mapping from question bank ID → group_question_id (assignment record ID) for unassign
+  const questionIdToGroupQuestionId = useRef<Map<string, string>>(new Map());
 
   // Issues & Feedback state
   const [issueReports, setIssueReports] = useState<IssueReport[]>([]);
@@ -222,6 +225,12 @@ function AdminSimulationGroupPage() {
           }));
           setGlobalRubricQuestions(rubricQuestions);
           if (activeSection !== 'editPatient') setIncludedQuestionIds(new Set(globalAssigned.map((q: any) => q.question_id)));
+          // Build questionId → groupQuestionId mapping
+          const map = new Map<string, string>();
+          for (const q of assigned) {
+            if (q.question_id && q.group_question_id) map.set(q.question_id, q.group_question_id);
+          }
+          questionIdToGroupQuestionId.current = map;
           if (rubricQuestions.length > 0 && !selectedQuestionId) setSelectedQuestionId(rubricQuestions[0].id);
         })
         .catch((err: any) => console.error('Failed to load assigned questions:', err));
@@ -278,7 +287,12 @@ function AdminSimulationGroupPage() {
     patientEditor.startEditing(patientId);
     if (groupId) {
       instructorService.getSimulationGroupQuestions(groupId, patientId)
-        .then((assigned: any[]) => setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id))))
+        .then((assigned: any[]) => {
+          setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)));
+          for (const q of assigned) {
+            if (q.question_id && q.group_question_id) questionIdToGroupQuestionId.current.set(q.question_id, q.group_question_id);
+          }
+        })
         .catch(() => setIncludedQuestionIds(new Set()));
     }
     setActiveSection('editPatient');
@@ -435,14 +449,26 @@ function AdminSimulationGroupPage() {
     try {
       if (isChecked) {
         newSet.add(questionId);
-        await instructorService.assignQuestionToGroup(groupId || '1', questionId, personaId || undefined);
+        const result = await instructorService.assignQuestionToGroup(groupId || '1', questionId, personaId || undefined);
+        // Store the new group_question_id in the mapping
+        if (result?.group_question_id) {
+          questionIdToGroupQuestionId.current.set(questionId, result.group_question_id);
+        } else if (Array.isArray(result) && result[0]?.group_question_id) {
+          questionIdToGroupQuestionId.current.set(questionId, result[0].group_question_id);
+        }
         if (isGlobal && !globalRubricQuestions.find(q => q.id === questionId)) {
           instructorService.addGlobalRubricQuestion(groupId || '1', { id: questionId, title: bankQuestion.title, keyQuestion: bankQuestion.questionText, clinicalIntent: bankQuestion.clinicalIntent, evaluationCriteria: bankQuestion.evaluationCriteria, required: bankQuestion.isMandatory });
           setGlobalRubricQuestions(instructorService.getGlobalRubricQuestions(groupId || '1'));
         }
       } else {
         newSet.delete(questionId);
-        await instructorService.unassignQuestion(questionId);
+        const groupQuestionId = questionIdToGroupQuestionId.current.get(questionId);
+        if (!groupQuestionId) {
+          console.error('No group_question_id found for question:', questionId);
+          return;
+        }
+        await instructorService.unassignQuestion(groupQuestionId);
+        questionIdToGroupQuestionId.current.delete(questionId);
         if (isGlobal) {
           instructorService.deleteGlobalRubricQuestion(groupId || '1', questionId);
           setGlobalRubricQuestions(instructorService.getGlobalRubricQuestions(groupId || '1'));
@@ -582,12 +608,22 @@ function AdminSimulationGroupPage() {
               onGlobalTabClick={() => { setIncludedQuestionIds(new Set(instructorService.getGlobalRubricQuestions(groupId || '1').map(q => q.id))); }}
               onPatientSpecificTabClick={() => {
                 if (selectedPatientForQuestionBank && groupId) {
-                  instructorService.getSimulationGroupQuestions(groupId, selectedPatientForQuestionBank).then((assigned: any[]) => setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)))).catch(() => setIncludedQuestionIds(new Set()));
+                  instructorService.getSimulationGroupQuestions(groupId, selectedPatientForQuestionBank).then((assigned: any[]) => {
+                    setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)));
+                    for (const q of assigned) {
+                      if (q.question_id && q.group_question_id) questionIdToGroupQuestionId.current.set(q.question_id, q.group_question_id);
+                    }
+                  }).catch(() => setIncludedQuestionIds(new Set()));
                 } else { setIncludedQuestionIds(new Set()); }
               }}
               onPatientSelect={(patientId) => {
                 if (patientId && groupId) {
-                  instructorService.getSimulationGroupQuestions(groupId, patientId).then((assigned: any[]) => setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)))).catch(() => setIncludedQuestionIds(new Set()));
+                  instructorService.getSimulationGroupQuestions(groupId, patientId).then((assigned: any[]) => {
+                    setIncludedQuestionIds(new Set(assigned.map((q: any) => q.question_id)));
+                    for (const q of assigned) {
+                      if (q.question_id && q.group_question_id) questionIdToGroupQuestionId.current.set(q.question_id, q.group_question_id);
+                    }
+                  }).catch(() => setIncludedQuestionIds(new Set()));
                 } else { setIncludedQuestionIds(new Set()); }
               }}
             />
