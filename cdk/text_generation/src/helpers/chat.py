@@ -260,8 +260,7 @@ def get_response(
     embeddings_model=None,
     ddb_table_name: str = None,
     raw_prompt_mode: bool = False,
-    is_initial_prompt: bool = False,
-    skip_guardrail: bool = False
+    is_initial_prompt: bool = False
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -270,8 +269,7 @@ def get_response(
     
     # Screen student input through guardrails (skip the initial system-generated prompt
     # which is trusted instructor content, not student input)
-    # Also skip if caller already ran the guardrail check (e.g. optimized chat path)
-    if not is_initial_prompt and not skip_guardrail:
+    if not is_initial_prompt:
         passed, blocked_msg = apply_text_guardrail(query, "INPUT")
         if not passed:
             logger.warning("Guardrail blocked student input: %s", query[:60])
@@ -538,7 +536,6 @@ def generate_streaming_response(
         error_msg = "I am sorry, I cannot provide a response to that query."
         publish_to_appsync(session_id, {"type": "error", "content": error_msg})
         return error_msg
-
 
 def get_cognito_token():
     """Get the current user's Cognito JWT token from the Lambda event context."""
