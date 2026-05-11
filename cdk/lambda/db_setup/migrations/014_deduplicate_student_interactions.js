@@ -18,7 +18,7 @@
 
 exports.up = (pgm) => {
   pgm.sql(`
-    DO $
+    DO $$
     DECLARE
       deleted_count integer;
     BEGIN
@@ -43,7 +43,7 @@ exports.up = (pgm) => {
 
       GET DIAGNOSTICS deleted_count = ROW_COUNT;
       RAISE NOTICE 'Migration 014: removed % duplicate student_interaction(s)', deleted_count;
-    END $;
+    END $$;
   `);
 
   // Add a unique constraint to prevent future duplicates
