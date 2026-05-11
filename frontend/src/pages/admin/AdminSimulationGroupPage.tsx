@@ -28,6 +28,7 @@ import { QuestionBankSection } from '@/components/simulation-group/QuestionBankS
 import { AddQuestionDialog } from '@/components/AddQuestionDialog';
 import { AddPatientSpecificQuestionDialog } from '@/components/AddPatientSpecificQuestionDialog';
 import { AddInstructorDialog } from '@/components/AddInstructorDialog';
+import { useNotification } from '@/components/notifications';
 import AIDebriefDialog from '@/components/AIDebriefDialog';
 import PromptPlayground from '@/components/prompt-playground/PromptPlayground';
 import SystemPromptPlayground from '@/components/prompt-playground/SystemPromptPlayground';
@@ -47,6 +48,7 @@ function AdminSimulationGroupPage() {
   const navigate = useNavigate();
   const { organizationId, groupId } = useParams();
   const { user: authUser } = useAuth();
+  const { showNotification } = useNotification();
 
   // Section navigation
   const [activeSection, setActiveSection] = useState<ActiveSection>('analytics');
@@ -246,10 +248,10 @@ function AdminSimulationGroupPage() {
       try {
         const result = await studentService.joinGroup(accessCode, 'preview');
         if (result?.success) { navigate(`/patients/${groupId}`, { state: { adminReturnUrl } }); return; }
-        window.alert('Unable to enroll in this simulation group. Taking you to the student dashboard instead.');
+        showNotification({ message: 'Unable to enroll in this simulation group. Taking you to the student dashboard instead.', type: 'warning' });
       } catch (error) {
         console.error('Unexpected error while enrolling as student:', error);
-        window.alert('An unexpected error occurred while enrolling in this simulation group. Taking you to the student dashboard instead.');
+        showNotification({ message: 'An unexpected error occurred while enrolling in this simulation group. Taking you to the student dashboard instead.', type: 'error' });
       }
     }
     navigate('/student');
@@ -345,8 +347,11 @@ function AdminSimulationGroupPage() {
 
   // ── Prompt handlers ──
   const handleLoadDefaultPrompt = async () => {
-    if (selectedPromptType === 'system') { setSystemPromptText(await instructorService.getEvaluationPrompt(groupId || '1')); }
-    else { setEvaluationPromptText(await instructorService.getDefaultDebriefPrompt()); }
+    if (selectedPromptType === 'system') {
+      setSystemPromptText('Pretend to be a patient with the context you are given. You are helping the pharmacist practice their skills interacting with a patient.');
+    } else {
+      setEvaluationPromptText(await instructorService.getDefaultDebriefPrompt());
+    }
     setIsPromptUnsaved(true);
   };
   const handleSavePrompt = async () => {
@@ -358,8 +363,8 @@ function AdminSimulationGroupPage() {
       setIsPromptUnsaved(false);
       const type = selectedPromptType === 'system' ? 'system' : 'debrief';
       setPromptHistory(await instructorService.getPromptHistory(groupId, type));
-      alert('Prompt saved successfully!');
-    } catch (error) { console.error('Failed to save prompt:', error); alert('Failed to save prompt. Please try again.'); }
+      showNotification({ message: 'Prompt saved successfully!', type: 'success' });
+    } catch (error) { console.error('Failed to save prompt:', error); showNotification({ message: 'Failed to save prompt. Please try again.', type: 'error' }); }
   };
   const handleRestorePromptVersion = (versionText: string) => {
     if (confirm('Are you sure you want to restore this version?')) {
