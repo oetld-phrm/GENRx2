@@ -60,9 +60,9 @@ See the [Deployment Guide](docs/deploymentGuide.md) for full setup instructions.
 
 - **Frontend**: React 19, TypeScript, Vite 7, Tailwind CSS 4, shadcn/ui
 - **Backend**: AWS Lambda (Node.js + Python), API Gateway, AppSync
-- **AI**: Amazon Bedrock (Llama 3 70B, Titan Embeddings, Nova Sonic)
+- **AI**: Amazon Bedrock (Claude Sonnet 4.6 for text generation, Cohere Embed v4 for embeddings, Nova Sonic 2.0 for voice)
 - **Database**: PostgreSQL 16 on RDS with pgvector
-- **Real-time**: Socket.IO on ECS Fargate, AppSync subscriptions, WebRTC
+- **Real-time**: Socket.IO on ECS Fargate (voice audio streaming + text generation streaming)
 - **Infrastructure**: AWS CDK v2 (TypeScript)
 - **Auth**: Amazon Cognito
 - **CI/CD**: AWS CodePipeline + CodeBuild + Amplify
