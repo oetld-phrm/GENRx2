@@ -1468,11 +1468,11 @@ def build_rewrite_prompt(
     evaluation_criteria: str,
 ) -> str:
     """
-    Build a focused prompt that asks the LLM to generate a single suggested
-    rewrite for a student message that only partially addressed a question.
+    Build a focused prompt that asks the LLM to suggest a gentler alternative
+    phrasing for a student message that only partially addressed a question.
 
-    Called only for moderate-confidence matches (similarity < 0.85).  The
-    threshold enforcement is NOT in this function — it is applied in
+    Called only for low-confidence matches (similarity < REWRITE_THRESHOLD).
+    The threshold enforcement is NOT in this function — it is applied in
     ``generate_debrief()`` when deciding whether to call this function.
 
     Target output: ~100-200 tokens (a single JSON object with one key).
@@ -1488,25 +1488,27 @@ def build_rewrite_prompt(
 {evaluation_criteria if evaluation_criteria else "(No specific evaluation criteria provided)"}
 
 ## Your Task
-The student's message above was matched to the question shown, but with only moderate confidence — meaning the student partially addressed the topic but could have been more direct or thorough.
+The student's message above was matched to the question shown, but with low confidence — meaning the student touched on the topic but didn't fully address it.
 
-Rewrite the student's message so it more clearly and completely addresses the matched question. Keep the student's original intent and conversational tone, but make the question more specific and targeted.
+Suggest a gentle alternative phrasing that the student could have used to more naturally cover this topic in conversation. Preserve the student's conversational style and intent — this is a suggestion, not a correction. The goal is to show one way they might bring up the topic more directly next time.
 
 Example:
 - Original: "Have you had any troubles with it?"
 - Question: "How often do you take gingko / do you take gingko regularly?"
-- Rewrite: "How often do you take gingko biloba? Is it something you take every day, or just occasionally?"
+- Suggestion: "How often do you usually take the gingko? Is it every day or more as-needed?"
 
 Return a JSON object with EXACTLY one key:
 
 {{
-  "suggested_rewrite": "The improved version of the student's message."
+  "suggested_rewrite": "A gentle alternative phrasing the student could consider."
 }}
 
 RULES:
-- The "suggested_rewrite" value MUST be a non-empty string containing the full rewritten message.
-- Do NOT return an empty string — always provide a concrete, actionable rewrite.
-- The rewrite should be a complete sentence or question the student could actually say to the patient.
+- The "suggested_rewrite" value MUST be a non-empty string containing the full suggested message.
+- Do NOT return an empty string — always provide a concrete suggestion.
+- Keep it conversational and natural — something a student would actually say to a patient.
+- This is a helpful suggestion, not a strict correction. The student's original message was not wrong.
+- If the student's message reasonably addresses the question in a conversational clinical context, the rewrite should only be a minor refinement, not a complete restructuring.
 
 CRITICAL JSON OUTPUT RULES:
 - Your ENTIRE response must be a single valid JSON object. Nothing else.
@@ -2330,7 +2332,7 @@ def generate_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.70
+        REWRITE_THRESHOLD = 0.55
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:
@@ -2666,7 +2668,7 @@ def generate_test_debrief(
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
         # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.70
+        REWRITE_THRESHOLD = 0.55
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
         for qa_entry in questions_addressed:
