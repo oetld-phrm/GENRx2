@@ -106,9 +106,10 @@ let dtpAssignments: DTPAssignment[] = [];
 
 /**
  * List all DTP items for a given organization.
+ * In mock mode, returns all items regardless of organizationId for development convenience.
  */
-export async function listDTPItems(organizationId: string): Promise<DTPItem[]> {
-  return dtpItems.filter((item) => item.organizationId === organizationId);
+export async function listDTPItems(_organizationId: string): Promise<DTPItem[]> {
+  return dtpItems;
 }
 
 /**

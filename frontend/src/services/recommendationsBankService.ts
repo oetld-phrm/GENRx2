@@ -94,9 +94,10 @@ let recommendationAssignments: RecommendationAssignment[] = [];
 
 /**
  * List all Recommendation items for a given organization.
+ * In mock mode, returns all items regardless of organizationId for development convenience.
  */
-export async function listRecommendationItems(organizationId: string): Promise<RecommendationItem[]> {
-  return recommendationItems.filter((item) => item.organizationId === organizationId);
+export async function listRecommendationItems(_organizationId: string): Promise<RecommendationItem[]> {
+  return recommendationItems;
 }
 
 /**
