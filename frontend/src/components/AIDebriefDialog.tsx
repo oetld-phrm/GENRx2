@@ -212,6 +212,12 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                       </h3>
                     </div>
                     <div className="pl-7 space-y-4">
+                      {/* Overview */}
+                      {updatedDebriefData.chunk2.dtpComparison.overview && (
+                        <p className="text-sm leading-relaxed" style={{ color: UI_COLORS.text.body }}>
+                          {updatedDebriefData.chunk2.dtpComparison.overview}
+                        </p>
+                      )}
                       {/* Matched DTPs */}
                       {updatedDebriefData.chunk2.dtpComparison.matched.length > 0 && (
                         <div>
@@ -265,38 +271,66 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                     </div>
                   </div>
 
-                  {/* Recommendations Feedback Section */}
+                  {/* Recommendations Comparison Section */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
                       <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
-                        Recommendations Feedback
+                        Recommendations Comparison
                       </h3>
                     </div>
                     <div className="pl-7 space-y-4">
-                      {updatedDebriefData.chunk2.recommendationsFeedback.strengths.length > 0 && (
+                      {/* Overview */}
+                      {updatedDebriefData.chunk2.recommendationsComparison.overview && (
+                        <p className="text-sm leading-relaxed" style={{ color: UI_COLORS.text.body }}>
+                          {updatedDebriefData.chunk2.recommendationsComparison.overview}
+                        </p>
+                      )}
+                      {/* Matched Recommendations */}
+                      {updatedDebriefData.chunk2.recommendationsComparison.matched.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Strengths:
+                            Matched:
                           </h4>
-                          <ul className="space-y-1 list-disc list-inside">
-                            {updatedDebriefData.chunk2.recommendationsFeedback.strengths.map((strength, index) => (
-                              <li key={index} className="text-sm" style={{ color: UI_COLORS.text.body }}>
-                                {strength}
+                          <ul className="space-y-1">
+                            {updatedDebriefData.chunk2.recommendationsComparison.matched.map((item, index) => (
+                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
+                                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#22c55e' }} />
+                                <span>{item.recommendationText}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
                       )}
-                      {updatedDebriefData.chunk2.recommendationsFeedback.areasForImprovement.length > 0 && (
+
+                      {/* Missed Recommendations */}
+                      {updatedDebriefData.chunk2.recommendationsComparison.missed.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Areas for Improvement:
+                            Missed:
                           </h4>
-                          <ul className="space-y-1 list-disc list-inside">
-                            {updatedDebriefData.chunk2.recommendationsFeedback.areasForImprovement.map((area, index) => (
-                              <li key={index} className="text-sm" style={{ color: UI_COLORS.text.body }}>
-                                {area}
+                          <ul className="space-y-1">
+                            {updatedDebriefData.chunk2.recommendationsComparison.missed.map((item, index) => (
+                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
+                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#ef4444' }} />
+                                <span>{item.recommendationText}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Unmatched Recommendations */}
+                      {updatedDebriefData.chunk2.recommendationsComparison.unmatched.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                            Unmatched:
+                          </h4>
+                          <ul className="space-y-1">
+                            {updatedDebriefData.chunk2.recommendationsComparison.unmatched.map((item, index) => (
+                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
+                                <Circle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
+                                <span>{item.recommendationText}</span>
                               </li>
                             ))}
                           </ul>

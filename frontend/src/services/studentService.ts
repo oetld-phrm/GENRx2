@@ -1168,17 +1168,29 @@ export interface DTPComparisonItem {
 }
 
 /**
- * Debrief Chunk 2 — DTP comparison and recommendation feedback (available after processing delay)
+ * A single Recommendation comparison item showing match status
+ */
+export interface RecommendationComparisonItem {
+  recommendationText: string;
+  status: 'matched' | 'missed' | 'unmatched';
+  matchedWith?: string;
+}
+
+/**
+ * Debrief Chunk 2 — DTP comparison and recommendation comparison (available after processing delay)
  */
 export interface DebriefChunk2 {
   dtpComparison: {
+    overview: string;
     matched: DTPComparisonItem[];
     missed: DTPComparisonItem[];
     unmatched: DTPComparisonItem[];
   };
-  recommendationsFeedback: {
-    strengths: string[];
-    areasForImprovement: string[];
+  recommendationsComparison: {
+    overview: string;
+    matched: RecommendationComparisonItem[];
+    missed: RecommendationComparisonItem[];
+    unmatched: RecommendationComparisonItem[];
   };
 }
 
@@ -1287,20 +1299,40 @@ async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefDat
 
       resolve({
         dtpComparison: {
+          overview: 'You identified 2 out of 4 expected drug therapy problems. You correctly recognized the statin-amlodipine interaction and the subtherapeutic metformin dosing. However, you missed the duplicate PPI therapy and the lisinopril-induced cough requiring an ARB switch. One of your submissions did not correspond to an expected DTP for this case.',
           matched,
           missed,
           unmatched,
         },
-        recommendationsFeedback: {
-          strengths: [
-            'Correctly identified the need for statin dose adjustment given the drug interaction',
-            'Provided appropriate rationale for metformin dose titration based on HbA1c target',
-            'Recommended follow-up lab monitoring within an appropriate timeframe',
+        recommendationsComparison: {
+          overview: 'You provided 2 recommendations that aligned with expected interventions, demonstrating good clinical reasoning around dose adjustments and drug interactions. Two key recommendations were missed — addressing the PPI duplication and switching the ACE inhibitor to an ARB. Your rationale for the matched recommendations was clinically sound and appropriately referenced patient-specific parameters.',
+          matched: [
+            {
+              recommendationText: 'Reduce atorvastatin dose to 40mg daily due to drug interaction with amlodipine',
+              status: 'matched',
+              matchedWith: submission?.recommendationSubmission.entries[0]?.recommendation || 'Reduce statin dose given interaction',
+            },
+            {
+              recommendationText: 'Titrate metformin to 1000mg twice daily to achieve HbA1c target below 7%',
+              status: 'matched',
+              matchedWith: submission?.recommendationSubmission.entries[1]?.recommendation || 'Increase metformin for better glycemic control',
+            },
           ],
-          areasForImprovement: [
-            'Did not address the duplicate PPI therapy — recommend discontinuing OTC omeprazole',
-            'Should have recommended switching lisinopril to an ARB (e.g., losartan) to resolve the cough',
-            'Rationale for monitoring plan could include specific lab parameters (SCr, eGFR, LFTs)',
+          missed: [
+            {
+              recommendationText: 'Discontinue OTC omeprazole and continue prescribed pantoprazole only — reassess PPI need in 8 weeks',
+              status: 'missed',
+            },
+            {
+              recommendationText: 'Switch lisinopril to losartan 50mg daily to resolve persistent dry cough while maintaining renal protection',
+              status: 'missed',
+            },
+          ],
+          unmatched: [
+            {
+              recommendationText: submission?.recommendationSubmission.entries[2]?.recommendation || 'Consider adding aspirin for cardiovascular prophylaxis',
+              status: 'unmatched',
+            },
           ],
         },
       });
