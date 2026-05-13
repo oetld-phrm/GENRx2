@@ -33,7 +33,6 @@ export function EditPatientPanel({
   onSaveCaseQuestion,
   onDeleteCaseQuestion,
 }: EditPatientPanelProps) {
-  const { showNotification } = useNotification();
   const [caseQuestionSearchQuery, setCaseQuestionSearchQuery] = useState('');
   const [globalRubricSearchQuery, setGlobalRubricSearchQuery] = useState('');
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
@@ -879,6 +878,7 @@ function MaterialsTab({
   onMaterialSearchChange: (query: string) => void;
   filteredMaterials: CaseMaterial[];
 }) {
+  const { showNotification } = useNotification();
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-6">
       <h2 className="text-2xl font-bold mb-6" style={{ color: UI_COLORS.text.heading }}>
