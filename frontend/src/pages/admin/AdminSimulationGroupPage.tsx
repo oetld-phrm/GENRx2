@@ -526,7 +526,7 @@ function AdminSimulationGroupPage() {
             { id: 'patients', label: `Manage ${aiPersonaLabelPlural}`, icon: <Users className="w-5 h-5" /> },
             { id: 'students', label: `Manage ${userRoleLabel}s`, icon: <UserCog className="w-5 h-5" /> },
             { id: 'instructors', label: 'Manage Instructors', icon: <UserPlus className="w-5 h-5" /> },
-            { id: 'rubric', label: 'Global Rubric', icon: <FileText className="w-5 h-5" /> },
+            { id: 'rubric', label: 'Global Key Questions', icon: <FileText className="w-5 h-5" /> },
             { id: 'questionBank', label: 'Question Bank', icon: <HelpCircle className="w-5 h-5" /> },
             { id: 'issuesFeedback', label: 'Issues and Feedback', icon: <AlertTriangle className="w-5 h-5" /> },
             { id: 'prompts', label: 'Manage Prompts', icon: <FileCode className="w-5 h-5" /> },

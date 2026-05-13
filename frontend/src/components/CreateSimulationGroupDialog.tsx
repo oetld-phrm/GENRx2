@@ -117,7 +117,10 @@ function CreateSimulationGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+      <DialogContent 
+        className="sm:max-w-[600px] max-h-[85vh] flex flex-col"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">Create new Simulation Group</DialogTitle>
           <DialogDescription className="sr-only">
