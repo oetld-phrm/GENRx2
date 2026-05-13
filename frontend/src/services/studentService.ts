@@ -1123,6 +1123,206 @@ async function submitIssueReport(
   }
 }
 
+// ─── Answer Key Debrief Comparison: Interfaces ───────────────────────────────
+
+/**
+ * Student DTP submission — array of identified drug therapy problems
+ */
+export interface DTPSubmission {
+  entries: string[];
+}
+
+/**
+ * A single recommendation/rationale pair submitted by the student
+ */
+export interface RecommendationSubmissionEntry {
+  recommendation: string;
+  rationale: string;
+}
+
+/**
+ * Student recommendation submission — array of recommendation/rationale pairs
+ */
+export interface RecommendationSubmission {
+  entries: RecommendationSubmissionEntry[];
+}
+
+/**
+ * Debrief Chunk 1 — interview summary and key question coverage (available immediately)
+ */
+export interface DebriefChunk1 {
+  summary: string;
+  questionsAddressed: string[];
+  questionsAddressedCount: number;
+  questionsMissed: string[];
+  questionsMissedCount: number;
+}
+
+/**
+ * A single DTP comparison item showing match status
+ */
+export interface DTPComparisonItem {
+  dtpText: string;
+  status: 'matched' | 'missed' | 'unmatched';
+  matchedWith?: string;
+}
+
+/**
+ * Debrief Chunk 2 — DTP comparison and recommendation feedback (available after processing delay)
+ */
+export interface DebriefChunk2 {
+  dtpComparison: {
+    matched: DTPComparisonItem[];
+    missed: DTPComparisonItem[];
+    unmatched: DTPComparisonItem[];
+  };
+  recommendationsFeedback: {
+    strengths: string[];
+    areasForImprovement: string[];
+  };
+}
+
+/**
+ * Updated debrief data with two-chunk structure
+ */
+export interface UpdatedDebriefData {
+  chunk1: DebriefChunk1;
+  chunk2: DebriefChunk2 | null;
+}
+
+/**
+ * Request payload for the updated conclude interaction with submissions
+ */
+export interface ConcludeInteractionRequest {
+  sessionId: string;
+  simulationGroupId: string;
+  patientId: string;
+  dtpSubmission: DTPSubmission;
+  recommendationSubmission: RecommendationSubmission;
+}
+
+// ─── Answer Key Debrief Comparison: In-Memory Store ──────────────────────────
+
+/** In-memory store for conclude submissions, keyed by sessionId */
+const concludeSubmissionsStore = new Map<string, ConcludeInteractionRequest>();
+
+// ─── Answer Key Debrief Comparison: Mock Functions ───────────────────────────
+
+/**
+ * Conclude an interaction with DTP and Recommendation submissions.
+ * Stores the submission in memory and returns success.
+ */
+async function concludeWithSubmissions(
+  request: ConcludeInteractionRequest
+): Promise<{ success: true }> {
+  concludeSubmissionsStore.set(request.sessionId, request);
+  return { success: true };
+}
+
+/**
+ * Fetch the updated two-chunk debrief for a session.
+ * Returns chunk1 immediately and chunk2 after a ~2 second simulated delay.
+ */
+async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefData> {
+  const chunk1: DebriefChunk1 = {
+    summary:
+      'The student conducted a thorough patient interview, covering medication history, ' +
+      'current symptoms, and lifestyle factors. The student demonstrated good rapport-building ' +
+      'skills and asked appropriate follow-up questions about the patient\'s adherence to their ' +
+      'current medication regimen. However, some key areas related to drug interactions and ' +
+      'contraindications were not fully explored.',
+    questionsAddressed: [
+      'What medications are you currently taking?',
+      'Have you experienced any side effects from your medications?',
+      'How often do you miss doses of your medication?',
+      'Do you have any known drug allergies?',
+      'What is your primary health concern today?',
+      'Are you taking any over-the-counter supplements?',
+    ],
+    questionsAddressedCount: 6,
+    questionsMissed: [
+      'Have you recently started any new medications from another provider?',
+      'Do you consume grapefruit or grapefruit juice regularly?',
+      'Have you noticed any changes in kidney function or lab values?',
+    ],
+    questionsMissedCount: 3,
+  };
+
+  // Simulate async processing delay for chunk2 (~2 seconds)
+  const chunk2Promise = new Promise<DebriefChunk2>((resolve) => {
+    setTimeout(() => {
+      const submission = concludeSubmissionsStore.get(sessionId);
+
+      // Build realistic DTP comparison data
+      const matched: DTPComparisonItem[] = [
+        {
+          dtpText: 'Drug interaction between simvastatin and amlodipine requiring dose adjustment',
+          status: 'matched',
+          matchedWith: submission?.dtpSubmission.entries[0] || 'Statin-calcium channel blocker interaction',
+        },
+        {
+          dtpText: 'Subtherapeutic metformin dose for current HbA1c level',
+          status: 'matched',
+          matchedWith: submission?.dtpSubmission.entries[1] || 'Inadequate diabetes control with current dose',
+        },
+      ];
+
+      const missed: DTPComparisonItem[] = [
+        {
+          dtpText: 'Unnecessary duplication of therapy: patient taking both OTC omeprazole and prescribed pantoprazole',
+          status: 'missed',
+        },
+        {
+          dtpText: 'Non-adherence to lisinopril due to persistent dry cough — consider ARB switch',
+          status: 'missed',
+        },
+      ];
+
+      const unmatched: DTPComparisonItem[] = [
+        {
+          dtpText: submission?.dtpSubmission.entries[2] || 'Patient may benefit from statin therapy intensification',
+          status: 'unmatched',
+        },
+      ];
+
+      resolve({
+        dtpComparison: {
+          matched,
+          missed,
+          unmatched,
+        },
+        recommendationsFeedback: {
+          strengths: [
+            'Correctly identified the need for statin dose adjustment given the drug interaction',
+            'Provided appropriate rationale for metformin dose titration based on HbA1c target',
+            'Recommended follow-up lab monitoring within an appropriate timeframe',
+          ],
+          areasForImprovement: [
+            'Did not address the duplicate PPI therapy — recommend discontinuing OTC omeprazole',
+            'Should have recommended switching lisinopril to an ARB (e.g., losartan) to resolve the cough',
+            'Rationale for monitoring plan could include specific lab parameters (SCr, eGFR, LFTs)',
+          ],
+        },
+      });
+    }, 2000);
+  });
+
+  const chunk2 = await chunk2Promise;
+
+  return {
+    chunk1,
+    chunk2,
+  };
+}
+
+/**
+ * Test helper — resets the in-memory conclude submissions store.
+ * Only intended for use in tests.
+ */
+export function _resetConcludeStore(): void {
+  concludeSubmissionsStore.clear();
+}
+
 /**
  * Student service — public API used by pages
  */
@@ -1134,6 +1334,8 @@ export const studentService = {
   createSession,
   deleteSession,
   concludeInteraction,
+  concludeWithSubmissions,
+  fetchUpdatedDebrief,
   sendMessage,
   sendMessageStreaming,
   getPatientDetail,
@@ -1157,7 +1359,7 @@ export const studentService = {
   updateNotes,
   fetchPatientVoiceId,
   submitDebriefFeedback,
-  submitIssueReport
+  submitIssueReport,
 };
 
 
