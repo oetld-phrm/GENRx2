@@ -17,6 +17,17 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    date: 'May 14, 2026',
+    items: [
+      { feature: 'Organization create & delete fully functional', status: 'working', note: 'admins can now create and delete organizations end-to-end (no longer mock)' },
+      { feature: 'DTP & Recommendations bank wired to backend', status: 'working', note: 'Org-wide DTP and Recommendations bank items are no longer mock' },
+      { feature: 'Org-wide banks pre-populated from sponsor documents', status: 'working', note: 'DTP bank and Recommendations bank seeded with content from the sponsor documents' },
+      { feature: 'Inline edit & expandable preview for bank items', status: 'working', note: 'expand any DTP or Recommendation to preview full details; click the pencil to edit in place' },
+      { feature: 'Toast notifications on bank operations', status: 'working', note: 'success/error toasts for creating, editing, and deleting DTP and Recommendation items' },
+      { feature: 'Expandable preview in sim group assignment view', status: 'working', note: 'DTP and Recommendation cards in the assignment section can be expanded to inspect content before assigning' },
+    ],
+  },
+  {
     date: 'May 13, 2026',
     items: [
       { feature: 'Debrief tone reworked', status: 'working', note: 'soft-skills-only summary with reflective guiding questions for missed key questions, plus AI disclaimer subtitle' },
