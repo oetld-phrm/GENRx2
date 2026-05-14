@@ -17,6 +17,44 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    date: 'May 13, 2026',
+    items: [
+      { feature: 'Debrief tone reworked', status: 'working', note: 'soft-skills-only summary with reflective guiding questions for missed key questions, plus AI disclaimer subtitle' },
+      { feature: 'Debrief feedback & issue reports saved to backend', status: 'working', note: '"Was this helpful?" and Report Issue dialogs now persist to the database instead of console.log' },
+      { feature: 'Instructor email validation on elevation', status: 'working', note: 'rejects unregistered users with a toast error when trying to add them as instructors' },
+      { feature: 'Admin/Instructor preview mode navigation fix', status: 'working', note: '"Back to Admin/Instructor View" button persists through chat and history pages in student preview mode' },
+      { feature: 'Analytics exclude preview activity', status: 'working', note: 'admin/instructor test sessions no longer skew student analytics dashboards' },
+      { feature: 'Stale data fix on group navigation', status: 'working', note: 'switching between simulation groups now refreshes data correctly' },
+      { feature: 'No-memory disclaimer in student chat history', status: 'working', note: 'students see a note that the AI does not retain memory across sessions' },
+      { feature: 'Sidebar renamed "Rubric" to "Key Questions"', status: 'working' },
+      { feature: 'Create simulation group dialog stays open on outside click', status: 'working', note: 'prevents accidental loss of form data' },
+    ],
+  },
+  {
+    date: 'May 6, 2026',
+    items: [
+      { feature: 'Voice preview moved into Edit Patient panel', status: 'working', note: 'test patient voice directly from the patient editor with mic-based single-exchange flow' },
+      { feature: 'Voice ID selector for patients', status: 'working', note: 'choose from English-only voice options per patient' },
+      { feature: 'System & patient prompt guidance', status: 'working', note: 'helper text and better examples added to prompt editing fields' },
+      { feature: 'Character limit on textareas', status: 'working', note: 'prevents excessively long prompts and descriptions' },
+      { feature: 'Input controls disabled during AI streaming', status: 'working', note: 'prevents sending messages while the AI is still responding' },
+      { feature: 'Voice preview mic fix', status: 'working', note: 'mic now properly stops during response streaming' },
+      { feature: 'Patient card sizing and layout fixes', status: 'working', note: 'resized view patient cards, fixed start new chat button position on empty landing page' },
+      { feature: 'Duplicate patients filtered in admin student preview', status: 'working' },
+    ],
+  },
+  {
+    date: 'April 30, 2026',
+    items: [
+      { feature: 'Voice preview for patients (mic-based)', status: 'working', note: 'admins can test patient voice responses with a single-exchange mic flow before saving' },
+      { feature: 'Report issue & debrief feedback dialogs', status: 'working', note: 'UI for reporting issues and rating debriefs added to admin-side patient view' },
+      { feature: 'Inline file preview in Edit Patient panel', status: 'working', note: 'preview uploaded documents directly within the patient editor' },
+      { feature: 'New app icon', status: 'working' },
+      { feature: 'Loading animations added', status: 'working' },
+      { feature: 'File delete UI with embedding cleanup', status: 'working', note: 'deleting a patient file now also removes its vector embeddings' },
+    ],
+  },
+  {
     date: 'April 25, 2026',
     items: [
       { feature: 'Real-time voice chat transcript bubbles', status: 'working', note: 'user and AI text now streams live during voice mode instead of fetching from DB!' },
