@@ -253,14 +253,14 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                         </div>
                       )}
 
-                      {/* Unmatched DTPs */}
-                      {updatedDebriefData.chunk2.dtpComparison.unmatched.length > 0 && (
+                      {/* Additional DTPs Identified */}
+                      {updatedDebriefData.chunk2.dtpComparison.additional.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Unmatched:
+                            Additional Items Identified:
                           </h4>
                           <ul className="space-y-1">
-                            {updatedDebriefData.chunk2.dtpComparison.unmatched.map((item, index) => (
+                            {updatedDebriefData.chunk2.dtpComparison.additional.map((item, index) => (
                               <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
                                 <Circle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
                                 <span>{item.dtpText}</span>
@@ -321,14 +321,14 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                         </div>
                       )}
 
-                      {/* Unmatched Recommendations */}
-                      {updatedDebriefData.chunk2.recommendationsComparison.unmatched.length > 0 && (
+                      {/* Additional Recommendations Identified */}
+                      {updatedDebriefData.chunk2.recommendationsComparison.additional.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Unmatched:
+                            Additional Items Identified:
                           </h4>
                           <ul className="space-y-1">
-                            {updatedDebriefData.chunk2.recommendationsComparison.unmatched.map((item, index) => (
+                            {updatedDebriefData.chunk2.recommendationsComparison.additional.map((item, index) => (
                               <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
                                 <Circle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
                                 <span>{item.recommendationText}</span>
