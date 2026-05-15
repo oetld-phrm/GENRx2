@@ -1068,6 +1068,301 @@ def get_cached_key_questions(
         return None
 
 
+# =============================================================================
+# INSTRUCTOR DTP / RECOMMENDATION EMBEDDING CACHE
+# =============================================================================
+
+
+def fetch_instructor_dtps(simulation_group_id: str, persona_id: str) -> list[dict]:
+    """Fetch instructor DTPs assigned to this group/persona from simulation_group_dtps JOIN dtp_bank."""
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT db.dtp_id, db.expected_dtp_text, db.evaluation_criteria
+            FROM "simulation_group_dtps" sgd
+            JOIN "dtp_bank" db ON sgd.dtp_id = db.dtp_id
+            WHERE sgd.simulation_group_id = %s
+              AND (sgd.persona_id = %s OR sgd.persona_id IS NULL)
+              AND db.is_active = TRUE
+            ORDER BY sgd.sort_order, db.title
+        """, (simulation_group_id, persona_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        logger.info(f"Fetched {len(rows)} instructor DTPs for group={simulation_group_id}, persona={persona_id}")
+        return [{
+            "dtp_id": str(r[0]),
+            "expected_dtp_text": r[1],
+            "evaluation_criteria": r[2],
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"Error fetching instructor DTPs: {e}")
+        return []
+
+
+def fetch_instructor_recommendations(simulation_group_id: str, persona_id: str) -> list[dict]:
+    """Fetch instructor recommendations assigned to this group/persona from simulation_group_recommendations JOIN recommendations_bank."""
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT rb.recommendation_id, rb.recommendation_text, rb.rationale, rb.evaluation_criteria
+            FROM "simulation_group_recommendations" sgr
+            JOIN "recommendations_bank" rb ON sgr.recommendation_id = rb.recommendation_id
+            WHERE sgr.simulation_group_id = %s
+              AND (sgr.persona_id = %s OR sgr.persona_id IS NULL)
+              AND rb.is_active = TRUE
+            ORDER BY sgr.sort_order, rb.title
+        """, (simulation_group_id, persona_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        logger.info(f"Fetched {len(rows)} instructor recommendations for group={simulation_group_id}, persona={persona_id}")
+        return [{
+            "recommendation_id": str(r[0]),
+            "recommendation_text": r[1],
+            "rationale": r[2],
+            "evaluation_criteria": r[3],
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"Error fetching instructor recommendations: {e}")
+        return []
+
+
+def cache_instructor_dtp_embeddings(
+    simulation_group_id: str,
+    persona_id: str,
+    embeddings_model,
+    table_name: str,
+) -> list[dict]:
+    """
+    Fetch instructor DTPs from PostgreSQL, batch-embed all expected_dtp_text
+    values (one Cohere v4 call), and store in DynamoDB.
+    Returns the list of DTPs with embeddings.
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    dtps = fetch_instructor_dtps(simulation_group_id, persona_id)
+
+    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+
+    if not dtps:
+        logger.info(f"No instructor DTPs for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
+        try:
+            dynamodb = boto3.resource("dynamodb")
+            table = dynamodb.Table(table_name)
+            table.put_item(Item={
+                "SessionId": cache_key,
+                "items": [],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.error(f"Failed to cache empty DTP list in DynamoDB: {e}")
+        return []
+
+    # Batch-embed all DTP texts in one API call
+    dtp_texts = [d["expected_dtp_text"] for d in dtps]
+    try:
+        embeddings = embeddings_model.embed_documents(dtp_texts)
+    except Exception as e:
+        logger.error(f"Failed to batch-embed instructor DTPs: {e}")
+        return []
+
+    cached_dtps = []
+    for dtp, embedding in zip(dtps, embeddings):
+        cached_dtps.append({
+            "dtp_id": dtp["dtp_id"],
+            "expected_dtp_text": dtp["expected_dtp_text"],
+            "evaluation_criteria": dtp["evaluation_criteria"],
+            "embedding": embedding,
+        })
+
+    # Store in DynamoDB
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+
+        serializable_items = []
+        for item in cached_dtps:
+            serializable_items.append({
+                "dtp_id": item["dtp_id"],
+                "expected_dtp_text": item["expected_dtp_text"],
+                "evaluation_criteria": item["evaluation_criteria"],
+                "embedding": [Decimal(str(v)) for v in item["embedding"]],
+            })
+
+        table.put_item(Item={
+            "SessionId": cache_key,
+            "items": serializable_items,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"✅ Cached {len(cached_dtps)} instructor DTP embeddings for group={simulation_group_id}, persona={persona_id}")
+    except Exception as e:
+        logger.error(f"Failed to cache instructor DTP embeddings in DynamoDB: {e}")
+
+    return cached_dtps
+
+
+def cache_instructor_rec_embeddings(
+    simulation_group_id: str,
+    persona_id: str,
+    embeddings_model,
+    table_name: str,
+) -> list[dict]:
+    """
+    Fetch instructor recommendations from PostgreSQL, batch-embed all
+    recommendation_text values (one Cohere v4 call), and store in DynamoDB.
+    Returns the list of recommendations with embeddings.
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    recs = fetch_instructor_recommendations(simulation_group_id, persona_id)
+
+    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+
+    if not recs:
+        logger.info(f"No instructor recommendations for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
+        try:
+            dynamodb = boto3.resource("dynamodb")
+            table = dynamodb.Table(table_name)
+            table.put_item(Item={
+                "SessionId": cache_key,
+                "items": [],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.error(f"Failed to cache empty recommendation list in DynamoDB: {e}")
+        return []
+
+    # Batch-embed all recommendation texts in one API call
+    rec_texts = [r["recommendation_text"] for r in recs]
+    try:
+        embeddings = embeddings_model.embed_documents(rec_texts)
+    except Exception as e:
+        logger.error(f"Failed to batch-embed instructor recommendations: {e}")
+        return []
+
+    cached_recs = []
+    for rec, embedding in zip(recs, embeddings):
+        cached_recs.append({
+            "recommendation_id": rec["recommendation_id"],
+            "recommendation_text": rec["recommendation_text"],
+            "rationale": rec["rationale"],
+            "evaluation_criteria": rec["evaluation_criteria"],
+            "embedding": embedding,
+        })
+
+    # Store in DynamoDB
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+
+        serializable_items = []
+        for item in cached_recs:
+            serializable_items.append({
+                "recommendation_id": item["recommendation_id"],
+                "recommendation_text": item["recommendation_text"],
+                "rationale": item["rationale"],
+                "evaluation_criteria": item["evaluation_criteria"],
+                "embedding": [Decimal(str(v)) for v in item["embedding"]],
+            })
+
+        table.put_item(Item={
+            "SessionId": cache_key,
+            "items": serializable_items,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"✅ Cached {len(cached_recs)} instructor recommendation embeddings for group={simulation_group_id}, persona={persona_id}")
+    except Exception as e:
+        logger.error(f"Failed to cache instructor recommendation embeddings in DynamoDB: {e}")
+
+    return cached_recs
+
+
+def get_cached_instructor_dtps(
+    simulation_group_id: str,
+    persona_id: str,
+    table_name: str,
+) -> list[dict] | None:
+    """
+    Read cached instructor DTP embeddings from DynamoDB.
+    Returns the list of DTP dicts with embeddings, or None on cache miss/failure.
+    """
+    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+        response = table.get_item(Key={"SessionId": cache_key})
+
+        item = response.get("Item")
+        if item is None:
+            logger.info(f"DTP cache miss for group={simulation_group_id}, persona={persona_id}")
+            return None
+
+        items = item.get("items", [])
+
+        result = []
+        for d in items:
+            result.append({
+                "dtp_id": d["dtp_id"],
+                "expected_dtp_text": d["expected_dtp_text"],
+                "evaluation_criteria": d.get("evaluation_criteria"),
+                "embedding": [float(v) for v in d["embedding"]] if d.get("embedding") else [],
+            })
+
+        logger.info(f"✅ Retrieved {len(result)} cached instructor DTPs for group={simulation_group_id}, persona={persona_id}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to read cached instructor DTPs from DynamoDB: {e}")
+        return None
+
+
+def get_cached_instructor_recs(
+    simulation_group_id: str,
+    persona_id: str,
+    table_name: str,
+) -> list[dict] | None:
+    """
+    Read cached instructor recommendation embeddings from DynamoDB.
+    Returns the list of recommendation dicts with embeddings, or None on cache miss/failure.
+    """
+    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+        response = table.get_item(Key={"SessionId": cache_key})
+
+        item = response.get("Item")
+        if item is None:
+            logger.info(f"Recommendation cache miss for group={simulation_group_id}, persona={persona_id}")
+            return None
+
+        items = item.get("items", [])
+
+        result = []
+        for r in items:
+            result.append({
+                "recommendation_id": r["recommendation_id"],
+                "recommendation_text": r["recommendation_text"],
+                "rationale": r.get("rationale"),
+                "evaluation_criteria": r.get("evaluation_criteria"),
+                "embedding": [float(v) for v in r["embedding"]] if r.get("embedding") else [],
+            })
+
+        logger.info(f"✅ Retrieved {len(result)} cached instructor recommendations for group={simulation_group_id}, persona={persona_id}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to read cached instructor recommendations from DynamoDB: {e}")
+        return None
+
+
 def compute_cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     """Compute cosine similarity between two embedding vectors.
 
