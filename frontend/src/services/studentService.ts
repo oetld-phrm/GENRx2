@@ -1226,6 +1226,11 @@ export interface ConcludeInteractionRequest {
 const concludeSubmissionsStore = new Map<string, ConcludeInteractionRequest>();
 
 // ─── Conclude With Submissions ───────────────────────────────────────────────
+// Two conclude paths exist:
+//   1. concludeInteraction() — interview_practice patients, no submissions
+//   2. concludeWithSubmissions() — full_assessment patients, sends structured
+//      DTPs + recommendations that the debrief Lambda matches against
+//      instructor-defined expected items via embedding cosine similarity
 
 /**
  * Conclude an interaction with DTP and Recommendation submissions.
@@ -1265,7 +1270,13 @@ async function concludeWithSubmissions(
 /**
  * Fetch the updated two-chunk debrief for a session.
  * Calls the real GET /student/get_debrief endpoint and parses the response
- * into the two-chunk structure (chunk1: key questions, chunk2: DTP/Rec comparison).
+ * into the two-chunk structure:
+ *   - chunk1: interview summary + key questions + suggested rewrites (always present)
+ *   - chunk2: DTP/Rec comparison (only for full_assessment patients, null otherwise)
+ *
+ * The same debrief JSON is stored in the DB regardless of patient mode — the
+ * presence/absence of dtp_comparison and recommendations_comparison keys
+ * determines whether chunk2 is populated or null.
  */
 async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefData> {
   const user = await authService.getCurrentUser();

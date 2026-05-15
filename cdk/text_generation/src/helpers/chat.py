@@ -1125,6 +1125,16 @@ def get_cached_key_questions(
 # =============================================================================
 # INSTRUCTOR DTP / RECOMMENDATION EMBEDDING CACHE
 # =============================================================================
+# Instructor-defined DTPs and recommendations are static per group+persona —
+# they don't change between student sessions. We embed them once (lazily on
+# first student conclude) and cache the vectors in DynamoDB to avoid repeated
+# Cohere API calls. At debrief time, only the student's submissions need
+# embedding (one API call), then matching is pure cosine similarity math.
+#
+# This mirrors the key question caching pattern (QCACHE#) but uses different
+# key prefixes (DTPCACHE#, RECCACHE#) since the cache lifetime is per
+# group+persona rather than per session.
+# =============================================================================
 
 
 def fetch_instructor_dtps(simulation_group_id: str, persona_id: str) -> list[dict]:
@@ -1419,6 +1429,22 @@ def get_cached_instructor_recs(
 
 # =============================================================================
 # DTP / RECOMMENDATION SUBMISSION MATCHING
+# =============================================================================
+# At conclude time, students submit DTPs and recommendations via the
+# ConcludeModal. These are compared against instructor-defined expected items
+# using embedding cosine similarity (no LLM needed for the match itself).
+#
+# Scoring philosophy:
+#   - Recommendation text determines the match (embedding similarity)
+#   - Rationale is NOT used for matching — a wrong recommendation with
+#     correct rationale still gets no credit (Phase 2 adds LLM rationale eval
+#     for matched pairs only)
+#   - "Additional" items (student submissions with no instructor match) are
+#     displayed neutrally — they don't affect the score
+#   - Score = matched / (matched + missed); additional items excluded
+#
+# The greedy assignment algorithm ensures one-to-one matching: each student
+# submission maps to at most one instructor item and vice versa.
 # =============================================================================
 
 # Similarity threshold for considering a student submission as matching an
@@ -2809,6 +2835,15 @@ def generate_debrief(
     6. Write to debriefs + question_interactions tables
     7. Optionally publish result via AppSync
     Returns the parsed debrief dict.
+
+    patient_mode controls the debrief scope:
+      - "interview_practice": Key question evaluation only (no DTP/Rec matching).
+        Used for personas with no DTP/Rec assignments — students just chat and
+        receive feedback on their interview technique.
+      - "full_assessment": Full evaluation including DTP/Rec embedding-based
+        matching. Students submitted structured DTPs + recommendations at
+        conclude time, which are compared against instructor-defined expected
+        items. The debrief includes matched/missed/additional categorization.
     """
     logger.info(f"📋 DEBRIEF GENERATION STARTED for session={session_id}")
 
@@ -3127,6 +3162,12 @@ The following is the instructor's answer key for this simulation case. Compare t
     missed_ids = _extract_ids(questions_missed)
 
     # 4c. DTP & Recommendation matching (full_assessment patients only)
+    # Interview-practice patients skip this entirely — they have no DTP/Rec
+    # assignments and don't go through the submission modal. Full-assessment
+    # patients submitted structured DTPs + recommendations at conclude time,
+    # which are now compared against the instructor's expected items.
+    # This block is non-fatal: if matching fails, the debrief still saves
+    # without comparison data and the frontend gracefully shows chunk2 as null.
     if patient_mode == "full_assessment" and embeddings_model and ddb_table_name:
         try:
             # Fetch student submissions from the chats table

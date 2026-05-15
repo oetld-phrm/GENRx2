@@ -1532,7 +1532,12 @@ exports.handler = async (event, context) => {
           const recommendationSubmission = body.recommendationSubmission || null;
 
           try {
-            // Step 0: Determine patient mode by checking DTP/Recommendation assignments
+            // Step 0: Determine patient mode by checking DTP/Recommendation assignments.
+            // A persona with zero DTPs AND zero recommendations assigned is treated as
+            // "interview_practice" — the student only chats and gets key question feedback.
+            // Any DTP or recommendation assignment makes it "full_assessment" — the student
+            // must submit structured DTPs + recommendations at conclude time, which get
+            // matched against the instructor's expected items during debrief generation.
             const [dtpCount] = await sqlConnection`
               SELECT COUNT(*)::int AS count FROM simulation_group_dtps
               WHERE simulation_group_id = ${simulationGroupId}
@@ -1554,7 +1559,10 @@ exports.handler = async (event, context) => {
               break;
             }
 
-            // Step 1: Save recommendation + submissions (may be null for interview_practice) and mark the chat as ended
+            // Step 1: Save recommendation + submissions and mark the chat as ended.
+            // dtp_submission and recommendation_submission are null for interview_practice
+            // patients (no modal step). For full_assessment patients, they contain the
+            // structured entries the debrief Lambda will match against instructor items.
             const updatedChat = await sqlConnection`
               UPDATE "chats"
               SET recommendation = ${recommendation},
