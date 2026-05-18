@@ -1,10 +1,12 @@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, Star, CheckCircle, AlertTriangle, XCircle, Loader2, CheckCircle2, AlertCircle, Circle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { X, Star, CheckCircle, AlertTriangle, XCircle, Loader2, CheckCircle2, Circle } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 import { useState, useEffect } from 'react';
 import { studentService, type AIDebriefData } from '@/services/studentService';
-import type { UpdatedDebriefData } from '@/services/studentService';
+import type { UpdatedDebriefData, SectionScore } from '@/services/studentService';
 
 interface AIDebriefDialogProps {
   isOpen: boolean;
@@ -102,6 +104,44 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
     }
   };
 
+  /** Render an inline score badge like "5/8 (63%)" */
+  const renderInlineScore = (score: SectionScore | null | undefined) => {
+    if (!score) return null;
+    return (
+      <span
+        className="text-sm font-medium px-2 py-0.5 rounded ml-2"
+        style={{
+          backgroundColor: score.percentage >= 70 ? '#dcfce7' : score.percentage >= 50 ? '#fef9c3' : '#fee2e2',
+          color: score.percentage >= 70 ? '#166534' : score.percentage >= 50 ? '#854d0e' : '#991b1b',
+        }}
+      >
+        {score.matched}/{score.total} ({Math.round(score.percentage)}%)
+      </span>
+    );
+  };
+
+  /** Render guidance reflection questions from markdown bullet string */
+  const renderGuidance = (guidance: string | null | undefined) => {
+    if (!guidance) return null;
+    const lines = guidance
+      .split(/\n|\\n/)
+      .map(line => line.replace(/^[\s•\-*\d.)+]+/, '').trim())
+      .filter(line => line.length > 0);
+    if (lines.length === 0) return null;
+    return (
+      <div className="mt-3 pl-7 p-3 rounded-md" style={{ backgroundColor: '#f0f9ff', borderLeft: '3px solid #3b82f6' }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: '#1e40af' }}>
+          Reflection Questions:
+        </p>
+        <ul className="text-sm space-y-1.5 list-disc list-inside" style={{ color: UI_COLORS.text.body }}>
+          {lines.map((line, index) => (
+            <li key={index}>{line}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent 
@@ -150,9 +190,12 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                 <div className="flex items-center gap-2">
                   <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
                   <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
-                    Key Questions Addressed ({updatedDebriefData.chunk1.questionsAddressedCount})
+                    Key Questions: {renderInlineScore(updatedDebriefData.chunk1.keyQuestionsScore)}
                   </h3>
                 </div>
+                <h4 className="text-sm font-semibold pl-7" style={{ color: UI_COLORS.text.heading }}>
+                  Addressed ({updatedDebriefData.chunk1.questionsAddressedCount})
+                </h4>
                 {updatedDebriefData.chunk1.questionsAddressed.length > 0 ? (
                   <ul className="space-y-2 pl-7">
                     {updatedDebriefData.chunk1.questionsAddressed.map((question, index) => (
@@ -174,23 +217,16 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                 <div className="flex items-center gap-2">
                   <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
                   <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
-                    Key Questions Missed ({updatedDebriefData.chunk1.questionsMissedCount})
+                    You missed {updatedDebriefData.chunk1.questionsMissedCount} Key Question{updatedDebriefData.chunk1.questionsMissedCount !== 1 ? 's' : ''}
                   </h3>
                 </div>
-                {updatedDebriefData.chunk1.questionsMissed.length > 0 ? (
-                  <ul className="space-y-2 pl-7">
-                    {updatedDebriefData.chunk1.questionsMissed.map((question, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
-                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#ef4444' }} />
-                        <span>{question}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
+                {updatedDebriefData.chunk1.guidanceKeyQuestions ? (
+                  renderGuidance(updatedDebriefData.chunk1.guidanceKeyQuestions)
+                ) : updatedDebriefData.chunk1.questionsMissedCount === 0 ? (
                   <p className="text-sm italic pl-7" style={{ color: UI_COLORS.text.muted }}>
                     No key questions were missed.
                   </p>
-                )}
+                ) : null}
               </div>
 
               {/* Suggested Question Rewrites */}
@@ -236,7 +272,7 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                     <div className="flex items-center gap-2">
                       <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
                       <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
-                        DTP Comparison
+                        DTP Comparison {renderInlineScore(updatedDebriefData.chunk2.dtpComparison.score)}
                       </h3>
                     </div>
                     <div className="pl-7 space-y-4">
@@ -263,20 +299,13 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                         </div>
                       )}
 
-                      {/* Missed DTPs */}
+                      {/* Missed DTPs — show count and guidance only */}
                       {updatedDebriefData.chunk2.dtpComparison.missed.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Missed:
+                            You missed {updatedDebriefData.chunk2.dtpComparison.missed.length} DTP{updatedDebriefData.chunk2.dtpComparison.missed.length !== 1 ? 's' : ''}
                           </h4>
-                          <ul className="space-y-1">
-                            {updatedDebriefData.chunk2.dtpComparison.missed.map((item, index) => (
-                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
-                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#ef4444' }} />
-                                <span>{item.dtpText}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          {renderGuidance(updatedDebriefData.chunk2.dtpComparison.guidance)}
                         </div>
                       )}
 
@@ -304,7 +333,7 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                     <div className="flex items-center gap-2">
                       <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
                       <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
-                        Recommendations Comparison
+                        Recommendations Comparison {renderInlineScore(updatedDebriefData.chunk2.recommendationsComparison.score)}
                       </h3>
                     </div>
                     <div className="pl-7 space-y-4">
@@ -314,37 +343,54 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                           {updatedDebriefData.chunk2.recommendationsComparison.overview}
                         </p>
                       )}
-                      {/* Matched Recommendations */}
+                      {/* Matched Recommendations with Rationale Badges */}
                       {updatedDebriefData.chunk2.recommendationsComparison.matched.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
                             Matched:
                           </h4>
-                          <ul className="space-y-1">
-                            {updatedDebriefData.chunk2.recommendationsComparison.matched.map((item, index) => (
-                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
-                                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#22c55e' }} />
-                                <span>{item.recommendationText}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <TooltipProvider>
+                            <ul className="space-y-2">
+                              {updatedDebriefData.chunk2.recommendationsComparison.matched.map((item, index) => (
+                                <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
+                                  <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#22c55e' }} />
+                                  <span className="flex-1">{item.recommendationText}</span>
+                                  {item.rationaleRating && item.rationaleRating !== 'no_credit' && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span>
+                                          <Badge
+                                            className={`cursor-help text-xs whitespace-nowrap ${
+                                              item.rationaleRating === 'full_credit'
+                                                ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100'
+                                                : 'bg-yellow-100 text-yellow-700 border-yellow-200 hover:bg-yellow-100'
+                                            }`}
+                                          >
+                                            {item.rationaleRating === 'full_credit' ? 'Full Credit' : 'Partial Credit'}
+                                          </Badge>
+                                        </span>
+                                      </TooltipTrigger>
+                                      {item.rationaleExplanation && (
+                                        <TooltipContent side="top" className="max-w-sm">
+                                          <p>{item.rationaleExplanation}</p>
+                                        </TooltipContent>
+                                      )}
+                                    </Tooltip>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </TooltipProvider>
                         </div>
                       )}
 
-                      {/* Missed Recommendations */}
+                      {/* Missed Recommendations — show count and guidance only */}
                       {updatedDebriefData.chunk2.recommendationsComparison.missed.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
-                            Missed:
+                            You missed {updatedDebriefData.chunk2.recommendationsComparison.missed.length} Recommendation{updatedDebriefData.chunk2.recommendationsComparison.missed.length !== 1 ? 's' : ''}
                           </h4>
-                          <ul className="space-y-1">
-                            {updatedDebriefData.chunk2.recommendationsComparison.missed.map((item, index) => (
-                              <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
-                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#ef4444' }} />
-                                <span>{item.recommendationText}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          {renderGuidance(updatedDebriefData.chunk2.recommendationsComparison.guidance)}
                         </div>
                       )}
 

@@ -1154,6 +1154,15 @@ export interface RecommendationSubmission {
 }
 
 /**
+ * Per-section score for debrief sections (key questions, DTPs, recommendations)
+ */
+export interface SectionScore {
+  matched: number;
+  total: number;
+  percentage: number; // 0-100, rounded to nearest integer
+}
+
+/**
  * Debrief Chunk 1 — interview summary and key question coverage (available immediately)
  */
 export interface DebriefChunk1 {
@@ -1163,6 +1172,8 @@ export interface DebriefChunk1 {
   questionsMissed: string[];
   questionsMissedCount: number;
   suggestedRewrites: { original: string; suggested: string }[];
+  keyQuestionsScore: SectionScore | null;
+  guidanceKeyQuestions: string | null; // Reflective questions for missed KQs
 }
 
 /**
@@ -1181,6 +1192,8 @@ export interface RecommendationComparisonItem {
   recommendationText: string;
   status: 'matched' | 'missed' | 'additional';
   matchedWith?: string;
+  rationaleRating?: 'full_credit' | 'partial_credit' | 'no_credit';
+  rationaleExplanation?: string;
 }
 
 /**
@@ -1190,14 +1203,18 @@ export interface DebriefChunk2 {
   dtpComparison: {
     overview: string;
     matched: DTPComparisonItem[];
-    missed: DTPComparisonItem[];
+    missed: DTPComparisonItem[]; // Text hidden — only count shown
     additional: DTPComparisonItem[];
+    score: SectionScore | null;
+    guidance: string | null; // Reflective questions for missed DTPs
   };
   recommendationsComparison: {
     overview: string;
     matched: RecommendationComparisonItem[];
-    missed: RecommendationComparisonItem[];
+    missed: RecommendationComparisonItem[]; // Text hidden — only count shown
     additional: RecommendationComparisonItem[];
+    score: SectionScore | null;
+    guidance: string | null; // Reflective questions for missed recs
   };
 }
 
@@ -1319,6 +1336,10 @@ async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefDat
         typeof q === 'string' ? q : (q.question_text || 'Unknown question')
     );
 
+    // Parse section scores from debrief JSON
+    const sectionScores = debrief.section_scores || {};
+    const guidanceData = debrief.guidance || {};
+
     const chunk1: DebriefChunk1 = {
       summary: typeof debrief.summary === 'string' ? debrief.summary : '',
       questionsAddressed,
@@ -1331,6 +1352,14 @@ async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefDat
           suggested: r.suggested_rewrite || '',
         })
       ),
+      keyQuestionsScore: sectionScores.key_questions
+        ? {
+            matched: sectionScores.key_questions.matched,
+            total: sectionScores.key_questions.total,
+            percentage: sectionScores.key_questions.percentage,
+          }
+        : null,
+      guidanceKeyQuestions: guidanceData.key_questions || null,
     };
 
     // Build chunk2 from DTP/Rec comparison data (null if not present)
@@ -1348,14 +1377,22 @@ async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefDat
             status: 'matched' as const,
             matchedWith: m.student_text || '',
           })),
-          missed: (dtpRaw.missed || []).map((m: any) => ({
-            dtpText: m.instructor_text || '',
+          missed: (dtpRaw.missed || []).map((_m: any) => ({
+            dtpText: '',
             status: 'missed' as const,
           })),
           additional: (dtpRaw.additional || []).map((m: any) => ({
             dtpText: m.student_text || '',
             status: 'additional' as const,
           })),
+          score: sectionScores.dtps
+            ? {
+                matched: sectionScores.dtps.matched,
+                total: sectionScores.dtps.total,
+                percentage: sectionScores.dtps.percentage,
+              }
+            : null,
+          guidance: guidanceData.dtps || null,
         },
         recommendationsComparison: {
           overview: `You matched ${recRaw.matched?.length || 0} out of ${(recRaw.matched?.length || 0) + (recRaw.missed?.length || 0)} expected recommendations.`,
@@ -1363,15 +1400,25 @@ async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefDat
             recommendationText: m.instructor_text || '',
             status: 'matched' as const,
             matchedWith: m.student_text || '',
+            rationaleRating: m.rationale_rating || undefined,
+            rationaleExplanation: m.rationale_explanation || undefined,
           })),
-          missed: (recRaw.missed || []).map((m: any) => ({
-            recommendationText: m.instructor_text || '',
+          missed: (recRaw.missed || []).map((_m: any) => ({
+            recommendationText: '',
             status: 'missed' as const,
           })),
           additional: (recRaw.additional || []).map((m: any) => ({
             recommendationText: m.student_text || '',
             status: 'additional' as const,
           })),
+          score: sectionScores.recommendations
+            ? {
+                matched: sectionScores.recommendations.matched,
+                total: sectionScores.recommendations.total,
+                percentage: sectionScores.recommendations.percentage,
+              }
+            : null,
+          guidance: guidanceData.recommendations || null,
         },
       };
     }
