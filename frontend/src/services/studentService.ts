@@ -1154,6 +1154,15 @@ export interface RecommendationSubmission {
 }
 
 /**
+ * Per-section score for debrief sections (key questions, DTPs, recommendations)
+ */
+export interface SectionScore {
+  matched: number;
+  total: number;
+  percentage: number; // 0-100, rounded to nearest integer
+}
+
+/**
  * Debrief Chunk 1 — interview summary and key question coverage (available immediately)
  */
 export interface DebriefChunk1 {
@@ -1162,6 +1171,9 @@ export interface DebriefChunk1 {
   questionsAddressedCount: number;
   questionsMissed: string[];
   questionsMissedCount: number;
+  suggestedRewrites: { original: string; suggested: string }[];
+  keyQuestionsScore: SectionScore | null;
+  guidanceKeyQuestions: string | null; // Reflective questions for missed KQs
 }
 
 /**
@@ -1169,7 +1181,7 @@ export interface DebriefChunk1 {
  */
 export interface DTPComparisonItem {
   dtpText: string;
-  status: 'matched' | 'missed' | 'unmatched';
+  status: 'matched' | 'missed' | 'additional';
   matchedWith?: string;
 }
 
@@ -1178,8 +1190,10 @@ export interface DTPComparisonItem {
  */
 export interface RecommendationComparisonItem {
   recommendationText: string;
-  status: 'matched' | 'missed' | 'unmatched';
+  status: 'matched' | 'missed' | 'additional';
   matchedWith?: string;
+  rationaleRating?: 'full_credit' | 'partial_credit' | 'no_credit';
+  rationaleExplanation?: string;
 }
 
 /**
@@ -1189,14 +1203,18 @@ export interface DebriefChunk2 {
   dtpComparison: {
     overview: string;
     matched: DTPComparisonItem[];
-    missed: DTPComparisonItem[];
-    unmatched: DTPComparisonItem[];
+    missed: DTPComparisonItem[]; // Text hidden — only count shown
+    additional: DTPComparisonItem[];
+    score: SectionScore | null;
+    guidance: string | null; // Reflective questions for missed DTPs
   };
   recommendationsComparison: {
     overview: string;
     matched: RecommendationComparisonItem[];
-    missed: RecommendationComparisonItem[];
-    unmatched: RecommendationComparisonItem[];
+    missed: RecommendationComparisonItem[]; // Text hidden — only count shown
+    additional: RecommendationComparisonItem[];
+    score: SectionScore | null;
+    guidance: string | null; // Reflective questions for missed recs
   };
 }
 
@@ -1224,133 +1242,191 @@ export interface ConcludeInteractionRequest {
 /** In-memory store for conclude submissions, keyed by sessionId */
 const concludeSubmissionsStore = new Map<string, ConcludeInteractionRequest>();
 
-// ─── Answer Key Debrief Comparison: Mock Functions ───────────────────────────
+// ─── Conclude With Submissions ───────────────────────────────────────────────
+// Two conclude paths exist:
+//   1. concludeInteraction() — interview_practice patients, no submissions
+//   2. concludeWithSubmissions() — full_assessment patients, sends structured
+//      DTPs + recommendations that the debrief Lambda matches against
+//      instructor-defined expected items via embedding cosine similarity
 
 /**
  * Conclude an interaction with DTP and Recommendation submissions.
- * Stores the submission in memory and returns success.
+ * Sends submissions to the backend where they are persisted and used for
+ * embedding-based matching during debrief generation.
  */
 async function concludeWithSubmissions(
   request: ConcludeInteractionRequest
 ): Promise<{ success: true }> {
+  // Keep local store for potential frontend use (e.g., optimistic UI)
   concludeSubmissionsStore.set(request.sessionId, request);
+
+  // Build a combined recommendation text from the structured entries for backward compat
+  const recommendationText = request.recommendationSubmission.entries
+    .filter((e) => e.recommendation.trim().length > 0)
+    .map((e, i) => {
+      const recLine = `${i + 1}. ${e.recommendation}`;
+      return e.rationale ? `${recLine}\n   Rationale: ${e.rationale}` : recLine;
+    })
+    .join('\n');
+
+  await apiClient.request<{ message: string; chat: any; debrief_triggered: boolean; patient_mode: string }>(
+    `student/conclude_interaction?session_id=${encodeURIComponent(request.sessionId)}&simulation_group_id=${encodeURIComponent(request.simulationGroupId)}&patient_id=${encodeURIComponent(request.patientId)}`,
+    {
+      method: 'POST',
+      body: {
+        recommendation: recommendationText,
+        dtpSubmission: request.dtpSubmission,
+        recommendationSubmission: request.recommendationSubmission,
+      },
+    }
+  );
+
   return { success: true };
 }
 
 /**
  * Fetch the updated two-chunk debrief for a session.
- * Returns chunk1 immediately and chunk2 after a ~2 second simulated delay.
+ * Calls the real GET /student/get_debrief endpoint and parses the response
+ * into the two-chunk structure:
+ *   - chunk1: interview summary + key questions + suggested rewrites (always present)
+ *   - chunk2: DTP/Rec comparison (only for full_assessment patients, null otherwise)
+ *
+ * The same debrief JSON is stored in the DB regardless of patient mode — the
+ * presence/absence of dtp_comparison and recommendations_comparison keys
+ * determines whether chunk2 is populated or null.
  */
 async function fetchUpdatedDebrief(sessionId: string): Promise<UpdatedDebriefData> {
-  const chunk1: DebriefChunk1 = {
-    summary:
-      'The student conducted a thorough patient interview, covering medication history, ' +
-      'current symptoms, and lifestyle factors. The student demonstrated good rapport-building ' +
-      'skills and asked appropriate follow-up questions about the patient\'s adherence to their ' +
-      'current medication regimen. However, some key areas related to drug interactions and ' +
-      'contraindications were not fully explored.',
-    questionsAddressed: [
-      'What medications are you currently taking?',
-      'Have you experienced any side effects from your medications?',
-      'How often do you miss doses of your medication?',
-      'Do you have any known drug allergies?',
-      'What is your primary health concern today?',
-      'Are you taking any over-the-counter supplements?',
-    ],
-    questionsAddressedCount: 6,
-    questionsMissed: [
-      'Have you recently started any new medications from another provider?',
-      'Do you consume grapefruit or grapefruit juice regularly?',
-      'Have you noticed any changes in kidney function or lab values?',
-    ],
-    questionsMissedCount: 3,
-  };
+  const user = await authService.getCurrentUser();
+  if (!user?.email) throw new Error('Not authenticated');
 
-  // Simulate async processing delay for chunk2 (~2 seconds)
-  const chunk2Promise = new Promise<DebriefChunk2>((resolve) => {
-    setTimeout(() => {
-      const submission = concludeSubmissionsStore.get(sessionId);
+  const maxAttempts = 8;
+  const baseDelayMs = 500;
 
-      // Build realistic DTP comparison data
-      const matched: DTPComparisonItem[] = [
-        {
-          dtpText: 'Drug interaction between simvastatin and amlodipine requiring dose adjustment',
-          status: 'matched',
-          matchedWith: submission?.dtpSubmission.entries[0] || 'Statin-calcium channel blocker interaction',
-        },
-        {
-          dtpText: 'Subtherapeutic metformin dose for current HbA1c level',
-          status: 'matched',
-          matchedWith: submission?.dtpSubmission.entries[1] || 'Inadequate diabetes control with current dose',
-        },
-      ];
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const data = await apiClient.request<{ generated_text?: any; status?: string; error?: string }>(
+      `student/get_debrief?session_id=${encodeURIComponent(sessionId)}&email=${encodeURIComponent(user.email)}`
+    );
 
-      const missed: DTPComparisonItem[] = [
-        {
-          dtpText: 'Unnecessary duplication of therapy: patient taking both OTC omeprazole and prescribed pantoprazole',
-          status: 'missed',
-        },
-        {
-          dtpText: 'Non-adherence to lisinopril due to persistent dry cough — consider ARB switch',
-          status: 'missed',
-        },
-      ];
+    if (data?.status === 'generating') {
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
 
-      const unmatched: DTPComparisonItem[] = [
-        {
-          dtpText: submission?.dtpSubmission.entries[2] || 'Patient may benefit from statin therapy intensification',
-          status: 'unmatched',
-        },
-      ];
+    if (!data?.generated_text) {
+      throw new Error('No debrief data available');
+    }
 
-      resolve({
+    let debrief = typeof data.generated_text === 'string'
+      ? JSON.parse(data.generated_text)
+      : data.generated_text;
+
+    // Parse nested string if double-encoded
+    if (typeof debrief === 'string') {
+      debrief = JSON.parse(debrief);
+    }
+
+    // Build chunk1 from key question data
+    const questionsAddressed = (debrief.questions_addressed || []).map(
+      (q: string | { question_text?: string }) =>
+        typeof q === 'string' ? q : (q.question_text || 'Unknown question')
+    );
+    const questionsMissed = (debrief.questions_missed || []).map(
+      (q: string | { question_text?: string }) =>
+        typeof q === 'string' ? q : (q.question_text || 'Unknown question')
+    );
+
+    // Parse section scores from debrief JSON
+    const sectionScores = debrief.section_scores || {};
+    const guidanceData = debrief.guidance || {};
+
+    const chunk1: DebriefChunk1 = {
+      summary: typeof debrief.summary === 'string' ? debrief.summary : '',
+      questionsAddressed,
+      questionsAddressedCount: questionsAddressed.length,
+      questionsMissed,
+      questionsMissedCount: questionsMissed.length,
+      suggestedRewrites: (debrief.suggested_rewrites || []).map(
+        (r: { original_message?: string; suggested_rewrite?: string }) => ({
+          original: r.original_message || '',
+          suggested: r.suggested_rewrite || '',
+        })
+      ),
+      keyQuestionsScore: sectionScores.key_questions
+        ? {
+            matched: sectionScores.key_questions.matched,
+            total: sectionScores.key_questions.total,
+            percentage: sectionScores.key_questions.percentage,
+          }
+        : null,
+      guidanceKeyQuestions: guidanceData.key_questions || null,
+    };
+
+    // Build chunk2 from DTP/Rec comparison data (null if not present)
+    let chunk2: DebriefChunk2 | null = null;
+
+    if (debrief.dtp_comparison || debrief.recommendations_comparison) {
+      const dtpRaw = debrief.dtp_comparison || { matched: [], missed: [], additional: [] };
+      const recRaw = debrief.recommendations_comparison || { matched: [], missed: [], additional: [] };
+
+      chunk2 = {
         dtpComparison: {
-          overview: 'You identified 2 out of 4 expected drug therapy problems. You correctly recognized the statin-amlodipine interaction and the subtherapeutic metformin dosing. However, you missed the duplicate PPI therapy and the lisinopril-induced cough requiring an ARB switch. One of your submissions did not correspond to an expected DTP for this case.',
-          matched,
-          missed,
-          unmatched,
+          overview: `You identified ${dtpRaw.matched?.length || 0} out of ${(dtpRaw.matched?.length || 0) + (dtpRaw.missed?.length || 0)} expected drug therapy problems.`,
+          matched: (dtpRaw.matched || []).map((m: any) => ({
+            dtpText: m.instructor_text || '',
+            status: 'matched' as const,
+            matchedWith: m.student_text || '',
+          })),
+          missed: (dtpRaw.missed || []).map((_m: any) => ({
+            dtpText: '',
+            status: 'missed' as const,
+          })),
+          additional: (dtpRaw.additional || []).map((m: any) => ({
+            dtpText: m.student_text || '',
+            status: 'additional' as const,
+          })),
+          score: sectionScores.dtps
+            ? {
+                matched: sectionScores.dtps.matched,
+                total: sectionScores.dtps.total,
+                percentage: sectionScores.dtps.percentage,
+              }
+            : null,
+          guidance: guidanceData.dtps || null,
         },
         recommendationsComparison: {
-          overview: 'You provided 2 recommendations that aligned with expected interventions, demonstrating good clinical reasoning around dose adjustments and drug interactions. Two key recommendations were missed — addressing the PPI duplication and switching the ACE inhibitor to an ARB. Your rationale for the matched recommendations was clinically sound and appropriately referenced patient-specific parameters.',
-          matched: [
-            {
-              recommendationText: 'Reduce atorvastatin dose to 40mg daily due to drug interaction with amlodipine',
-              status: 'matched',
-              matchedWith: submission?.recommendationSubmission.entries[0]?.recommendation || 'Reduce statin dose given interaction',
-            },
-            {
-              recommendationText: 'Titrate metformin to 1000mg twice daily to achieve HbA1c target below 7%',
-              status: 'matched',
-              matchedWith: submission?.recommendationSubmission.entries[1]?.recommendation || 'Increase metformin for better glycemic control',
-            },
-          ],
-          missed: [
-            {
-              recommendationText: 'Discontinue OTC omeprazole and continue prescribed pantoprazole only — reassess PPI need in 8 weeks',
-              status: 'missed',
-            },
-            {
-              recommendationText: 'Switch lisinopril to losartan 50mg daily to resolve persistent dry cough while maintaining renal protection',
-              status: 'missed',
-            },
-          ],
-          unmatched: [
-            {
-              recommendationText: submission?.recommendationSubmission.entries[2]?.recommendation || 'Consider adding aspirin for cardiovascular prophylaxis',
-              status: 'unmatched',
-            },
-          ],
+          overview: `You matched ${recRaw.matched?.length || 0} out of ${(recRaw.matched?.length || 0) + (recRaw.missed?.length || 0)} expected recommendations.`,
+          matched: (recRaw.matched || []).map((m: any) => ({
+            recommendationText: m.instructor_text || '',
+            status: 'matched' as const,
+            matchedWith: m.student_text || '',
+            rationaleRating: m.rationale_rating || undefined,
+            rationaleExplanation: m.rationale_explanation || undefined,
+          })),
+          missed: (recRaw.missed || []).map((_m: any) => ({
+            recommendationText: '',
+            status: 'missed' as const,
+          })),
+          additional: (recRaw.additional || []).map((m: any) => ({
+            recommendationText: m.student_text || '',
+            status: 'additional' as const,
+          })),
+          score: sectionScores.recommendations
+            ? {
+                matched: sectionScores.recommendations.matched,
+                total: sectionScores.recommendations.total,
+                percentage: sectionScores.recommendations.percentage,
+              }
+            : null,
+          guidance: guidanceData.recommendations || null,
         },
-      });
-    }, 2000);
-  });
+      };
+    }
 
-  const chunk2 = await chunk2Promise;
+    return { chunk1, chunk2 };
+  }
 
-  return {
-    chunk1,
-    chunk2,
-  };
+  throw new Error('Debrief generation timed out');
 }
 
 /**

@@ -1,4 +1,5 @@
 import boto3, re, json, logging, math, threading
+from concurrent.futures import Future, ThreadPoolExecutor
 import psycopg
 import os
 
@@ -917,6 +918,60 @@ def fetch_recommendation(session_id: str) -> str:
         return ""
 
 
+def fetch_student_submissions(session_id: str) -> dict:
+    """
+    Fetch DTP and recommendation submissions from the chats table.
+
+    Returns:
+        {
+            'dtp_entries': list[str],
+            'rec_entries': list[dict]  — each dict has 'recommendation' and 'rationale' keys
+        }
+
+    Returns empty lists if no submissions exist (e.g., interview_practice mode).
+    """
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT dtp_submission, recommendation_submission FROM "chats" WHERE chat_id = %s',
+            (session_id,)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not result:
+            logger.warning(f"No chat found for session_id={session_id} when fetching submissions")
+            return {"dtp_entries": [], "rec_entries": []}
+
+        dtp_raw = result[0]
+        rec_raw = result[1]
+
+        # Parse JSONB — psycopg2 auto-deserializes jsonb to Python objects,
+        # but handle string case defensively
+        if isinstance(dtp_raw, str):
+            dtp_entries = json.loads(dtp_raw)
+        elif isinstance(dtp_raw, list):
+            dtp_entries = dtp_raw
+        else:
+            dtp_entries = []
+
+        if isinstance(rec_raw, str):
+            rec_entries = json.loads(rec_raw)
+        elif isinstance(rec_raw, list):
+            rec_entries = rec_raw
+        else:
+            rec_entries = []
+
+        logger.info(f"Fetched submissions for session={session_id}: {len(dtp_entries)} DTPs, {len(rec_entries)} recommendations")
+        return {"dtp_entries": dtp_entries, "rec_entries": rec_entries}
+
+    except Exception as e:
+        logger.error(f"Error fetching student submissions for session={session_id}: {e}")
+        return {"dtp_entries": [], "rec_entries": []}
+
+
 def fetch_key_questions(simulation_group_id: str, persona_id: str) -> list[dict]:
     """Fetch key questions assigned to this persona/group from simulation_group_questions + question_bank."""
     try:
@@ -1066,6 +1121,1054 @@ def get_cached_key_questions(
     except Exception as e:
         logger.warning(f"Failed to read cached key questions from DynamoDB: {e}")
         return None
+
+
+# =============================================================================
+# INSTRUCTOR DTP / RECOMMENDATION EMBEDDING CACHE
+# =============================================================================
+# Instructor-defined DTPs and recommendations are static per group+persona —
+# they don't change between student sessions. We embed them once (lazily on
+# first student conclude) and cache the vectors in DynamoDB to avoid repeated
+# Cohere API calls. At debrief time, only the student's submissions need
+# embedding (one API call), then matching is pure cosine similarity math.
+#
+# This mirrors the key question caching pattern (QCACHE#) but uses different
+# key prefixes (DTPCACHE#, RECCACHE#) since the cache lifetime is per
+# group+persona rather than per session.
+# =============================================================================
+
+
+def fetch_instructor_dtps(simulation_group_id: str, persona_id: str) -> list[dict]:
+    """Fetch instructor DTPs assigned to this group/persona from simulation_group_dtps JOIN dtp_bank."""
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT db.dtp_id, db.expected_dtp_text, db.evaluation_criteria
+            FROM "simulation_group_dtps" sgd
+            JOIN "dtp_bank" db ON sgd.dtp_id = db.dtp_id
+            WHERE sgd.simulation_group_id = %s
+              AND (sgd.persona_id = %s OR sgd.persona_id IS NULL)
+              AND db.is_active = TRUE
+            ORDER BY sgd.sort_order, db.title
+        """, (simulation_group_id, persona_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        logger.info(f"Fetched {len(rows)} instructor DTPs for group={simulation_group_id}, persona={persona_id}")
+        return [{
+            "dtp_id": str(r[0]),
+            "expected_dtp_text": r[1],
+            "evaluation_criteria": r[2],
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"Error fetching instructor DTPs: {e}")
+        return []
+
+
+def fetch_instructor_recommendations(simulation_group_id: str, persona_id: str) -> list[dict]:
+    """Fetch instructor recommendations assigned to this group/persona from simulation_group_recommendations JOIN recommendations_bank."""
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT rb.recommendation_id, rb.recommendation_text, rb.rationale, rb.evaluation_criteria
+            FROM "simulation_group_recommendations" sgr
+            JOIN "recommendations_bank" rb ON sgr.recommendation_id = rb.recommendation_id
+            WHERE sgr.simulation_group_id = %s
+              AND (sgr.persona_id = %s OR sgr.persona_id IS NULL)
+              AND rb.is_active = TRUE
+            ORDER BY sgr.sort_order, rb.title
+        """, (simulation_group_id, persona_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        logger.info(f"Fetched {len(rows)} instructor recommendations for group={simulation_group_id}, persona={persona_id}")
+        return [{
+            "recommendation_id": str(r[0]),
+            "recommendation_text": r[1],
+            "rationale": r[2],
+            "evaluation_criteria": r[3],
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"Error fetching instructor recommendations: {e}")
+        return []
+
+
+def cache_instructor_dtp_embeddings(
+    simulation_group_id: str,
+    persona_id: str,
+    embeddings_model,
+    table_name: str,
+) -> list[dict]:
+    """
+    Fetch instructor DTPs from PostgreSQL, batch-embed all expected_dtp_text
+    values (one Cohere v4 call), and store in DynamoDB.
+    Returns the list of DTPs with embeddings.
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    dtps = fetch_instructor_dtps(simulation_group_id, persona_id)
+
+    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+
+    if not dtps:
+        logger.info(f"No instructor DTPs for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
+        try:
+            dynamodb = boto3.resource("dynamodb")
+            table = dynamodb.Table(table_name)
+            table.put_item(Item={
+                "SessionId": cache_key,
+                "items": [],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.error(f"Failed to cache empty DTP list in DynamoDB: {e}")
+        return []
+
+    # Batch-embed all DTP texts in one API call
+    dtp_texts = [d["expected_dtp_text"] for d in dtps]
+    try:
+        embeddings = embeddings_model.embed_documents(dtp_texts)
+    except Exception as e:
+        logger.error(f"Failed to batch-embed instructor DTPs: {e}")
+        return []
+
+    cached_dtps = []
+    for dtp, embedding in zip(dtps, embeddings):
+        cached_dtps.append({
+            "dtp_id": dtp["dtp_id"],
+            "expected_dtp_text": dtp["expected_dtp_text"],
+            "evaluation_criteria": dtp["evaluation_criteria"],
+            "embedding": embedding,
+        })
+
+    # Store in DynamoDB
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+
+        serializable_items = []
+        for item in cached_dtps:
+            serializable_items.append({
+                "dtp_id": item["dtp_id"],
+                "expected_dtp_text": item["expected_dtp_text"],
+                "evaluation_criteria": item["evaluation_criteria"],
+                "embedding": [Decimal(str(v)) for v in item["embedding"]],
+            })
+
+        table.put_item(Item={
+            "SessionId": cache_key,
+            "items": serializable_items,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"✅ Cached {len(cached_dtps)} instructor DTP embeddings for group={simulation_group_id}, persona={persona_id}")
+    except Exception as e:
+        logger.error(f"Failed to cache instructor DTP embeddings in DynamoDB: {e}")
+
+    return cached_dtps
+
+
+def cache_instructor_rec_embeddings(
+    simulation_group_id: str,
+    persona_id: str,
+    embeddings_model,
+    table_name: str,
+) -> list[dict]:
+    """
+    Fetch instructor recommendations from PostgreSQL, batch-embed all
+    recommendation_text values (one Cohere v4 call), and store in DynamoDB.
+    Returns the list of recommendations with embeddings.
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    recs = fetch_instructor_recommendations(simulation_group_id, persona_id)
+
+    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+
+    if not recs:
+        logger.info(f"No instructor recommendations for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
+        try:
+            dynamodb = boto3.resource("dynamodb")
+            table = dynamodb.Table(table_name)
+            table.put_item(Item={
+                "SessionId": cache_key,
+                "items": [],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.error(f"Failed to cache empty recommendation list in DynamoDB: {e}")
+        return []
+
+    # Batch-embed all recommendation texts in one API call
+    rec_texts = [r["recommendation_text"] for r in recs]
+    try:
+        embeddings = embeddings_model.embed_documents(rec_texts)
+    except Exception as e:
+        logger.error(f"Failed to batch-embed instructor recommendations: {e}")
+        return []
+
+    cached_recs = []
+    for rec, embedding in zip(recs, embeddings):
+        cached_recs.append({
+            "recommendation_id": rec["recommendation_id"],
+            "recommendation_text": rec["recommendation_text"],
+            "rationale": rec["rationale"],
+            "evaluation_criteria": rec["evaluation_criteria"],
+            "embedding": embedding,
+        })
+
+    # Store in DynamoDB
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+
+        serializable_items = []
+        for item in cached_recs:
+            serializable_items.append({
+                "recommendation_id": item["recommendation_id"],
+                "recommendation_text": item["recommendation_text"],
+                "rationale": item["rationale"],
+                "evaluation_criteria": item["evaluation_criteria"],
+                "embedding": [Decimal(str(v)) for v in item["embedding"]],
+            })
+
+        table.put_item(Item={
+            "SessionId": cache_key,
+            "items": serializable_items,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"✅ Cached {len(cached_recs)} instructor recommendation embeddings for group={simulation_group_id}, persona={persona_id}")
+    except Exception as e:
+        logger.error(f"Failed to cache instructor recommendation embeddings in DynamoDB: {e}")
+
+    return cached_recs
+
+
+def get_cached_instructor_dtps(
+    simulation_group_id: str,
+    persona_id: str,
+    table_name: str,
+) -> list[dict] | None:
+    """
+    Read cached instructor DTP embeddings from DynamoDB.
+    Returns the list of DTP dicts with embeddings, or None on cache miss/failure.
+    """
+    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+        response = table.get_item(Key={"SessionId": cache_key})
+
+        item = response.get("Item")
+        if item is None:
+            logger.info(f"DTP cache miss for group={simulation_group_id}, persona={persona_id}")
+            return None
+
+        items = item.get("items", [])
+
+        result = []
+        for d in items:
+            result.append({
+                "dtp_id": d["dtp_id"],
+                "expected_dtp_text": d["expected_dtp_text"],
+                "evaluation_criteria": d.get("evaluation_criteria"),
+                "embedding": [float(v) for v in d["embedding"]] if d.get("embedding") else [],
+            })
+
+        logger.info(f"✅ Retrieved {len(result)} cached instructor DTPs for group={simulation_group_id}, persona={persona_id}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to read cached instructor DTPs from DynamoDB: {e}")
+        return None
+
+
+def get_cached_instructor_recs(
+    simulation_group_id: str,
+    persona_id: str,
+    table_name: str,
+) -> list[dict] | None:
+    """
+    Read cached instructor recommendation embeddings from DynamoDB.
+    Returns the list of recommendation dicts with embeddings, or None on cache miss/failure.
+    """
+    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+        response = table.get_item(Key={"SessionId": cache_key})
+
+        item = response.get("Item")
+        if item is None:
+            logger.info(f"Recommendation cache miss for group={simulation_group_id}, persona={persona_id}")
+            return None
+
+        items = item.get("items", [])
+
+        result = []
+        for r in items:
+            result.append({
+                "recommendation_id": r["recommendation_id"],
+                "recommendation_text": r["recommendation_text"],
+                "rationale": r.get("rationale"),
+                "evaluation_criteria": r.get("evaluation_criteria"),
+                "embedding": [float(v) for v in r["embedding"]] if r.get("embedding") else [],
+            })
+
+        logger.info(f"✅ Retrieved {len(result)} cached instructor recommendations for group={simulation_group_id}, persona={persona_id}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to read cached instructor recommendations from DynamoDB: {e}")
+        return None
+
+
+# =============================================================================
+# DTP / RECOMMENDATION SUBMISSION MATCHING
+# =============================================================================
+# At conclude time, students submit DTPs and recommendations via the
+# ConcludeModal. These are compared against instructor-defined expected items
+# using embedding cosine similarity (no LLM needed for the match itself).
+#
+# Scoring philosophy:
+#   - Recommendation text determines the match (embedding similarity)
+#   - Rationale is NOT used for matching — a wrong recommendation with
+#     correct rationale still gets no credit (Phase 2 adds LLM rationale eval
+#     for matched pairs only)
+#   - "Additional" items (student submissions with no instructor match) are
+#     displayed neutrally — they don't affect the score
+#   - Score = matched / (matched + missed); additional items excluded
+#
+# The greedy assignment algorithm ensures one-to-one matching: each student
+# submission maps to at most one instructor item and vice versa.
+# =============================================================================
+
+# Similarity threshold for considering a student submission as matching an
+# instructor-defined item. Cohere Embed v4 scores run lower than expected for
+# semantically equivalent but differently-worded clinical text, so 0.55 is the
+# sweet spot: same clinical concept with different phrasing reliably scores
+# above this, while unrelated items fall below.
+SUBMISSION_MATCH_THRESHOLD = 0.55
+
+
+def batch_embed_texts(texts: list[str], embeddings_model) -> list[list[float]]:
+    """
+    Batch-embed a list of texts in one Cohere Embed v4 API call.
+
+    Uses embed_documents() (input_type="search_document") to stay in the same
+    embedding space as the pre-cached instructor embeddings.
+
+    Args:
+        texts: List of strings to embed.
+        embeddings_model: CohereBedrockEmbeddings instance.
+
+    Returns:
+        List of embedding vectors (one per input text).
+
+    Raises:
+        ValueError: If the embedding call returns no results.
+    """
+    if not texts:
+        return []
+    return embeddings_model.embed_documents(texts)
+
+
+def greedy_match_assignment(
+    similarity_pairs: list[tuple[int, int, float]],
+    num_students: int,
+    num_instructors: int,
+    threshold: float = SUBMISSION_MATCH_THRESHOLD,
+) -> tuple[list[tuple[int, int, float]], set[int], set[int]]:
+    """
+    Greedy one-to-one assignment based on similarity scores.
+
+    Algorithm:
+        1. Sort all (student_idx, instructor_idx, score) pairs descending by score
+        2. For each pair, if score >= threshold and neither side is already assigned,
+           mark as matched
+        3. Return matched pairs, unassigned instructor indices (missed),
+           and unassigned student indices (additional)
+
+    Args:
+        similarity_pairs: List of (student_idx, instructor_idx, score) tuples.
+        num_students: Total number of student submissions.
+        num_instructors: Total number of instructor items.
+        threshold: Minimum similarity score to consider a match.
+
+    Returns:
+        Tuple of (matched_pairs, missed_instructor_indices, additional_student_indices)
+    """
+    # Sort by score descending — highest confidence matches first
+    sorted_pairs = sorted(similarity_pairs, key=lambda x: x[2], reverse=True)
+
+    assigned_students: set[int] = set()
+    assigned_instructors: set[int] = set()
+    matched_pairs: list[tuple[int, int, float]] = []
+
+    for student_idx, instructor_idx, score in sorted_pairs:
+        if score < threshold:
+            break  # All remaining pairs are below threshold (sorted desc)
+        if student_idx in assigned_students:
+            continue
+        if instructor_idx in assigned_instructors:
+            continue
+        matched_pairs.append((student_idx, instructor_idx, score))
+        assigned_students.add(student_idx)
+        assigned_instructors.add(instructor_idx)
+
+    missed_instructors = set(range(num_instructors)) - assigned_instructors
+    additional_students = set(range(num_students)) - assigned_students
+
+    return matched_pairs, missed_instructors, additional_students
+
+
+def match_submissions(
+    student_texts: list[str],
+    instructor_items: list[dict],
+    embeddings_model,
+    threshold: float = SUBMISSION_MATCH_THRESHOLD,
+    text_key: str = "expected_dtp_text",
+    id_key: str = "dtp_id",
+) -> dict:
+    """
+    Match student submissions against pre-cached instructor items using
+    embedding cosine similarity with greedy one-to-one assignment.
+
+    Flow:
+        1. Batch-embed student texts (one Cohere v4 API call)
+        2. Use pre-cached instructor embeddings (no API call)
+        3. Compute NxM cosine similarity matrix (pure math)
+        4. Greedy assignment with threshold
+        5. Categorize results into matched/missed/additional
+
+    Args:
+        student_texts: List of student-submitted text strings.
+        instructor_items: List of dicts, each with pre-cached 'embedding',
+                          a text field (keyed by text_key), and an ID field (keyed by id_key).
+        embeddings_model: CohereBedrockEmbeddings instance for batch embedding.
+        threshold: Minimum cosine similarity to consider a match.
+        text_key: Key in instructor_items for the expected text (e.g., 'expected_dtp_text'
+                  or 'recommendation_text').
+        id_key: Key in instructor_items for the unique ID (e.g., 'dtp_id'
+                or 'recommendation_id').
+
+    Returns:
+        {
+            "matched": [{ "student_text", "instructor_text", "instructor_id", "score" }],
+            "missed": [{ "instructor_text", "instructor_id" }],
+            "additional": [{ "student_text" }]
+        }
+    """
+    # Handle edge cases
+    if not student_texts and not instructor_items:
+        return {"matched": [], "missed": [], "additional": []}
+    if not student_texts:
+        return {
+            "matched": [],
+            "missed": [{"instructor_text": item[text_key], "instructor_id": item[id_key]} for item in instructor_items],
+            "additional": [],
+        }
+    if not instructor_items:
+        return {
+            "matched": [],
+            "missed": [],
+            "additional": [{"student_text": text} for text in student_texts],
+        }
+
+    # Step 1: Batch-embed student texts (one API call)
+    try:
+        student_embeddings = batch_embed_texts(student_texts, embeddings_model)
+    except Exception as e:
+        logger.error(f"Failed to batch-embed student submissions: {e}")
+        # Fallback: can't match without embeddings — treat all as additional/missed
+        return {
+            "matched": [],
+            "missed": [{"instructor_text": item[text_key], "instructor_id": item[id_key]} for item in instructor_items],
+            "additional": [{"student_text": text} for text in student_texts],
+        }
+
+    # Step 2: Extract pre-cached instructor embeddings
+    instructor_embeddings = [item["embedding"] for item in instructor_items]
+
+    # Step 3: Compute NxM cosine similarity matrix
+    similarity_pairs: list[tuple[int, int, float]] = []
+    for s_idx, s_emb in enumerate(student_embeddings):
+        for i_idx, i_emb in enumerate(instructor_embeddings):
+            score = compute_cosine_similarity(s_emb, i_emb)
+            similarity_pairs.append((s_idx, i_idx, score))
+
+    # Step 4: Greedy assignment
+    matched_pairs, missed_indices, additional_indices = greedy_match_assignment(
+        similarity_pairs=similarity_pairs,
+        num_students=len(student_texts),
+        num_instructors=len(instructor_items),
+        threshold=threshold,
+    )
+
+    # Step 5: Build result dicts
+    matched = []
+    for s_idx, i_idx, score in matched_pairs:
+        matched.append({
+            "student_text": student_texts[s_idx],
+            "instructor_text": instructor_items[i_idx][text_key],
+            "instructor_id": instructor_items[i_idx][id_key],
+            "score": round(score, 4),
+        })
+
+    missed = []
+    for i_idx in sorted(missed_indices):
+        missed.append({
+            "instructor_text": instructor_items[i_idx][text_key],
+            "instructor_id": instructor_items[i_idx][id_key],
+        })
+
+    additional = []
+    for s_idx in sorted(additional_indices):
+        additional.append({
+            "student_text": student_texts[s_idx],
+        })
+
+    logger.info(
+        f"Submission matching complete: {len(matched)} matched, "
+        f"{len(missed)} missed, {len(additional)} additional"
+    )
+
+    return {"matched": matched, "missed": missed, "additional": additional}
+
+
+# =============================================================================
+# RATIONALE EVALUATION
+# =============================================================================
+
+
+def evaluate_rationale(
+    student_recommendation_text: str,
+    student_rationale: str,
+    instructor_recommendation_text: str,
+    instructor_rationale: str,
+    evaluation_criteria: str,
+    llm: ChatBedrock,
+) -> dict:
+    """
+    Evaluate a single matched recommendation's rationale quality via LLM.
+
+    Uses the provided ChatBedrock instance to assess whether the student's
+    rationale demonstrates correct clinical reasoning for a recommendation
+    that has already been matched as correct.
+
+    Args:
+        student_recommendation_text: The student's recommendation text.
+        student_rationale: The student's stated rationale for the recommendation.
+        instructor_recommendation_text: The instructor's expected recommendation text.
+        instructor_rationale: The instructor's expected rationale (gold standard).
+        evaluation_criteria: Additional assessment context/criteria.
+        llm: ChatBedrock instance for LLM invocation.
+
+    Returns:
+        {
+            "rating": "full_credit" | "partial_credit" | "no_credit",
+            "explanation": str  # 1-3 sentence justification
+        }
+
+    On any LLM failure or parse error, returns:
+        {"rating": "partial_credit", "explanation": "Rationale evaluation was unavailable for this item."}
+    """
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    FALLBACK = {"rating": "partial_credit", "explanation": "Rationale evaluation was unavailable for this item."}
+    VALID_RATINGS = {"full_credit", "partial_credit", "no_credit"}
+
+    prompt_text = f"""## Matched Recommendation Pair
+
+### Student's Recommendation
+"{student_recommendation_text}"
+
+### Student's Rationale
+"{student_rationale}"
+
+### Instructor's Expected Recommendation
+"{instructor_recommendation_text}"
+
+### Instructor's Expected Rationale
+"{instructor_rationale}"
+
+### Evaluation Criteria
+{evaluation_criteria}
+
+## Your Task
+Evaluate whether the student's rationale demonstrates correct clinical reasoning
+for this recommendation. The recommendation itself has already been matched as
+correct — you are ONLY evaluating the rationale.
+
+Rating criteria:
+- full_credit: The student's rationale correctly identifies the clinical reasoning
+  and aligns with the instructor's expected rationale and evaluation criteria.
+- partial_credit: The student's rationale is incomplete, vague, or partially
+  incorrect but shows some understanding of the clinical reasoning.
+- no_credit: The student's rationale is entirely wrong or missing, suggesting
+  they arrived at the correct recommendation by chance.
+
+Return a JSON object:
+{{
+  "rating": "full_credit" | "partial_credit" | "no_credit",
+  "explanation": "1-3 sentence justification for the rating."
+}}"""
+
+    try:
+        messages = [
+            HumanMessage(content=prompt_text),
+        ]
+        resp = llm.invoke(messages)
+        raw = resp.content if hasattr(resp, 'content') else str(resp)
+
+        # Extract JSON from response (handle markdown fences, leading text, etc.)
+        cleaned = raw.strip()
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?\s*```\s*$', '', cleaned)
+        cleaned = cleaned.strip()
+        if not cleaned.startswith('{'):
+            first_brace = cleaned.find('{')
+            if first_brace != -1:
+                cleaned = cleaned[first_brace:]
+        if not cleaned.endswith('}'):
+            last_brace = cleaned.rfind('}')
+            if last_brace != -1:
+                cleaned = cleaned[:last_brace + 1]
+
+        parsed = json.loads(cleaned)
+
+        # Validate the parsed response
+        rating = parsed.get("rating", "")
+        explanation = parsed.get("explanation", "")
+
+        if rating not in VALID_RATINGS:
+            logger.warning(f"Invalid rationale rating '{rating}' from LLM, falling back to partial_credit")
+            return FALLBACK
+
+        if not explanation or not isinstance(explanation, str):
+            logger.warning("Empty or invalid explanation from LLM, falling back to partial_credit")
+            return FALLBACK
+
+        return {"rating": rating, "explanation": explanation}
+
+    except Exception as e:
+        logger.error(f"Rationale evaluation failed: {e}")
+        return FALLBACK
+
+
+def evaluate_rationales_parallel(
+    matched_recommendations: list[dict],
+    student_rec_entries: list[dict],
+    instructor_recs: list[dict],
+    llm: ChatBedrock,
+    max_workers: int = 5,
+) -> list[dict]:
+    """
+    Evaluate all matched recommendation rationales in parallel.
+
+    Args:
+        matched_recommendations: Output from match_submissions()["matched"],
+            each with student_text, instructor_text, instructor_id, score.
+        student_rec_entries: Original student submission entries with rationale.
+            Each entry is: {"recommendation": str, "rationale": str}
+        instructor_recs: Cached instructor recs with rationale + evaluation_criteria.
+            Each entry has: recommendation_text, rationale, evaluation_criteria, recommendation_id
+        llm: ChatBedrock instance.
+        max_workers: ThreadPoolExecutor concurrency limit.
+
+    Returns:
+        List of matched recommendation dicts augmented with:
+            "rationale_rating": "full_credit" | "partial_credit" | "no_credit"
+            "rationale_explanation": str
+    """
+    if not matched_recommendations:
+        return []
+
+    def _evaluate_single(rec: dict) -> dict:
+        """Evaluate a single matched recommendation and return augmented dict."""
+        student_text = rec.get("student_text", "")
+        instructor_id = rec.get("instructor_id", "")
+
+        # Look up student rationale by matching recommendation text
+        student_rationale = ""
+        for entry in student_rec_entries:
+            if entry.get("recommendation", "") == student_text:
+                student_rationale = entry.get("rationale", "")
+                break
+
+        # Look up instructor rationale and evaluation_criteria by recommendation_id
+        instructor_rationale = ""
+        evaluation_criteria = ""
+        instructor_recommendation_text = rec.get("instructor_text", "")
+        for inst_rec in instructor_recs:
+            if inst_rec.get("recommendation_id", "") == instructor_id:
+                instructor_rationale = inst_rec.get("rationale", "")
+                evaluation_criteria = inst_rec.get("evaluation_criteria", "")
+                break
+
+        # Call evaluate_rationale for this pair
+        result = evaluate_rationale(
+            student_recommendation_text=student_text,
+            student_rationale=student_rationale,
+            instructor_recommendation_text=instructor_recommendation_text,
+            instructor_rationale=instructor_rationale,
+            evaluation_criteria=evaluation_criteria,
+            llm=llm,
+        )
+
+        # Augment the matched recommendation dict with evaluation results
+        augmented = dict(rec)
+        augmented["rationale_rating"] = result["rating"]
+        augmented["rationale_explanation"] = result["explanation"]
+        return augmented
+
+    # Evaluate all matched recommendations in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(_evaluate_single, matched_recommendations))
+
+    return results
+
+
+# =============================================================================
+# GUIDANCE QUESTION GENERATION
+# =============================================================================
+
+
+def generate_guidance_questions(
+    category: str,
+    missed_items: list[dict],
+    patient_context: str,
+    llm: ChatBedrock,
+) -> str:
+    """
+    Generate reflective guidance questions for a category of missed items.
+
+    The output hints at clinical gaps WITHOUT revealing the exact missed item text.
+
+    Args:
+        category: Which section the missed items belong to
+            ("key_questions" | "dtps" | "recommendations").
+        missed_items: List of instructor-defined items the student missed.
+            For key_questions: each has "question_text"
+            For dtps: each has "expected_dtp_text" or "text"
+            For recommendations: each has "recommendation_text" or "text"
+        patient_context: Brief patient scenario context for grounding.
+        llm: ChatBedrock instance.
+
+    Returns:
+        Markdown-formatted string of 2-4 reflective questions.
+        On failure: generic fallback message.
+    """
+    from langchain_core.messages import HumanMessage
+
+    # Category display names and fallback messages
+    CATEGORY_CONFIG = {
+        "key_questions": {
+            "display_name": "Key Questions",
+            "fallback": "Consider what additional clinical areas you might explore in future interviews with this patient.",
+            "text_key": "question_text",
+        },
+        "dtps": {
+            "display_name": "Drug Therapy Problems",
+            "fallback": "Reflect on whether there are additional drug therapy considerations you may have overlooked for this patient.",
+            "text_key": "expected_dtp_text",
+        },
+        "recommendations": {
+            "display_name": "Recommendations",
+            "fallback": "Think about whether there are additional clinical actions that could benefit this patient's care plan.",
+            "text_key": "recommendation_text",
+        },
+    }
+
+    config = CATEGORY_CONFIG.get(category)
+    if not config:
+        logger.warning(f"Unknown guidance category: {category}")
+        return ""
+
+    # Handle empty missed_items gracefully
+    if not missed_items:
+        return ""
+
+    # Extract text from missed items based on category
+    missed_texts = []
+    for item in missed_items:
+        text = item.get(config["text_key"], "") or item.get("text", "")
+        if text:
+            missed_texts.append(text)
+
+    if not missed_texts:
+        return ""
+
+    # Build bulleted list of missed item texts (for LLM reference only)
+    bulleted_items = "\n".join(f"- {text}" for text in missed_texts)
+
+    prompt_text = f"""## Patient Context
+{patient_context}
+
+## Category: {config["display_name"]}
+The student missed {len(missed_items)} item(s) in this category.
+
+## Missed Item Topics (for your reference only — DO NOT reveal these to the student):
+{bulleted_items}
+
+## Your Task
+Generate 2-4 reflective questions that guide the student toward understanding
+what they missed. The questions should:
+- Reference the patient's clinical scenario
+- Hint at the TOPIC AREA without revealing the specific expected answer
+- Encourage self-reflection and clinical reasoning
+- Be phrased as open-ended questions
+
+CRITICAL: Do NOT include the exact text of any missed item in your response.
+The student should discover the answer through reflection, not be given it directly.
+
+Return a JSON object:
+{{
+  "guidance_questions": [
+    "Question 1...",
+    "Question 2...",
+    ...
+  ]
+}}"""
+
+    try:
+        messages = [HumanMessage(content=prompt_text)]
+        resp = llm.invoke(messages)
+        raw = resp.content if hasattr(resp, 'content') else str(resp)
+
+        # Extract JSON from response (handle markdown fences, leading text, etc.)
+        cleaned = raw.strip()
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?\s*```\s*$', '', cleaned)
+        cleaned = cleaned.strip()
+        if not cleaned.startswith('{'):
+            first_brace = cleaned.find('{')
+            if first_brace != -1:
+                cleaned = cleaned[first_brace:]
+        if not cleaned.endswith('}'):
+            last_brace = cleaned.rfind('}')
+            if last_brace != -1:
+                cleaned = cleaned[:last_brace + 1]
+
+        parsed = json.loads(cleaned)
+
+        questions = parsed.get("guidance_questions", [])
+        if not questions or not isinstance(questions, list):
+            logger.warning("LLM returned empty or invalid guidance_questions list")
+            return config["fallback"]
+
+        # Format as markdown bulleted list
+        markdown_lines = []
+        for q in questions:
+            if isinstance(q, str) and q.strip():
+                markdown_lines.append(f"- {q.strip()}")
+
+        if not markdown_lines:
+            return config["fallback"]
+
+        return "\n".join(markdown_lines)
+
+    except Exception as e:
+        logger.error(f"Guidance question generation failed for category={category}: {e}")
+        return config["fallback"]
+
+
+# =============================================================================
+# SECTION SCORE COMPUTATION
+# =============================================================================
+
+
+def compute_section_scores(
+    key_questions: list[dict],
+    addressed_question_ids: set[str],
+    dtp_comparison: dict | None,
+    rec_comparison: dict | None,
+    patient_mode: str,
+) -> dict:
+    """
+    Compute per-section scores for the debrief.
+
+    Returns:
+        {
+            "key_questions": {"matched": int, "total": int, "percentage": float} | None,
+            "dtps": {"matched": int, "total": int, "percentage": float} | None,
+            "recommendations": {"matched": int, "total": int, "percentage": float} | None,
+        }
+
+    Rules:
+        - Key Questions: uses existing weighted formula (compute_overall_score)
+        - DTPs: matched / (matched + missed), additional excluded
+        - Recommendations: matched / (matched + missed), additional excluded
+        - interview_practice mode: only key_questions score, others None
+        - 0/0 case: section score is None (omitted)
+    """
+    result = {
+        "key_questions": None,
+        "dtps": None,
+        "recommendations": None,
+    }
+
+    # --- Key Questions score ---
+    if key_questions:
+        matched_count = len(addressed_question_ids)
+        total_count = len(key_questions)
+        if total_count > 0:
+            percentage = compute_overall_score(key_questions, addressed_question_ids)
+            result["key_questions"] = {
+                "matched": matched_count,
+                "total": total_count,
+                "percentage": round(percentage),
+            }
+
+    # In interview_practice mode, only return key_questions score
+    if patient_mode == "interview_practice":
+        return result
+
+    # --- DTPs score ---
+    if dtp_comparison is not None:
+        dtp_matched = len(dtp_comparison.get("matched", []))
+        dtp_missed = len(dtp_comparison.get("missed", []))
+        dtp_total = dtp_matched + dtp_missed
+        if dtp_total > 0:
+            percentage = (dtp_matched / dtp_total) * 100.0
+            result["dtps"] = {
+                "matched": dtp_matched,
+                "total": dtp_total,
+                "percentage": round(percentage),
+            }
+
+    # --- Recommendations score ---
+    if rec_comparison is not None:
+        rec_matched = len(rec_comparison.get("matched", []))
+        rec_missed = len(rec_comparison.get("missed", []))
+        rec_total = rec_matched + rec_missed
+        if rec_total > 0:
+            percentage = (rec_matched / rec_total) * 100.0
+            result["recommendations"] = {
+                "matched": rec_matched,
+                "total": rec_total,
+                "percentage": round(percentage),
+            }
+
+    return result
+
+
+# =============================================================================
+# SPEED OPTIMIZATION — Parallel Helpers
+# =============================================================================
+
+
+def safe_result(future: Future, default=None, task_name: str = ""):
+    """Extract result from a future, returning default on any exception."""
+    try:
+        return future.result(timeout=30)
+    except Exception as e:
+        logger.error(f"Parallel task '{task_name}' failed: {e}")
+        return default
+
+
+def generate_batch_rewrites(
+    rewrite_candidates: list[dict],
+    llm: ChatBedrock,
+) -> list[dict]:
+    """
+    Generate all suggested rewrites in a single LLM call (batched).
+
+    Args:
+        rewrite_candidates: List of dicts with keys:
+            - message_content: str (student's original message)
+            - question_id: str
+            - question_text: str
+            - evaluation_criteria: str
+            - similarity_score: float
+
+    Returns:
+        List of dicts with keys:
+            - original_message: str
+            - matched_question_id: str
+            - similarity_score: float
+            - suggested_rewrite: str
+    """
+    from langchain_core.messages import HumanMessage
+
+    if not rewrite_candidates:
+        return []
+
+    # Build the batched prompt
+    messages_section = ""
+    for i, candidate in enumerate(rewrite_candidates):
+        messages_section += f"""
+### Message {i + 1}
+- Original: "{candidate['message_content']}"
+- Target Question: "{candidate['question_text']}"
+- Criteria: "{candidate['evaluation_criteria']}"
+"""
+
+    prompt_text = f"""## Your Task
+For each student message below, suggest a gentle alternative phrasing that more
+directly addresses the matched clinical question. Preserve the student's
+conversational style.
+
+## Messages to Rewrite
+{messages_section}
+Return a JSON object:
+{{
+  "rewrites": [
+    {{"index": 0, "suggested_rewrite": "..."}},
+    {{"index": 1, "suggested_rewrite": "..."}},
+    ...
+  ]
+}}"""
+
+    try:
+        messages = [HumanMessage(content=prompt_text)]
+        resp = llm.invoke(messages)
+        raw = resp.content if hasattr(resp, 'content') else str(resp)
+
+        # Extract JSON from response (handle markdown fences, leading text, etc.)
+        cleaned = raw.strip()
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?\s*```\s*$', '', cleaned)
+        cleaned = cleaned.strip()
+        if not cleaned.startswith('{'):
+            first_brace = cleaned.find('{')
+            if first_brace != -1:
+                cleaned = cleaned[first_brace:]
+        if not cleaned.endswith('}'):
+            last_brace = cleaned.rfind('}')
+            if last_brace != -1:
+                cleaned = cleaned[:last_brace + 1]
+
+        parsed = json.loads(cleaned)
+        rewrites_list = parsed.get("rewrites", [])
+
+        # Build result list aligned with original candidates
+        results = []
+        for item in rewrites_list:
+            idx = item.get("index")
+            suggested = item.get("suggested_rewrite", "")
+            if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(rewrite_candidates):
+                continue
+            if not suggested or not isinstance(suggested, str):
+                continue
+            candidate = rewrite_candidates[idx]
+            results.append({
+                "original_message": candidate["message_content"],
+                "matched_question_id": candidate["question_id"],
+                "similarity_score": candidate["similarity_score"],
+                "suggested_rewrite": suggested,
+            })
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Batch rewrite generation failed: {e}")
+        return []
 
 
 def compute_cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
@@ -2251,6 +3354,7 @@ def generate_debrief(
     llm: ChatBedrock,
     embeddings_model=None,
     ddb_table_name: str = None,
+    patient_mode: str = "interview_practice",
 ) -> dict:
     """
     Orchestrates the full debrief generation flow:
@@ -2258,9 +3362,19 @@ def generate_debrief(
     2. Check for tagged messages — if present, use enhanced prompt; otherwise fall back to full transcript
     3. Build prompt and call LLM
     4. Parse structured JSON response
-    5. Write to debriefs + question_interactions tables
-    6. Optionally publish result via AppSync
+    5. Match DTP/Rec submissions against instructor items (full_assessment only)
+    6. Write to debriefs + question_interactions tables
+    7. Optionally publish result via AppSync
     Returns the parsed debrief dict.
+
+    patient_mode controls the debrief scope:
+      - "interview_practice": Key question evaluation only (no DTP/Rec matching).
+        Used for personas with no DTP/Rec assignments — students just chat and
+        receive feedback on their interview technique.
+      - "full_assessment": Full evaluation including DTP/Rec embedding-based
+        matching. Students submitted structured DTPs + recommendations at
+        conclude time, which are compared against instructor-defined expected
+        items. The debrief includes matched/missed/additional categorization.
     """
     logger.info(f"📋 DEBRIEF GENERATION STARTED for session={session_id}")
 
@@ -2340,25 +3454,51 @@ def generate_debrief(
             logger.info("Cache miss or unavailable — using key questions from PostgreSQL")
             cached_questions = key_questions
 
+        # =====================================================================
+        # PHASE 1 (Chunk1) — Immediate, no LLM needed
+        # =====================================================================
+
         # Step a: Build questions deterministically from pre-matched data
         questions_addressed, questions_missed = build_questions_from_matched_data(tagged_messages, cached_questions)
 
-        # Step b: Compute overall score deterministically
+        # Step b: Compute KQ score deterministically
         addressed_ids_set = {q["question_id"] for q in questions_addressed}
         overall_score = compute_overall_score(cached_questions, addressed_ids_set)
 
-        # Step c: Call summary/feedback prompt via LLM
-        summary_prompt = build_summary_feedback_prompt(transcript, questions_addressed, questions_missed, recommendation)
-        summary_data = _invoke_llm_json(summary_prompt)
-        logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
+        # Compute section scores for chunk1 (KQ only at this point)
+        kq_section_score = compute_section_scores(
+            key_questions=cached_questions,
+            addressed_question_ids=addressed_ids_set,
+            dtp_comparison=None,
+            rec_comparison=None,
+            patient_mode=patient_mode,
+        )
 
-        # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.55
-        suggested_rewrites = []
+        # Publish chunk1 immediately — frontend can render KQ data right away
+        chunk1_content = {
+            "questions_addressed": questions_addressed,
+            "questions_missed_count": len(questions_missed),
+            "key_questions_score": kq_section_score.get("key_questions"),
+        }
+        try:
+            publish_to_appsync(session_id, {
+                "type": "debrief_chunk1",
+                "content": json.dumps(chunk1_content),
+            })
+            logger.info(f"📋 Published chunk1 for session={session_id}")
+        except Exception as e:
+            logger.error(f"Failed to publish chunk1 to AppSync: {e}")
+
+        # =====================================================================
+        # PHASE 2 (Chunk2) — Parallel LLM + matching via ThreadPoolExecutor
+        # =====================================================================
+
+        # Prepare rewrite candidates (same logic as before, just collected for batch call)
+        REWRITE_UPPER_BOUND = 0.70
+        REWRITE_LOWER_BOUND = 0.60
         question_map = {q["question_id"]: q for q in cached_questions}
 
-        # Collect low-confidence matches from tagged messages
-        low_confidence_matches: list[dict] = []
+        rewrite_candidates: list[dict] = []
         for msg in tagged_messages:
             matches_raw = msg.get("matched_question_ids", [])
             if isinstance(matches_raw, str):
@@ -2368,43 +3508,171 @@ def generate_debrief(
                     matches_raw = []
             for match in matches_raw:
                 confidence = match.get("confidence", "")
-                if confidence == "low":
-                    low_confidence_matches.append({
+                similarity_score = match.get("similarity_score", 0.0)
+                if confidence == "moderate" and REWRITE_LOWER_BOUND <= similarity_score < REWRITE_UPPER_BOUND:
+                    rewrite_candidates.append({
                         "message_content": msg.get("message_content", ""),
                         "question_id": match.get("question_id", ""),
-                        "similarity_score": match.get("similarity_score", 0.0),
+                        "similarity_score": similarity_score,
                     })
 
-        for lc_match in low_confidence_matches:
-            q = question_map.get(lc_match["question_id"], {})
-            rewrite_prompt = build_rewrite_prompt(
-                lc_match["message_content"],
-                q.get("question_text", ""),
-                q.get("evaluation_criteria", ""),
-            )
-            rewrite_data = _invoke_llm_json(rewrite_prompt)
-            rewrite_text = rewrite_data.get("suggested_rewrite", "").strip()
-            if rewrite_text:
-                suggested_rewrites.append({
-                    "original_message": lc_match["message_content"],
-                    "matched_question_id": lc_match["question_id"],
-                    "similarity_score": lc_match["similarity_score"],
-                    "suggested_rewrite": rewrite_text,
-                })
-        logger.info(f"📋 Generated {len(suggested_rewrites)} suggested rewrites")
+        # Deduplicate: one rewrite per unique student message (highest-scoring match)
+        seen_messages: dict[str, dict] = {}
+        for candidate in rewrite_candidates:
+            msg = candidate["message_content"]
+            if msg not in seen_messages or candidate["similarity_score"] > seen_messages[msg]["similarity_score"]:
+                seen_messages[msg] = candidate
+        rewrite_candidates = list(seen_messages.values())
 
-        # Step e: Answer key comparison
-        if answer_key_text:
-            ak_prompt = build_answer_key_prompt(recommendation, answer_key_text)
-            answer_key_comparison = _invoke_llm_json(ak_prompt)
-            # Ensure answer_key_available is set
-            if "answer_key_available" not in answer_key_comparison:
+        # Enrich rewrite candidates with question_text and evaluation_criteria for batch call
+        rewrite_candidates_with_question_info = []
+        for candidate in rewrite_candidates:
+            q = question_map.get(candidate["question_id"], {})
+            rewrite_candidates_with_question_info.append({
+                "message_content": candidate["message_content"],
+                "question_id": candidate["question_id"],
+                "similarity_score": candidate["similarity_score"],
+                "question_text": q.get("question_text", ""),
+                "evaluation_criteria": q.get("evaluation_criteria", ""),
+            })
+
+        # Prepare prompts before entering the executor
+        summary_prompt = build_summary_feedback_prompt(transcript, questions_addressed, questions_missed, recommendation)
+        ak_prompt = build_answer_key_prompt(recommendation, answer_key_text) if answer_key_text else None
+
+        # Fetch submissions before the executor (needed for DTP/Rec matching setup)
+        submissions = None
+        cached_dtps = None
+        cached_recs = None
+        if patient_mode == "full_assessment" and embeddings_model and ddb_table_name:
+            try:
+                submissions = fetch_student_submissions(session_id)
+                if submissions["dtp_entries"] or submissions["rec_entries"]:
+                    cached_dtps = get_cached_instructor_dtps(simulation_group_id, persona_id, ddb_table_name)
+                    if cached_dtps is None:
+                        cached_dtps = cache_instructor_dtp_embeddings(
+                            simulation_group_id, persona_id, embeddings_model, ddb_table_name
+                        )
+                    cached_recs = get_cached_instructor_recs(simulation_group_id, persona_id, ddb_table_name)
+                    if cached_recs is None:
+                        cached_recs = cache_instructor_rec_embeddings(
+                            simulation_group_id, persona_id, embeddings_model, ddb_table_name
+                        )
+            except Exception as e:
+                logger.error(f"Failed to fetch submissions/cached items: {e}")
+                submissions = None
+
+        # --- Parallel execution ---
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            # Independent tasks — all start immediately
+            summary_future = executor.submit(_invoke_llm_json, summary_prompt)
+            rewrites_future = executor.submit(generate_batch_rewrites, rewrite_candidates_with_question_info, llm)
+
+            # DTP/Rec matching (only for full_assessment with valid submissions)
+            dtp_future = None
+            rec_future = None
+            if submissions and (submissions["dtp_entries"] or submissions["rec_entries"]):
+                if submissions["dtp_entries"] and cached_dtps:
+                    dtp_future = executor.submit(
+                        match_submissions,
+                        student_texts=submissions["dtp_entries"],
+                        instructor_items=cached_dtps,
+                        embeddings_model=embeddings_model,
+                        text_key="expected_dtp_text",
+                        id_key="dtp_id",
+                    )
+                if submissions["rec_entries"] and cached_recs:
+                    student_rec_texts = [
+                        e["recommendation"] for e in submissions["rec_entries"]
+                        if isinstance(e, dict) and e.get("recommendation")
+                    ]
+                    if student_rec_texts:
+                        rec_future = executor.submit(
+                            match_submissions,
+                            student_texts=student_rec_texts,
+                            instructor_items=cached_recs,
+                            embeddings_model=embeddings_model,
+                            text_key="recommendation_text",
+                            id_key="recommendation_id",
+                        )
+
+            # Answer key comparison
+            ak_future = None
+            if ak_prompt:
+                ak_future = executor.submit(_invoke_llm_json, ak_prompt)
+
+            # Collect independent results
+            summary_data = safe_result(summary_future, default={}, task_name="summary")
+            rewrites_data = safe_result(rewrites_future, default=[], task_name="batch_rewrites")
+            dtp_comparison = safe_result(dtp_future, default=None, task_name="dtp_matching") if dtp_future else None
+            rec_comparison = safe_result(rec_future, default=None, task_name="rec_matching") if rec_future else None
+            answer_key_comparison = safe_result(ak_future, default={"answer_key_available": False}, task_name="answer_key") if ak_future else {"answer_key_available": False}
+
+            # Ensure answer_key_available is set when we got a result
+            if ak_future and answer_key_comparison and "answer_key_available" not in answer_key_comparison:
                 answer_key_comparison["answer_key_available"] = True
-            logger.info(f"📋 Answer key comparison LLM call returned keys: {list(answer_key_comparison.keys())}")
-        else:
-            answer_key_comparison = {"answer_key_available": False}
 
-        # Step f: Assemble final debrief dict
+            if dtp_comparison:
+                logger.info(f"📋 DTP matching: {len(dtp_comparison.get('matched', []))} matched, "
+                            f"{len(dtp_comparison.get('missed', []))} missed, {len(dtp_comparison.get('additional', []))} additional")
+            if rec_comparison:
+                logger.info(f"📋 Recommendation matching: {len(rec_comparison.get('matched', []))} matched, "
+                            f"{len(rec_comparison.get('missed', []))} missed, {len(rec_comparison.get('additional', []))} additional")
+
+            # Dependent tasks (need matching results)
+            rationale_future = None
+            guidance_kq_future = None
+            guidance_dtp_future = None
+            guidance_rec_future = None
+
+            if rec_comparison and rec_comparison.get("matched") and submissions and cached_recs:
+                rationale_future = executor.submit(
+                    evaluate_rationales_parallel,
+                    rec_comparison["matched"],
+                    submissions["rec_entries"],
+                    cached_recs,
+                    llm,
+                )
+
+            # Guidance for missed items
+            patient_context = f"{transcript[0]['content'][:200] if transcript else ''}"
+            if questions_missed:
+                guidance_kq_future = executor.submit(
+                    generate_guidance_questions, "key_questions", questions_missed, patient_context, llm
+                )
+            if dtp_comparison and dtp_comparison.get("missed"):
+                guidance_dtp_future = executor.submit(
+                    generate_guidance_questions, "dtps", dtp_comparison["missed"], patient_context, llm
+                )
+            if rec_comparison and rec_comparison.get("missed"):
+                guidance_rec_future = executor.submit(
+                    generate_guidance_questions, "recommendations", rec_comparison["missed"], patient_context, llm
+                )
+
+            # Collect dependent results
+            rationale_results = safe_result(rationale_future, default=None, task_name="rationale_eval") if rationale_future else None
+            guidance_kq = safe_result(guidance_kq_future, default=None, task_name="guidance_kq") if guidance_kq_future else None
+            guidance_dtp = safe_result(guidance_dtp_future, default=None, task_name="guidance_dtp") if guidance_dtp_future else None
+            guidance_rec = safe_result(guidance_rec_future, default=None, task_name="guidance_rec") if guidance_rec_future else None
+
+        # --- Post-executor: assemble results ---
+        logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
+        logger.info(f"📋 Generated {len(rewrites_data)} suggested rewrites from {len(rewrite_candidates)} candidates (batch)")
+
+        # If rationale results came back, update rec_comparison matched entries
+        if rationale_results and rec_comparison and rec_comparison.get("matched"):
+            rec_comparison["matched"] = rationale_results
+
+        # Compute final section scores with DTP/Rec data
+        section_scores = compute_section_scores(
+            key_questions=cached_questions,
+            addressed_question_ids=addressed_ids_set,
+            dtp_comparison=dtp_comparison,
+            rec_comparison=rec_comparison,
+            patient_mode=patient_mode,
+        )
+
+        # Assemble full debrief dict
         debrief_data = {
             "summary": summary_data.get("summary", ""),
             "questions_addressed": questions_addressed,
@@ -2412,10 +3680,58 @@ def generate_debrief(
             "recommendation_feedback": summary_data.get("recommendation_feedback", {"strengths": [], "areas_for_improvement": []}),
             "reasoning_gaps": summary_data.get("reasoning_gaps", ""),
             "overall_score": overall_score,
-            "suggested_rewrites": suggested_rewrites,
+            "suggested_rewrites": rewrites_data,
             "answer_key_comparison": answer_key_comparison,
             "recommendation": recommendation,
+            "section_scores": section_scores,
+            "guidance": {
+                "key_questions": guidance_kq,
+                "dtps": guidance_dtp,
+                "recommendations": guidance_rec,
+            },
         }
+
+        # Add DTP/Rec comparison data if available
+        if dtp_comparison:
+            debrief_data["dtp_comparison"] = dtp_comparison
+        if rec_comparison:
+            debrief_data["recommendations_comparison"] = rec_comparison
+
+        # Publish chunk2 via AppSync
+        chunk2_content = {
+            "summary": debrief_data["summary"],
+            "suggested_rewrites": rewrites_data,
+            "section_scores": section_scores,
+            "guidance": debrief_data["guidance"],
+            "answer_key_comparison": answer_key_comparison,
+        }
+        if dtp_comparison:
+            chunk2_content["dtp_comparison"] = {
+                "matched": dtp_comparison.get("matched", []),
+                "missed_count": len(dtp_comparison.get("missed", [])),
+                "additional": dtp_comparison.get("additional", []),
+                "score": section_scores.get("dtps"),
+                "guidance": guidance_dtp,
+            }
+        if rec_comparison:
+            chunk2_content["recommendations_comparison"] = {
+                "matched": rec_comparison.get("matched", []),
+                "missed_count": len(rec_comparison.get("missed", [])),
+                "additional": rec_comparison.get("additional", []),
+                "score": section_scores.get("recommendations"),
+                "guidance": guidance_rec,
+            }
+        if guidance_kq:
+            chunk2_content["guidance_key_questions"] = guidance_kq
+
+        try:
+            publish_to_appsync(session_id, {
+                "type": "debrief_chunk2",
+                "content": json.dumps(chunk2_content),
+            })
+            logger.info(f"📋 Published chunk2 for session={session_id}")
+        except Exception as e:
+            logger.error(f"Failed to publish chunk2 to AppSync: {e}")
 
     else:
         logger.info("📋 No tagged messages found — falling back to full-transcript debrief")
@@ -2556,6 +3872,71 @@ The following is the instructor's answer key for this simulation case. Compare t
 
     addressed_ids = _extract_ids(questions_addressed)
     missed_ids = _extract_ids(questions_missed)
+
+    # 4c. DTP & Recommendation matching (full_assessment patients only)
+    # For the tagged_messages path, DTP/Rec matching is already done in the
+    # parallel executor above. This block only runs for the fallback path.
+    # Interview-practice patients skip this entirely — they have no DTP/Rec
+    # assignments and don't go through the submission modal. Full-assessment
+    # patients submitted structured DTPs + recommendations at conclude time,
+    # which are now compared against the instructor's expected items.
+    # This block is non-fatal: if matching fails, the debrief still saves
+    # without comparison data and the frontend gracefully shows chunk2 as null.
+    if not tagged_messages and patient_mode == "full_assessment" and embeddings_model and ddb_table_name:
+        try:
+            # Fetch student submissions from the chats table
+            submissions = fetch_student_submissions(session_id)
+
+            if submissions["dtp_entries"] or submissions["rec_entries"]:
+                # Get pre-cached instructor DTP embeddings (lazy-cache on first use)
+                cached_dtps = get_cached_instructor_dtps(simulation_group_id, persona_id, ddb_table_name)
+                if cached_dtps is None:
+                    cached_dtps = cache_instructor_dtp_embeddings(
+                        simulation_group_id, persona_id, embeddings_model, ddb_table_name
+                    )
+
+                # Get pre-cached instructor Recommendation embeddings (lazy-cache on first use)
+                cached_recs = get_cached_instructor_recs(simulation_group_id, persona_id, ddb_table_name)
+                if cached_recs is None:
+                    cached_recs = cache_instructor_rec_embeddings(
+                        simulation_group_id, persona_id, embeddings_model, ddb_table_name
+                    )
+
+                # Match DTPs
+                if submissions["dtp_entries"] and cached_dtps:
+                    dtp_comparison = match_submissions(
+                        student_texts=submissions["dtp_entries"],
+                        instructor_items=cached_dtps,
+                        embeddings_model=embeddings_model,
+                        text_key="expected_dtp_text",
+                        id_key="dtp_id",
+                    )
+                    debrief_data["dtp_comparison"] = dtp_comparison
+                    logger.info(f"📋 DTP matching: {len(dtp_comparison['matched'])} matched, "
+                                f"{len(dtp_comparison['missed'])} missed, {len(dtp_comparison['additional'])} additional")
+
+                # Match Recommendations (on recommendation text only, rationale ignored for matching)
+                if submissions["rec_entries"] and cached_recs:
+                    student_rec_texts = [
+                        e["recommendation"] for e in submissions["rec_entries"]
+                        if isinstance(e, dict) and e.get("recommendation")
+                    ]
+                    if student_rec_texts:
+                        rec_comparison = match_submissions(
+                            student_texts=student_rec_texts,
+                            instructor_items=cached_recs,
+                            embeddings_model=embeddings_model,
+                            text_key="recommendation_text",
+                            id_key="recommendation_id",
+                        )
+                        debrief_data["recommendations_comparison"] = rec_comparison
+                        logger.info(f"📋 Recommendation matching: {len(rec_comparison['matched'])} matched, "
+                                    f"{len(rec_comparison['missed'])} missed, {len(rec_comparison['additional'])} additional")
+            else:
+                logger.info(f"📋 No DTP/Rec submissions found for session={session_id}, skipping matching")
+        except Exception as e:
+            logger.error(f"DTP/Rec matching failed for session={session_id}: {e}")
+            # Non-fatal — debrief still gets saved without DTP/Rec comparison
 
     # 5. Write to debriefs table
     # TODO(refactor): Extract debrief persistence (save_debrief_to_db + save_question_interactions) into a helper function
@@ -2705,12 +4086,17 @@ def generate_test_debrief(
         summary_data = _invoke_llm_json(summary_prompt)
         logger.info(f"📋 Summary/feedback LLM call returned keys: {list(summary_data.keys())}")
 
-        # Step d: Generate rewrites for moderate-confidence matches
-        REWRITE_THRESHOLD = 0.55
+        # Step d: Generate rewrites for borderline-addressed questions
+        # Only suggest rewrites for MODERATE confidence matches (0.60–0.74) that
+        # fall below the rewrite threshold. These are questions the student DID
+        # address but phrased indirectly enough that a more targeted phrasing
+        # would strengthen their interview.
+        REWRITE_UPPER_BOUND = 0.70  # Above this, the student's phrasing is strong enough — no rewrite needed
+        REWRITE_LOWER_BOUND = 0.60  # Below this, the match is too weak to be a meaningful rewrite candidate
         suggested_rewrites = []
         question_map = {q["question_id"]: q for q in cached_questions}
 
-        low_confidence_matches: list[dict] = []
+        rewrite_candidates: list[dict] = []
         for msg in tagged_messages:
             matches_raw = msg.get("matched_question_ids", [])
             if isinstance(matches_raw, str):
@@ -2720,17 +4106,26 @@ def generate_test_debrief(
                     matches_raw = []
             for match in matches_raw:
                 confidence = match.get("confidence", "")
-                if confidence == "low":
-                    low_confidence_matches.append({
+                similarity_score = match.get("similarity_score", 0.0)
+                if confidence == "moderate" and REWRITE_LOWER_BOUND <= similarity_score < REWRITE_UPPER_BOUND:
+                    rewrite_candidates.append({
                         "message_content": msg.get("message_content", ""),
                         "question_id": match.get("question_id", ""),
-                        "similarity_score": match.get("similarity_score", 0.0),
+                        "similarity_score": similarity_score,
                     })
 
-        for lc_match in low_confidence_matches:
-            q = question_map.get(lc_match["question_id"], {})
+        # Deduplicate: only generate one rewrite per unique student message.
+        seen_messages: dict[str, dict] = {}
+        for candidate in rewrite_candidates:
+            msg = candidate["message_content"]
+            if msg not in seen_messages or candidate["similarity_score"] > seen_messages[msg]["similarity_score"]:
+                seen_messages[msg] = candidate
+        rewrite_candidates = list(seen_messages.values())
+
+        for candidate in rewrite_candidates:
+            q = question_map.get(candidate["question_id"], {})
             rewrite_prompt = build_rewrite_prompt(
-                lc_match["message_content"],
+                candidate["message_content"],
                 q.get("question_text", ""),
                 q.get("evaluation_criteria", ""),
             )
@@ -2738,12 +4133,12 @@ def generate_test_debrief(
             rewrite_text = rewrite_data.get("suggested_rewrite", "").strip()
             if rewrite_text:
                 suggested_rewrites.append({
-                    "original_message": lc_match["message_content"],
-                    "matched_question_id": lc_match["question_id"],
-                    "similarity_score": lc_match["similarity_score"],
+                    "original_message": candidate["message_content"],
+                    "matched_question_id": candidate["question_id"],
+                    "similarity_score": candidate["similarity_score"],
                     "suggested_rewrite": rewrite_text,
                 })
-        logger.info(f"📋 Generated {len(suggested_rewrites)} suggested rewrites")
+        logger.info(f"📋 Generated {len(suggested_rewrites)} suggested rewrites from {len(rewrite_candidates)} candidates")
 
         # Step e: Answer key comparison
         if answer_key_text:
