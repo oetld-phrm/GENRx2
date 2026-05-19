@@ -178,6 +178,7 @@ export class CICDStack extends cdk.Stack {
         {
           projectName: `${id}-${lambdaConfig.name}Builder`,
           role: codeBuildRole,
+          cache: codebuild.Cache.local(codebuild.LocalCacheMode.DOCKER_LAYER),
           environment: {
             buildImage: lambdaConfig.name === "voiceAgent" 
                 ? codebuild.LinuxArmBuildImage.AMAZON_LINUX_2023_STANDARD_3_0
@@ -245,16 +246,15 @@ export class CICDStack extends cdk.Stack {
               },
               post_build: {
                 commands: [
-                  "docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest",
+                  'echo "Pushing image with commit tag for scanning..."',
                   "docker push $REPOSITORY_URI:$IMAGE_TAG",
-                  "docker push $REPOSITORY_URI:latest",
                   'echo "Waiting for vulnerability scan to complete..."',
                   `bash -c '
                     SCAN_COMPLETE=false
                     for i in $(seq 1 20); do
                       STATUS=$(aws ecr describe-image-scan-findings \
                         --repository-name $REPO_NAME \
-                        --image-id imageTag=latest \
+                        --image-id imageTag=$IMAGE_TAG \
                         --query "imageScanStatus.status" \
                         --output text 2>/dev/null || echo "IN_PROGRESS")
                       if [ "$STATUS" = "COMPLETE" ] || [ "$STATUS" = "ACTIVE" ]; then
@@ -272,17 +272,21 @@ export class CICDStack extends cdk.Stack {
                   `bash -c '
                     SCAN_RESULTS=$(aws ecr describe-image-scan-findings \
                       --repository-name $REPO_NAME \
-                      --image-id imageTag=latest \
+                      --image-id imageTag=$IMAGE_TAG \
                       --query "imageScanFindingsSummary.findingCounts.CRITICAL" \
                       --output text 2>/dev/null || echo "0")
                     
                     if [[ "$SCAN_RESULTS" != "0" && "$SCAN_RESULTS" != "None" ]]; then
                       echo "CRITICAL vulnerabilities found: $SCAN_RESULTS. Blocking deployment."
+                      echo "Image $REPOSITORY_URI:$IMAGE_TAG will NOT be promoted to latest."
                       exit 1
                     else
-                      echo "No critical vulnerabilities found. Proceeding with deployment."
+                      echo "No critical vulnerabilities found. Promoting to latest."
                     fi
                   '`,
+                  'echo "Scan passed. Tagging and pushing as latest..."',
+                  "docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest",
+                  "docker push $REPOSITORY_URI:latest",
                   'echo "Checking if Lambda function exists before updating..."',
                   `bash -c '
                     if aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME &>/dev/null; then
