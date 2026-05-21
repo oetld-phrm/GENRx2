@@ -70,6 +70,8 @@ export class ApiServiceStack extends cdk.Stack {
 
     this.layerList = {};
 
+    const allowedOrigins = ["https://*.amplifyapp.com"];
+
     const embeddingStorageBucket = new s3.Bucket(
       this,
       `${id}-embeddingStorageBucket`,
@@ -77,15 +79,12 @@ export class ApiServiceStack extends cdk.Stack {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         cors: [
           {
-            allowedHeaders: ["*"],
+            allowedHeaders: ["Content-Type", "x-amz-content-sha256"],
             allowedMethods: [
               s3.HttpMethods.GET,
               s3.HttpMethods.PUT,
-              s3.HttpMethods.HEAD,
-              s3.HttpMethods.POST,
-              s3.HttpMethods.DELETE,
             ],
-            allowedOrigins: ["*"],
+            allowedOrigins,
           },
         ],
         // When deleting the stack, need to empty the Bucket and delete it manually
@@ -1373,15 +1372,12 @@ export class ApiServiceStack extends cdk.Stack {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         cors: [
           {
-            allowedHeaders: ["*"],
+            allowedHeaders: ["Content-Type", "x-amz-content-sha256"],
             allowedMethods: [
               s3.HttpMethods.GET,
               s3.HttpMethods.PUT,
-              s3.HttpMethods.HEAD,
-              s3.HttpMethods.POST,
-              s3.HttpMethods.DELETE,
             ],
-            allowedOrigins: ["*"],
+            allowedOrigins,
           },
         ],
         // When deleting the stack, need to empty the Bucket and delete it manually
@@ -1400,12 +1396,15 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "generatePreSignedURL.lambda_handler",
         timeout: Duration.seconds(300),
         memorySize: 128,
+        vpc: vpcStack.vpc,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
         functionName: `${id}-GeneratePreSignedURLFunction`,
-        layers: [powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1424,6 +1423,15 @@ export class ApiServiceStack extends cdk.Stack {
           dataIngestionBucket.bucketArn,
           `${dataIngestionBucket.bucketArn}/*`,
         ],
+      })
+    );
+
+    // Grant access to Secrets Manager for DB credentials
+    generatePreSignedURL.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [db.secretPathUser.secretArn],
       })
     );
 
@@ -1910,12 +1918,15 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "deletePatient.lambda_handler",
         timeout: Duration.seconds(300),
         memorySize: 128,
+        vpc: vpcStack.vpc,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
         functionName: `${id}-DeletePatientFunction`,
-        layers: [powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1928,6 +1939,15 @@ export class ApiServiceStack extends cdk.Stack {
     // Grant the Lambda function the necessary permissions
     dataIngestionBucket.grantRead(deletePatientFunction);
     dataIngestionBucket.grantDelete(deletePatientFunction);
+
+    // Grant access to Secrets Manager for DB credentials
+    deletePatientFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [db.secretPathUser.secretArn],
+      })
+    );
 
     // Grant admin function S3 access for cleaning up group files on delete
     lambdaAdminFunction.addEnvironment(

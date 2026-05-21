@@ -123,8 +123,31 @@ def delete_file_from_db(persona_id, file_name, file_type):
         logger.error(f"Error deleting file {file_name}.{file_type} from database: {e}")
         raise
 
+def verify_instructor_ownership(user_email, simulation_group_id):
+    """Verify the requesting user is an instructor of the target simulation group."""
+    conn = connect_to_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT 1 FROM "enrollments" e
+               JOIN "users" u ON e.user_id = u.user_id
+               WHERE u.user_email = %s AND e.simulation_group_id = %s AND e.enrollment_type = 'instructor'""",
+            (user_email, simulation_group_id)
+        )
+        result = cur.fetchone()
+        cur.close()
+        return result is not None
+    except Exception as e:
+        cur.close()
+        logger.error(f"Error verifying instructor ownership: {e}")
+        return False
+
+
 @logger.inject_lambda_context
 def lambda_handler(event, context):
+    # Extract user identity from authorizer context
+    user_email = event.get("requestContext", {}).get("authorizer", {}).get("email", "")
+
     query_params = event.get("queryStringParameters", {})
 
     simulation_group_id = query_params.get("simulation_group_id", "")
@@ -150,6 +173,23 @@ def lambda_handler(event, context):
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameters: simulation_group_id, persona_id, file_name, file_type, or folder_type')
+        }
+
+    # Verify the requesting instructor owns this simulation group
+    if not verify_instructor_ownership(user_email, simulation_group_id):
+        logger.warning("Unauthorized access attempt", extra={
+            "user_email": user_email,
+            "simulation_group_id": simulation_group_id
+        })
+        return {
+            'statusCode': 403,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+            },
+            'body': json.dumps('Forbidden: You are not an instructor of this simulation group')
         }
 
     try:
