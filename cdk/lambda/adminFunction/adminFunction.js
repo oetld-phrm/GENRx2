@@ -1,8 +1,11 @@
 const { initializeConnection } = require("./libadmin.js");
 const logger = require("./logger");
 const { CognitoIdentityProviderClient, AdminGetUserCommand } = require("@aws-sdk/client-cognito-identity-provider");
+const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
 
-let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL_ID } = process.env;
+let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL_ID, DATA_INGESTION_BUCKET, EMBEDDING_STORAGE_BUCKET } = process.env;
+
+const s3Client = new S3Client();
 
 const cognitoClient = new CognitoIdentityProviderClient();
 
@@ -521,10 +524,51 @@ exports.handler = async (event, context) => {
           try {
             const { simulation_group_id } = event.queryStringParameters;
 
-            // // Drop the table whose name is the simulation_group_id
-            // await sqlConnectionTableCreator`
-            //   DROP TABLE IF EXISTS ${sqlConnectionTableCreator(simulation_group_id)};
-            // `;
+            // Clean up S3 objects for the entire simulation group
+            if (DATA_INGESTION_BUCKET || EMBEDDING_STORAGE_BUCKET) {
+              const bucketsToClean = [
+                DATA_INGESTION_BUCKET,
+                EMBEDDING_STORAGE_BUCKET,
+              ].filter(Boolean);
+
+              for (const bucket of bucketsToClean) {
+                try {
+                  const prefix = `${simulation_group_id}/`;
+                  let continuationToken;
+                  let totalDeleted = 0;
+
+                  do {
+                    const listParams = {
+                      Bucket: bucket,
+                      Prefix: prefix,
+                      ...(continuationToken && { ContinuationToken: continuationToken }),
+                    };
+
+                    const listResponse = await s3Client.send(new ListObjectsV2Command(listParams));
+
+                    if (listResponse.Contents && listResponse.Contents.length > 0) {
+                      const objectsToDelete = listResponse.Contents.map((obj) => ({ Key: obj.Key }));
+
+                      await s3Client.send(new DeleteObjectsCommand({
+                        Bucket: bucket,
+                        Delete: { Objects: objectsToDelete },
+                      }));
+
+                      totalDeleted += objectsToDelete.length;
+                    }
+
+                    continuationToken = listResponse.IsTruncated
+                      ? listResponse.NextContinuationToken
+                      : undefined;
+                  } while (continuationToken);
+
+                  logger.info("S3 cleanup completed", { bucket, simulation_group_id, totalDeleted });
+                } catch (s3Err) {
+                  // Log but don't fail the delete — DB cleanup is more critical
+                  logger.error("S3 cleanup failed", { error: s3Err.message, bucket, simulation_group_id });
+                }
+              }
+            }
 
             // Delete the group, related records will be automatically deleted due to cascading
             await sqlConnectionTableCreator`

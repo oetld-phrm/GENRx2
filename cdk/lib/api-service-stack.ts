@@ -576,6 +576,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
           USER_POOL_ID: this.userPool.userPoolId,
+          EMBEDDING_STORAGE_BUCKET: embeddingStorageBucket.bucketName,
         },
         functionName: `${id}-adminFunction`,
         memorySize: 256,
@@ -1927,6 +1928,16 @@ export class ApiServiceStack extends cdk.Stack {
     // Grant the Lambda function the necessary permissions
     dataIngestionBucket.grantRead(deletePatientFunction);
     dataIngestionBucket.grantDelete(deletePatientFunction);
+
+    // Grant admin function S3 access for cleaning up group files on delete
+    lambdaAdminFunction.addEnvironment(
+      "DATA_INGESTION_BUCKET",
+      dataIngestionBucket.bucketName
+    );
+    dataIngestionBucket.grantRead(lambdaAdminFunction);
+    dataIngestionBucket.grantDelete(lambdaAdminFunction);
+    embeddingStorageBucket.grantRead(lambdaAdminFunction);
+    embeddingStorageBucket.grantDelete(lambdaAdminFunction);
 
     // Add the permission to the Lambda function's policy to allow API Gateway access
     deletePatientFunction.addPermission("AllowApiGatewayInvoke", {
