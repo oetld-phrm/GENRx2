@@ -276,18 +276,21 @@ function StudentChatPage() {
           // Lock input immediately so the student can't send more messages
           setSessionCompleted(true);
 
-          // Let the AI finish speaking — wait until all scheduled audio has played.
-          // nextPlayTime tracks when the last queued audio chunk ends.
-          const client = audioClientRef.current;
-          const playbackCtx = client ? (client as unknown as { playbackContext: AudioContext | null }).playbackContext : null;
-          const nextPlay = client ? (client as unknown as { nextPlayTime: number }).nextPlayTime : 0;
-          const now = playbackCtx ? playbackCtx.currentTime : 0;
-          const remainingAudio = Math.max(0, nextPlay - now);
-          // Add a 2-second buffer after audio finishes, minimum 8 seconds
-          // so Nova Sonic has time to finish speaking the goodbye
-          const delay = Math.max(8000, (remainingAudio + 2) * 1000);
+          // Poll until all queued audio has finished playing before disconnecting.
+          const disconnectWhenAudioDone = () => {
+            const client = audioClientRef.current;
+            const playbackCtx = client ? (client as unknown as { playbackContext: AudioContext | null }).playbackContext : null;
+            const nextPlay = client ? (client as unknown as { nextPlayTime: number }).nextPlayTime : 0;
+            const now = playbackCtx ? playbackCtx.currentTime : 0;
+            const remainingAudio = nextPlay - now;
 
-          setTimeout(() => {
+            if (remainingAudio > 0.1) {
+              // Audio is still playing — check again after it should be done (+ 1s buffer)
+              setTimeout(disconnectWhenAudioDone, (remainingAudio + 1) * 1000);
+              return;
+            }
+
+            // All audio finished — tear down the session
             cleanupVoiceSession();
             setIsVoiceModeActive(false);
             currentVoiceBubbleRef.current = null;
@@ -312,7 +315,10 @@ function StudentChatPage() {
                 }
               });
             }
-          }, delay);
+          };
+
+          // Initial delay gives Nova Sonic time to finish speaking the goodbye
+          setTimeout(disconnectWhenAudioDone, 8000);
         });
       }
 
@@ -410,17 +416,41 @@ function StudentChatPage() {
     const studentMessageCount = messages.filter(m => m.sender_type === 'student').length;
     if (studentMessageCount >= maxMessages) {
       setMessageLimitReached(true);
-      // If in voice mode, cleanly stop the session and fetch cleaned messages from DB
+      // If in voice mode, let the AI finish responding before disconnecting.
+      // This mirrors the diagnosis-complete pattern: lock input immediately,
+      // wait for remaining audio playback, then tear down the connection.
       if (voiceSessionState === 'active' || voiceSessionState === 'connecting') {
-        cleanupVoiceSession();
-        setIsVoiceModeActive(false);
-        // Fetch persisted messages (with cleaned transcripts) from DB
-        const sid = sessionId || routeChatId || '';
-        if (sid) {
-          studentService.fetchMessages(sid).then((msgs) => {
-            if (msgs.length > 0) setMessages(msgs);
-          });
-        }
+        // Wait an initial 8s for the AI response to arrive and start playing,
+        // then poll until all queued audio has finished before disconnecting.
+        const disconnectWhenAudioDone = () => {
+          const client = audioClientRef.current;
+          const playbackCtx = client ? (client as unknown as { playbackContext: AudioContext | null }).playbackContext : null;
+          const nextPlay = client ? (client as unknown as { nextPlayTime: number }).nextPlayTime : 0;
+          const now = playbackCtx ? playbackCtx.currentTime : 0;
+          const remainingAudio = nextPlay - now;
+
+          if (remainingAudio > 0.1) {
+            // Audio is still playing — check again after it should be done (+ 1s buffer)
+            setTimeout(disconnectWhenAudioDone, (remainingAudio + 1) * 1000);
+            return;
+          }
+
+          // All audio finished — tear down the session
+          cleanupVoiceSession();
+          setIsVoiceModeActive(false);
+          currentVoiceBubbleRef.current = null;
+          lastVoiceRoleRef.current = null;
+          // Fetch persisted messages (with cleaned transcripts) from DB
+          const sid = sessionId || routeChatId || '';
+          if (sid) {
+            studentService.fetchMessages(sid).then((msgs) => {
+              if (msgs.length > 0) setMessages(msgs);
+            });
+          }
+        };
+
+        // Initial delay gives the AI time to generate and start streaming its response
+        setTimeout(disconnectWhenAudioDone, 8000);
       }
     }
   }, [messages, patient?.max_messages_per_chat, messageLimitReached, voiceSessionState, cleanupVoiceSession, sessionId, routeChatId]);
