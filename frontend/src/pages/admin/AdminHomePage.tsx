@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { mockAdminDataService, mockOrganizations } from '@/services/adminService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import * as adminApi from '@/services/adminApiService';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { OrganizationCardSkeleton } from '@/components/skeletons';
 import { useNotification } from '@/components/notifications';
 
 /**
@@ -27,6 +27,7 @@ function AdminHomePage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; orgId: string; orgName: string }>({
     open: false, orgId: '', orgName: ''
   });
+  const [deleting, setDeleting] = useState(false);
 
   // Load user data from mock data service with error handling
   let user = mockAdminDataService.getCurrentUser();
@@ -109,6 +110,7 @@ function AdminHomePage() {
   };
 
   const handleDeleteOrganization = async () => {
+    setDeleting(true);
     try {
       await adminApi.deleteOrganization(deleteConfirm.orgId);
       setOrganizations(prev => prev.filter(o => o.organization_id !== deleteConfirm.orgId));
@@ -116,6 +118,8 @@ function AdminHomePage() {
     } catch (error) {
       console.error('Error deleting organization:', error);
       showNotification({ message: 'Failed to delete organization. Please try again.', type: 'error' });
+    } finally {
+      setDeleting(false);
     }
     setDeleteConfirm({ open: false, orgId: '', orgName: '' });
   };
@@ -145,8 +149,10 @@ function AdminHomePage() {
 
         {/* Organizations grid */}
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <LoadingIndicator size="md" message="Loading organizations..." />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <OrganizationCardSkeleton key={i} />
+            ))}
           </div>
         ) : organizations.length === 0 ? (
           <div className="flex items-center justify-center py-12">
@@ -198,6 +204,7 @@ function AdminHomePage() {
             </Button>
             <Button
               onClick={handleDeleteOrganization}
+              loading={deleting}
               style={{ backgroundColor: '#ef4444', color: '#fff' }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}

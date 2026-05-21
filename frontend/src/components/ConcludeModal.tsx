@@ -187,7 +187,7 @@ export function ConcludeModal({
               </Button>
               <Button
                 onClick={handleInterviewPracticeConclude}
-                disabled={submitting}
+                loading={submitting}
                 style={{
                   backgroundColor: UI_COLORS.button.primary,
                   color: UI_COLORS.button.text,
@@ -195,7 +195,7 @@ export function ConcludeModal({
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover)}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = UI_COLORS.button.primary)}
               >
-                {submitting ? 'Concluding...' : 'Conclude Interview'}
+                Conclude Interview
               </Button>
             </div>
           </div>
@@ -380,7 +380,7 @@ export function ConcludeModal({
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={submitting}
+                loading={submitting}
                 style={{
                   backgroundColor: UI_COLORS.button.primary,
                   color: UI_COLORS.button.text,
@@ -388,7 +388,7 @@ export function ConcludeModal({
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover)}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = UI_COLORS.button.primary)}
               >
-                {submitting ? 'Submitting...' : 'Submit'}
+                Submit
               </Button>
             </div>
           </div>

@@ -10,7 +10,7 @@ import {type InstructorSimulationGroup } from '@/services/instructorService';
 import { getSimulationGroupColor, UI_COLORS } from '@/lib/colors';
 import { useAuth } from '@/App';
 import * as adminApi from '@/services/adminApiService';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { DashboardSkeleton } from '@/components/skeletons';
 import { useNotification } from '@/components/notifications';
 
 /**
@@ -190,13 +190,7 @@ function AdminOrganizationPage() {
   };
 
   if (loading) {
-    return (
-      <PageContainer>
-        <div className="flex items-center justify-center h-full">
-          <LoadingIndicator size="lg" message="Loading..." />
-        </div>
-      </PageContainer>
-    );
+    return <DashboardSkeleton cardCount={3} />;
   }
 
   return (

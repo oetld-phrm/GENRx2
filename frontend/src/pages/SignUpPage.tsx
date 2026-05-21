@@ -189,11 +189,10 @@ function SignUpPage() {
               style={{ 
                 backgroundColor: UI_COLORS.button.primary,
                 color: UI_COLORS.button.text,
-                opacity: loading ? 0.7 : 1,
               }}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? 'Verifying...' : 'Verify & Sign In'}
+              Verify & Sign In
             </Button>
           </form>
 
@@ -312,11 +311,10 @@ function SignUpPage() {
               style={{ 
                 backgroundColor: UI_COLORS.button.primary,
                 color: UI_COLORS.button.text,
-                opacity: loading ? 0.7 : 1,
               }}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? 'Creating account...' : 'Sign Up'}
+              Sign Up
             </Button>
           </form>
 

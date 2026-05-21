@@ -239,11 +239,10 @@ function LoginPage() {
               style={{
                 backgroundColor: UI_COLORS.button.primary,
                 color: UI_COLORS.button.text,
-                opacity: loading ? 0.7 : 1,
               }}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? 'Setting password...' : 'Set Password & Sign In'}
+              Set Password & Sign In
             </Button>
           </form>
         </div>
@@ -330,11 +329,10 @@ function LoginPage() {
               style={{ 
                 backgroundColor: UI_COLORS.button.primary,
                 color: UI_COLORS.button.text,
-                opacity: loading ? 0.7 : 1,
               }}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              Sign In
             </Button>
           </form>
 

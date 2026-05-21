@@ -47,6 +47,7 @@ import { assignRecommendationToGroup, assignRecommendationToPatient, getAssigned
 import type { RecommendationItem, RecommendationAssignment } from '@/services/recommendationsBankService';
 
 import LoadingIndicator from '@/components/LoadingIndicator';
+import { DashboardSkeleton } from '@/components/skeletons';
 
 type ActiveSection = 'analytics' | 'patients' | 'students' | 'instructors' | 'prompts' | 'rubric' | 'questionBank' | 'dtpBank' | 'recommendationsBank' | 'editPatient' | 'viewStudent' | 'issuesFeedback';
 
@@ -743,13 +744,7 @@ function AdminSimulationGroupPage() {
 
   // ── Loading state ──
   if (loading) {
-    return (
-      <PageContainer>
-        <div className="flex items-center justify-center h-full">
-          <LoadingIndicator size="lg" message="Loading..." />
-        </div>
-      </PageContainer>
-    );
+    return <DashboardSkeleton cardCount={4} />;
   }
 
   return (

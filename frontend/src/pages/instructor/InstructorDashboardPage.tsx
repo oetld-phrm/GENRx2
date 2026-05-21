@@ -6,7 +6,7 @@ import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import CreateSimulationGroupDialog from '@/components/CreateSimulationGroupDialog';
 import { instructorService, type InstructorSimulationGroup } from '@/services/instructorService';
 import { useAuth } from '@/App';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { DashboardSkeleton } from '@/components/skeletons';
 
 /**
  * InstructorDashboardPage Component
@@ -94,11 +94,7 @@ function InstructorDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingIndicator size="lg" message="Loading..." />
-      </div>
-    );
+    return <DashboardSkeleton cardCount={3} />;
   }
 
   return (

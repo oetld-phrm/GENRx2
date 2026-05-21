@@ -6,7 +6,7 @@ import SimulationGroupsSection from '@/components/SimulationGroupsSection';
 import JoinGroupDialog from '@/components/JoinGroupDialog';
 import { studentService, type SimulationGroup, type UserData } from '@/services/studentService';
 import { useAuth } from '@/App';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { DashboardSkeleton } from '@/components/skeletons';
 
 /**
  * StudentDashboardPage Component
@@ -97,11 +97,7 @@ function StudentDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <LoadingIndicator size="lg" message="Loading dashboard..." />
-      </div>
-    );
+    return <DashboardSkeleton cardCount={3} />;
   }
 
   return (

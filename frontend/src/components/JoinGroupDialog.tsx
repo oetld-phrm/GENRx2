@@ -120,13 +120,12 @@ function JoinGroupDialog({
               style={{ 
                 backgroundColor: UI_COLORS.button.primary, 
                 color: UI_COLORS.button.text,
-                opacity: loading ? 0.7 : 1,
               }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? 'Joining...' : (submitButtonText || 'Join')}
+              {submitButtonText || 'Join'}
             </Button>
           </div>
         </div>

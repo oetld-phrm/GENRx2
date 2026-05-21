@@ -8,7 +8,7 @@ import UserAvatar from '@/components/UserAvatar';
 import { useAuth } from '@/App';
 import { instructorService, type GlobalRubricQuestion, type QuestionBankItem } from '@/services/instructorService';
 import { studentService } from '@/services/studentService';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { DashboardSkeleton } from '@/components/skeletons';
 import { UI_COLORS } from '@/lib/colors';
 import { useSimulationGroupData } from '@/hooks/useSimulationGroupData';
 import { usePatientEditor } from '@/hooks/usePatientEditor';
@@ -549,13 +549,7 @@ function InstructorSimulationGroupPage() {
 
   // ── Loading state ──
   if (loading) {
-    return (
-      <PageContainer>
-        <div className="flex items-center justify-center h-full">
-          <LoadingIndicator size="lg" message="Loading..." />
-        </div>
-      </PageContainer>
-    );
+    return <DashboardSkeleton cardCount={4} />;
   }
 
   return (

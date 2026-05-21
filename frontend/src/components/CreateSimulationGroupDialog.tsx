@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 import { getAllInstructors, type AdminInstructor } from '@/services/adminApiService';
 import LoadingIndicator from '@/components/LoadingIndicator';
@@ -375,7 +374,8 @@ function CreateSimulationGroupDialog({
           {/* Create Group Button */}
           <Button
             onClick={handleCreate}
-            disabled={!isValid || isSubmitting}
+            disabled={!isValid}
+            loading={isSubmitting}
             className="w-full py-6 text-base font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ 
               backgroundColor: UI_COLORS.button.primary, 
@@ -388,7 +388,6 @@ function CreateSimulationGroupDialog({
             }}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSubmitting ? 'Creating...' : 'Create Group'}
           </Button>
         </div>

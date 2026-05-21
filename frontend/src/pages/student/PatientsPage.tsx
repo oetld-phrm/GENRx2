@@ -6,7 +6,7 @@ import UserAvatar from '@/components/UserAvatar';
 import { studentService, type Patient, type UserData } from '@/services/studentService';
 import { ArrowLeft, CheckCircle, Loader, Circle, Clock, MessageSquare, BarChart3 } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
-import LoadingIndicator from '@/components/LoadingIndicator';
+import { PatientListSkeleton } from '@/components/skeletons';
 import { useAuth } from '@/App';
 
 /**
@@ -145,11 +145,7 @@ function PatientsPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <LoadingIndicator size="lg" message="Loading patients..." />
-      </div>
-    );
+    return <PatientListSkeleton cardCount={3} />;
   }
 
   return (

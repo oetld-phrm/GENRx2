@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 
 interface CreateOrganizationDialogProps {
@@ -205,7 +204,8 @@ function CreateOrganizationDialog({
           {/* Create Organization Button */}
           <Button
             onClick={handleCreate}
-            disabled={!name.trim() || !description.trim() || !aiPersonaTitle.trim() || !userRoleTitle.trim() || isSubmitting}
+            disabled={!name.trim() || !description.trim() || !aiPersonaTitle.trim() || !userRoleTitle.trim()}
+            loading={isSubmitting}
             className="w-full py-6 text-base font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ 
               backgroundColor: UI_COLORS.button.primary, 
@@ -218,7 +218,6 @@ function CreateOrganizationDialog({
             }}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSubmitting ? 'Creating...' : 'Create Organisation'}
           </Button>
         </div>

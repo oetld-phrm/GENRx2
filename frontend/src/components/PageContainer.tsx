@@ -9,13 +9,6 @@ interface PageContainerProps {
  * 
  * Viewport-locked container that prevents full-page scrolling.
  * Individual child components handle their own scrolling.
- * 
- * Key classes:
- * - h-screen: Height = 100vh (viewport height)
- * - max-h-screen: Cap at viewport height
- * - min-h-screen: Minimum viewport height
- * - overflow-hidden: Prevents container scrolling
- * - flex flex-col: Vertical flex layout for children
  */
 const PageContainer = ({ children }: PageContainerProps) => {
   return (
