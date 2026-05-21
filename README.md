@@ -70,7 +70,6 @@ The following architecture diagram illustrates the various AWS components utiliz
 - **Backend**: AWS Lambda (Node.js + Python), API Gateway, AppSync
 - **AI**: Amazon Bedrock (Claude Sonnet 4.6 for text generation, Cohere Embed v4 for embeddings, Nova Sonic 2.0 for voice)
 - **Database**: PostgreSQL 16 on RDS with pgvector
-- **Real-time**: Socket.IO on ECS Fargate (voice audio streaming + text generation streaming)
 - **Infrastructure**: AWS CDK v2 (TypeScript)
 - **Auth**: Amazon Cognito
 - **CI/CD**: AWS CodePipeline + CodeBuild + Amplify
