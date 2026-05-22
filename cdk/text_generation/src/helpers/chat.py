@@ -1897,7 +1897,7 @@ def generate_guidance_questions(
     # Extract text from missed items based on category
     missed_texts = []
     for item in missed_items:
-        text = item.get(config["text_key"], "") or item.get("text", "")
+        text = item.get(config["text_key"], "") or item.get("instructor_text", "") or item.get("text", "")
         if text:
             missed_texts.append(text)
 
