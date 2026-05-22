@@ -368,44 +368,38 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                           {updatedDebriefData.chunk2.recommendationsComparison.overview}
                         </p>
                       )}
-                      {/* Matched Recommendations with Rationale Badges */}
+                      {/* Matched Recommendations with Rationale Feedback */}
                       {updatedDebriefData.chunk2.recommendationsComparison.matched.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
                             Matched:
                           </h4>
-                          <TooltipProvider>
-                            <ul className="space-y-2">
-                              {updatedDebriefData.chunk2.recommendationsComparison.matched.map((item, index) => (
-                                <li key={index} className="flex items-start gap-2 text-sm" style={{ color: UI_COLORS.text.body }}>
+                          <ul className="space-y-3">
+                            {updatedDebriefData.chunk2.recommendationsComparison.matched.map((item, index) => (
+                              <li key={index} className="text-sm" style={{ color: UI_COLORS.text.body }}>
+                                <div className="flex items-start gap-2">
                                   <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#22c55e' }} />
                                   <span className="flex-1">{item.recommendationText}</span>
                                   {item.rationaleRating && item.rationaleRating !== 'no_credit' && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Badge
-                                            className={`cursor-help text-xs whitespace-nowrap ${
-                                              item.rationaleRating === 'full_credit'
-                                                ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100'
-                                                : 'bg-yellow-100 text-yellow-700 border-yellow-200 hover:bg-yellow-100'
-                                            }`}
-                                          >
-                                            {item.rationaleRating === 'full_credit' ? 'Full Credit' : 'Partial Credit'}
-                                          </Badge>
-                                        </span>
-                                      </TooltipTrigger>
-                                      {item.rationaleExplanation && (
-                                        <TooltipContent side="top" className="max-w-sm">
-                                          <p>{item.rationaleExplanation}</p>
-                                        </TooltipContent>
-                                      )}
-                                    </Tooltip>
+                                    <Badge
+                                      className={`text-xs whitespace-nowrap ${
+                                        item.rationaleRating === 'full_credit'
+                                          ? 'bg-green-100 text-green-700 border-green-200'
+                                          : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                      }`}
+                                    >
+                                      {item.rationaleRating === 'full_credit' ? 'Full Credit' : 'Partial Credit'}
+                                    </Badge>
                                   )}
-                                </li>
-                              ))}
-                            </ul>
-                          </TooltipProvider>
+                                </div>
+                                {item.rationaleExplanation && item.rationaleRating && item.rationaleRating !== 'no_credit' && (
+                                  <p className="mt-1 ml-6 text-xs italic" style={{ color: UI_COLORS.text.muted }}>
+                                    Rationale: {item.rationaleExplanation}
+                                  </p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
 
