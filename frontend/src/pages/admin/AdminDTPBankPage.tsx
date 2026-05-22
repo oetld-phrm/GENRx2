@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import { AddDTPDialog } from '@/components/AddDTPDialog';
-import { listDTPItems, deleteDTPItem, updateDTPItem } from '@/services/dtpBankService';
+import { listDTPItems, deleteDTPItem, updateDTPItem, createDTPItem } from '@/services/dtpBankService';
 import type { DTPItem } from '@/services/dtpBankService';
 import { filterByTitle, paginate } from '@/lib/bankUtils';
 import LoadingIndicator from '@/components/LoadingIndicator';
@@ -123,8 +123,24 @@ function AdminDTPBankPage() {
     setDeleteConfirm({ open: false, itemId: '', itemTitle: '' });
   };
 
-  const handleSaveNewDTP = () => {
-    loadData();
+  const handleSaveNewDTP = async (data: {
+    title: string;
+    expectedDTPText: string;
+    clinicalIntent: string;
+    evaluationCriteria: string;
+    tags: string[];
+    isRequired: boolean;
+  }) => {
+    try {
+      setError(null);
+      await createDTPItem(organizationId || '', data);
+      showNotification({ message: `"${data.title}" created successfully.`, type: 'success' });
+      loadData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create DTP item';
+      setError(msg);
+      showNotification({ message: msg, type: 'error' });
+    }
   };
 
   // ─── Expand/Edit Handlers ─────────────────────────────────────────────────

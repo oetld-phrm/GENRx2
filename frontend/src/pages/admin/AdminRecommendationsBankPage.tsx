@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import { AddRecommendationDialog } from '@/components/AddRecommendationDialog';
-import { listRecommendationItems, deleteRecommendationItem, updateRecommendationItem } from '@/services/recommendationsBankService';
+import { listRecommendationItems, deleteRecommendationItem, updateRecommendationItem, createRecommendationItem } from '@/services/recommendationsBankService';
 import type { RecommendationItem } from '@/services/recommendationsBankService';
 import { filterByTitle, paginate } from '@/lib/bankUtils';
 import LoadingIndicator from '@/components/LoadingIndicator';
@@ -116,8 +116,22 @@ function AdminRecommendationsBankPage() {
     setDeleteConfirm({ open: false, itemId: '', itemTitle: '' });
   };
 
-  const handleSaveNewRecommendation = () => {
-    loadData();
+  const handleSaveNewRecommendation = async (data: {
+    title: string;
+    recommendationText: string;
+    evaluationCriteria: string;
+    rationale: string;
+  }) => {
+    try {
+      setError(null);
+      await createRecommendationItem(organizationId || '', data);
+      showNotification({ message: `"${data.title}" created successfully.`, type: 'success' });
+      loadData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create recommendation item';
+      setError(msg);
+      showNotification({ message: msg, type: 'error' });
+    }
   };
 
   // ─── Expand/Edit Handlers ─────────────────────────────────────────────────
