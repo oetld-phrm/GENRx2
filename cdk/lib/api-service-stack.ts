@@ -1389,6 +1389,7 @@ export class ApiServiceStack extends cdk.Stack {
             allowedMethods: [
               s3.HttpMethods.GET,
               s3.HttpMethods.PUT,
+              s3.HttpMethods.POST,
             ],
             allowedOrigins,
           },
@@ -1619,16 +1620,20 @@ export class ApiServiceStack extends cdk.Stack {
     // Attach the custom Bedrock policy to Lambda function
     dataIngestLambdaDockerFunc.addToRolePolicy(bedrockPolicyStatement);
 
-    // Add the S3 event source trigger to the Lambda function
-    dataIngestLambdaDockerFunc.addEventSource(
-      new lambdaEventSources.S3EventSource(dataIngestionBucket, {
-        events: [
-          s3.EventType.OBJECT_CREATED,
-          s3.EventType.OBJECT_REMOVED,
-          s3.EventType.OBJECT_RESTORE_COMPLETED,
-        ],
-      })
-    );
+    // Add S3 event source triggers — only for embeddable file types
+    // This avoids cold-starting the ingestion Lambda for profile pictures and other non-document uploads
+    const embeddableSuffixes = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".xps", ".mobi", ".cbz"];
+    for (const suffix of embeddableSuffixes) {
+      dataIngestLambdaDockerFunc.addEventSource(
+        new lambdaEventSources.S3EventSource(dataIngestionBucket, {
+          events: [
+            s3.EventType.OBJECT_CREATED,
+            s3.EventType.OBJECT_REMOVED,
+          ],
+          filters: [{ suffix }],
+        })
+      );
+    }
 
     // Grant access to Secret Manager
     dataIngestLambdaDockerFunc.addToRolePolicy(

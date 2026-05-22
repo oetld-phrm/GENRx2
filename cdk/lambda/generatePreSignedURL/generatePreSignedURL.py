@@ -212,16 +212,16 @@ def lambda_handler(event, context):
     })
 
     try:
-
-        presigned_url = s3.generate_presigned_url(
-            ClientMethod="put_object",
-            Params={
-                "Bucket": BUCKET,
-                "Key": key,
-                "ContentType": content_type,
-            },
+        # Use presigned POST to enforce content-length limit (max 50 MB)
+        presigned_post = s3.generate_presigned_post(
+            Bucket=BUCKET,
+            Key=key,
+            Fields={"Content-Type": content_type},
+            Conditions=[
+                ["content-length-range", 1, 52428800],  # 1 byte to 50 MB
+                {"Content-Type": content_type},
+            ],
             ExpiresIn=300,
-            HttpMethod="PUT",
         )
 
         return {
@@ -232,11 +232,14 @@ def lambda_handler(event, context):
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "*",
             },
-            "body": json.dumps({"presignedurl": presigned_url}),
+            "body": json.dumps({
+                "url": presigned_post["url"],
+                "fields": presigned_post["fields"],
+            }),
         }
 
     except Exception as e:
-        logger.error(f"Error generating presigned URL: {e}")
+        logger.error(f"Error generating presigned POST: {e}")
         return {
             'statusCode': 500,
             'body': json.dumps('Internal server error')

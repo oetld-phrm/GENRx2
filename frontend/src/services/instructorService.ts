@@ -827,14 +827,21 @@ async function uploadFileToS3(
     folder_type: folderType,
   });
 
-  const data = await apiClient.request<{ presignedurl: string }>(
+  const data = await apiClient.request<{ url: string; fields: Record<string, string> }>(
     `instructor/generate_presigned_url?${queryParams.toString()}`
   );
 
-  await fetch(data.presignedurl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
+  const formData = new FormData();
+  // Append all policy fields first (order matters for S3 POST)
+  for (const [key, value] of Object.entries(data.fields)) {
+    formData.append(key, value);
+  }
+  // File must be the last field
+  formData.append('file', file);
+
+  await fetch(data.url, {
+    method: 'POST',
+    body: formData,
   });
 }
 
