@@ -1,15 +1,77 @@
 import os
 import json
 import boto3
+import psycopg2
 from aws_lambda_powertools import Logger
 
 logger = Logger()
 
 s3 = boto3.client('s3')
 BUCKET = os.environ["BUCKET"]
+DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
+RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
+
+# AWS Clients
+secrets_manager_client = boto3.client('secretsmanager')
+
+# Global variables for caching
+connection = None
+db_secret = None
+
+def get_secret():
+    global db_secret
+    if not db_secret:
+        response = secrets_manager_client.get_secret_value(SecretId=DB_SECRET_NAME)["SecretString"]
+        db_secret = json.loads(response)
+    return db_secret
+
+def connect_to_db():
+    global connection
+    if connection is None or connection.closed:
+        try:
+            secret = get_secret()
+            connection_params = {
+                'dbname': secret["dbname"],
+                'user': secret["username"],
+                'password': secret["password"],
+                'host': RDS_PROXY_ENDPOINT,
+                'port': secret["port"]
+            }
+            connection_string = " ".join([f"{key}={value}" for key, value in connection_params.items()])
+            connection = psycopg2.connect(connection_string)
+            logger.info("Connected to the database!")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            if connection:
+                connection.rollback()
+                connection.close()
+            raise
+    return connection
+
+def verify_instructor_ownership(user_email, simulation_group_id):
+    """Verify the requesting user is an instructor of the target simulation group."""
+    conn = connect_to_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT 1 FROM "enrollments" e
+               JOIN "users" u ON e.user_id = u.user_id
+               WHERE u.user_email = %s AND e.simulation_group_id = %s AND e.enrollment_type = 'instructor'""",
+            (user_email, simulation_group_id)
+        )
+        result = cur.fetchone()
+        cur.close()
+        return result is not None
+    except Exception as e:
+        cur.close()
+        logger.error(f"Error verifying instructor ownership: {e}")
+        return False
 
 @logger.inject_lambda_context
 def lambda_handler(event, context):
+    # Extract user identity from authorizer context
+    user_email = event.get("requestContext", {}).get("authorizer", {}).get("email", "")
+
     query_params = event.get("queryStringParameters", {})
     simulation_group_id = query_params.get("simulation_group_id", "")
     persona_id = query_params.get("persona_id", "")
@@ -28,6 +90,23 @@ def lambda_handler(event, context):
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("Missing required parameters: simulation_group_id or persona_id")
+        }
+
+    # Verify the requesting instructor owns this simulation group
+    if not verify_instructor_ownership(user_email, simulation_group_id):
+        logger.warning("Unauthorized access attempt", extra={
+            "user_email": user_email,
+            "simulation_group_id": simulation_group_id
+        })
+        return {
+            'statusCode': 403,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+            },
+            'body': json.dumps('Forbidden: You are not an instructor of this simulation group')
         }
 
     try:

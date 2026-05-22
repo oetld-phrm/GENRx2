@@ -33,6 +33,8 @@ import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as cr from "aws-cdk-lib/custom-resources";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 
 export class ApiServiceStack extends cdk.Stack {
   private readonly api: apigateway.SpecRestApi;
@@ -64,11 +66,18 @@ export class ApiServiceStack extends cdk.Stack {
     dataIngestRepo?: ecr.IRepository,
     textGenBuildProjectName?: string,
     dataIngestBuildProjectName?: string,
+    cloudFrontWafArn?: string,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
 
     this.layerList = {};
+
+    const allowedOrigins = [
+      "https://*.amplifyapp.com",
+      "http://localhost:5173",
+      "http://localhost:5174",
+    ];
 
     const embeddingStorageBucket = new s3.Bucket(
       this,
@@ -77,16 +86,16 @@ export class ApiServiceStack extends cdk.Stack {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         cors: [
           {
-            allowedHeaders: ["*"],
+            allowedHeaders: ["Content-Type", "x-amz-content-sha256"],
             allowedMethods: [
               s3.HttpMethods.GET,
               s3.HttpMethods.PUT,
-              s3.HttpMethods.HEAD,
-              s3.HttpMethods.POST,
-              s3.HttpMethods.DELETE,
             ],
-            allowedOrigins: ["*"],
+            allowedOrigins,
           },
+        ],
+        lifecycleRules: [
+          { abortIncompleteMultipartUploadAfter: cdk.Duration.days(1) },
         ],
         // When deleting the stack, need to empty the Bucket and delete it manually
         removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -140,6 +149,13 @@ export class ApiServiceStack extends cdk.Stack {
       `${id}-PowertoolsLayer`,
       `arn:aws:lambda:${this.region}:017000801446:layer:AWSLambdaPowertoolsPythonV2:78`
     );
+
+    // RSA library layer for CloudFront URL signing (pure Python, no C deps)
+    const rsaLayer = new LayerVersion(this, "rsaLambdaLayer", {
+      code: Code.fromAsset("./layers/rsa.zip"),
+      compatibleRuntimes: [Runtime.PYTHON_3_12],
+      description: "RSA + pyasn1 for CloudFront signed URL generation",
+    });
 
     this.layerList["psycopg2"] = psycopgLayer;
     this.layerList["postgres"] = postgres;
@@ -1377,16 +1393,109 @@ export class ApiServiceStack extends cdk.Stack {
             allowedMethods: [
               s3.HttpMethods.GET,
               s3.HttpMethods.PUT,
-              s3.HttpMethods.HEAD,
               s3.HttpMethods.POST,
-              s3.HttpMethods.DELETE,
             ],
-            allowedOrigins: ["*"],
+            allowedOrigins,
           },
+        ],
+        lifecycleRules: [
+          { abortIncompleteMultipartUploadAfter: cdk.Duration.days(1) },
         ],
         // When deleting the stack, need to empty the Bucket and delete it manually
         removalPolicy: cdk.RemovalPolicy.RETAIN,
         enforceSSL: true,
+      }
+    );
+
+    /**
+     * CloudFront distribution for secure document delivery.
+     * Uses Origin Access Control (OAC) so only CloudFront can read from the bucket.
+     * Signed URLs enforce that only authenticated users with valid tokens can access content.
+     */
+
+    // Read the public key from SSM (stored during pre-deploy setup)
+    const cfPublicKeyPem = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/GenRx/CloudFrontPublicKey"
+    );
+
+    const cfPublicKey = new cloudfront.PublicKey(
+      this,
+      `${id}-CfSigningPublicKey`,
+      {
+        encodedKey: cfPublicKeyPem,
+        comment: "RSA public key for CloudFront signed URL verification",
+      }
+    );
+
+    const cfKeyGroup = new cloudfront.KeyGroup(
+      this,
+      `${id}-CfSigningKeyGroup`,
+      {
+        items: [cfPublicKey],
+        comment: "Key group for GenRx document delivery signed URLs",
+      }
+    );
+
+    const docsCachePolicy = new cloudfront.CachePolicy(
+      this,
+      `${id}-DocsCachePolicy`,
+      {
+        cachePolicyName: `${id}-DocsCachePolicy`,
+        comment: "Cache policy for patient documents and profile pictures",
+        defaultTtl: cdk.Duration.minutes(5),
+        maxTtl: cdk.Duration.hours(1),
+        minTtl: cdk.Duration.seconds(0),
+        // Don't include query strings or headers in cache key — signed URLs are unique per request
+        queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
+        headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+        cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      }
+    );
+
+    const docsDistribution = new cloudfront.Distribution(
+      this,
+      `${id}-DocsDistribution`,
+      {
+        comment: "GenRx document delivery CDN",
+        defaultBehavior: {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(dataIngestionBucket),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          cachePolicy: docsCachePolicy,
+          trustedKeyGroups: [cfKeyGroup],
+        },
+        ...(cloudFrontWafArn && { webAclId: cloudFrontWafArn }),
+      }
+    );
+
+    new cdk.CfnOutput(this, "CloudFrontDomain", {
+      value: docsDistribution.domainName,
+      description: "CloudFront distribution domain for document delivery",
+    });
+
+    new cdk.CfnOutput(this, "CloudFrontKeyPairId", {
+      value: cfPublicKey.publicKeyId,
+      description: "CloudFront public key ID for signed URL generation",
+    });
+
+    // CloudWatch alarm: alert if CloudFront requests exceed 10,000 in 1 hour
+    new cloudwatch.Alarm(
+      this,
+      `${id}-CloudFrontHighRequestsAlarm`,
+      {
+        alarmName: `${id}-CloudFront-HighRequests`,
+        alarmDescription:
+          "Triggers when CloudFront document delivery requests exceed 10,000 in 1 hour — possible abuse or replay attack",
+        metric: docsDistribution.metricRequests({
+          period: cdk.Duration.hours(1),
+          statistic: "Sum",
+        }),
+        threshold: 10000,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }
     );
 
@@ -1400,12 +1509,15 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "generatePreSignedURL.lambda_handler",
         timeout: Duration.seconds(300),
         memorySize: 128,
+        vpc: vpcStack.vpc,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
         functionName: `${id}-GeneratePreSignedURLFunction`,
-        layers: [powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1424,6 +1536,15 @@ export class ApiServiceStack extends cdk.Stack {
           dataIngestionBucket.bucketArn,
           `${dataIngestionBucket.bucketArn}/*`,
         ],
+      })
+    );
+
+    // Grant access to Secrets Manager for DB credentials
+    generatePreSignedURL.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [db.secretPathUser.secretArn],
       })
     );
 
@@ -1503,16 +1624,20 @@ export class ApiServiceStack extends cdk.Stack {
     // Attach the custom Bedrock policy to Lambda function
     dataIngestLambdaDockerFunc.addToRolePolicy(bedrockPolicyStatement);
 
-    // Add the S3 event source trigger to the Lambda function
-    dataIngestLambdaDockerFunc.addEventSource(
-      new lambdaEventSources.S3EventSource(dataIngestionBucket, {
-        events: [
-          s3.EventType.OBJECT_CREATED,
-          s3.EventType.OBJECT_REMOVED,
-          s3.EventType.OBJECT_RESTORE_COMPLETED,
-        ],
-      })
-    );
+    // Add S3 event source triggers — only for embeddable file types
+    // This avoids cold-starting the ingestion Lambda for profile pictures and other non-document uploads
+    const embeddableSuffixes = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".xps", ".mobi", ".cbz"];
+    for (const suffix of embeddableSuffixes) {
+      dataIngestLambdaDockerFunc.addEventSource(
+        new lambdaEventSources.S3EventSource(dataIngestionBucket, {
+          events: [
+            s3.EventType.OBJECT_CREATED,
+            s3.EventType.OBJECT_REMOVED,
+          ],
+          filters: [{ suffix }],
+        })
+      );
+    }
 
     // Grant access to Secret Manager
     dataIngestLambdaDockerFunc.addToRolePolicy(
@@ -1646,9 +1771,12 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CLOUDFRONT_DOMAIN: docsDistribution.domainName,
+          CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
+          SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
         },
         functionName: `${id}-GetFilesFunction`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1701,9 +1829,12 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CLOUDFRONT_DOMAIN: docsDistribution.domainName,
+          CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
+          SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
         },
         functionName: `${id}-GetFilesFunctionStudent`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1756,9 +1887,12 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CLOUDFRONT_DOMAIN: docsDistribution.domainName,
+          CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
+          SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
         },
         functionName: `${id}-GetProfilePictures`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1767,9 +1901,6 @@ export class ApiServiceStack extends cdk.Stack {
     const cfnGetProfilePictures = getProfilePictures.node
       .defaultChild as lambda.CfnFunction;
     cfnGetProfilePictures.overrideLogicalId("GetProfilePictures");
-
-    // Grant the Lambda function read-only permissions to the S3 bucket
-    dataIngestionBucket.grantRead(getProfilePictures);
 
     // Grant access to Secret Manager
     getProfilePictures.addToRolePolicy(
@@ -1811,9 +1942,12 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CLOUDFRONT_DOMAIN: docsDistribution.domainName,
+          CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
+          SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
         },
         functionName: `${id}-GetProfilePicturesStudent`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1822,9 +1956,6 @@ export class ApiServiceStack extends cdk.Stack {
     const cfnGetProfilePicturesStudent = getProfilePicturesStudent.node
       .defaultChild as lambda.CfnFunction;
     cfnGetProfilePicturesStudent.overrideLogicalId("GetProfilePicturesStudent");
-
-    // Grant the Lambda function read-only permissions to the S3 bucket
-    dataIngestionBucket.grantRead(getProfilePicturesStudent);
 
     // Grant access to Secret Manager
     getProfilePicturesStudent.addToRolePolicy(
@@ -1910,12 +2041,15 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "deletePatient.lambda_handler",
         timeout: Duration.seconds(300),
         memorySize: 128,
+        vpc: vpcStack.vpc,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
         functionName: `${id}-DeletePatientFunction`,
-        layers: [powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1928,6 +2062,15 @@ export class ApiServiceStack extends cdk.Stack {
     // Grant the Lambda function the necessary permissions
     dataIngestionBucket.grantRead(deletePatientFunction);
     dataIngestionBucket.grantDelete(deletePatientFunction);
+
+    // Grant access to Secrets Manager for DB credentials
+    deletePatientFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [db.secretPathUser.secretArn],
+      })
+    );
 
     // Grant admin function S3 access for cleaning up group files on delete
     lambdaAdminFunction.addEnvironment(
