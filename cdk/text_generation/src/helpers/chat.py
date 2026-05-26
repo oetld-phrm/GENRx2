@@ -1084,7 +1084,7 @@ def get_cached_key_questions(
                 "evaluation_criteria": q.get("evaluation_criteria"),
                 "is_mandatory": q.get("is_mandatory", False),
                 "weight": float(q["weight"]) if q.get("weight") is not None else None,
-                "embedding": list(struct.unpack(f'{len(q["embedding"]) // 8}d', bytes(q["embedding"]))) if q.get("embedding") else [],
+                "embedding": list(struct.unpack(f'{len(bytes(q["embedding"])) // 8}d', bytes(q["embedding"]))) if q.get("embedding") else [],
             })
 
         logger.info(f"✅ Retrieved {len(result)} cached key questions for session={session_id}")
@@ -1352,7 +1352,7 @@ def get_cached_instructor_dtps(
                 "dtp_id": d["dtp_id"],
                 "expected_dtp_text": d["expected_dtp_text"],
                 "evaluation_criteria": d.get("evaluation_criteria"),
-                "embedding": list(struct.unpack(f'{len(d["embedding"]) // 8}d', bytes(d["embedding"]))) if d.get("embedding") else [],
+                "embedding": list(struct.unpack(f'{len(bytes(d["embedding"])) // 8}d', bytes(d["embedding"]))) if d.get("embedding") else [],
             })
 
         logger.info(f"✅ Retrieved {len(result)} cached instructor DTPs for group={simulation_group_id}, persona={persona_id}")
@@ -1393,7 +1393,7 @@ def get_cached_instructor_recs(
                 "recommendation_text": r["recommendation_text"],
                 "rationale": r.get("rationale"),
                 "evaluation_criteria": r.get("evaluation_criteria"),
-                "embedding": list(struct.unpack(f'{len(r["embedding"]) // 8}d', bytes(r["embedding"]))) if r.get("embedding") else [],
+                "embedding": list(struct.unpack(f'{len(bytes(r["embedding"])) // 8}d', bytes(r["embedding"]))) if r.get("embedding") else [],
             })
 
         logger.info(f"✅ Retrieved {len(result)} cached instructor recommendations for group={simulation_group_id}, persona={persona_id}")
