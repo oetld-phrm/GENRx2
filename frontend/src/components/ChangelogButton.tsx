@@ -17,6 +17,14 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    date: 'May 27, 2026',
+    items: [
+      { feature: 'Student debrief now shows submitted DTPs and recommendations', status: 'working', note: 'the AI Debrief dialog displays the exact drug therapy problems and recommendations you submitted at conclude time, so you can follow along as the AI scores each one' },
+      { feature: 'Instructor & admin session view shows student submissions', status: 'working', note: 'the Submissions panel in Manage Students now correctly displays the DTPs and recommendations a student submitted for each concluded session' },
+      { feature: 'Debrief feedback flow reordered', status: 'working', note: 'the optional comment field now appears before the Yes / No buttons so it\'s clear the comment can be filled in before submitting' },
+    ],
+  },
+  {
     date: 'May 15, 2026',
     items: [
       { feature: 'Interview Practice mode for patients', status: 'working', note: 'patients with no DTPs & Recommendations assigned are automatically marked as "Interview Practice" — no extra setup needed' },

@@ -1068,7 +1068,7 @@ function AdminSimulationGroupPage() {
         </main>
       </div>
 
-      <AIDebriefDialog isOpen={debriefViewer.isAIDebriefOpen} onClose={debriefViewer.closeDebrief} data={debriefViewer.selectedDebriefData} simulationGroupId={groupId} />
+      <AIDebriefDialog isOpen={debriefViewer.isAIDebriefOpen} onClose={debriefViewer.closeDebrief} data={debriefViewer.selectedDebriefData} updatedDebriefData={debriefViewer.selectedUpdatedDebriefData} simulationGroupId={groupId} patientMode={debriefViewer.selectedUpdatedDebriefData?.chunk2 ? 'full_assessment' : 'interview_practice'} />
       <AddQuestionDialog open={isAddQuestionDialogOpen} onOpenChange={setIsAddQuestionDialogOpen} questionType={addQuestionType} existingTags={allExistingTags} onSave={handleSaveNewQuestion} />
       <AddPatientSpecificQuestionDialog open={isAddPatientQuestionDialogOpen} onOpenChange={setIsAddPatientQuestionDialogOpen} patients={manageablePatients.map(p => ({ id: p.patient_id, name: p.patient_name }))} onSave={handleSaveNewPatientQuestion} />
       <AddInstructorDialog open={isAddInstructorDialogOpen} onOpenChange={setIsAddInstructorDialogOpen} onAddInstructor={handleAddInstructorSubmit} existingInstructorEmails={instructors.map(i => i.user_email)} />

@@ -649,7 +649,7 @@ function InstructorSimulationGroupPage() {
         </main>
       </div>
 
-      <AIDebriefDialog isOpen={debriefViewer.isAIDebriefOpen} onClose={debriefViewer.closeDebrief} data={debriefViewer.selectedDebriefData} simulationGroupId={groupId} />
+      <AIDebriefDialog isOpen={debriefViewer.isAIDebriefOpen} onClose={debriefViewer.closeDebrief} data={debriefViewer.selectedDebriefData} updatedDebriefData={debriefViewer.selectedUpdatedDebriefData} simulationGroupId={groupId} patientMode={debriefViewer.selectedUpdatedDebriefData?.chunk2 ? 'full_assessment' : 'interview_practice'} />
       <AddQuestionDialog open={isAddQuestionDialogOpen} onOpenChange={setIsAddQuestionDialogOpen} questionType={questionBankTab === 'global' ? 'global' : 'patientSpecific'} existingTags={allExistingTags} onSave={(q) => handleSaveNewPatientQuestion({ ...q, patientId: selectedPatientForQuestionBank || '' })} />
       <AddPatientSpecificQuestionDialog open={isAddPatientQuestionDialogOpen} onOpenChange={setIsAddPatientQuestionDialogOpen} patients={manageablePatients.map(p => ({ id: p.id, name: p.name }))} onSave={handleSaveNewPatientQuestion} />
 

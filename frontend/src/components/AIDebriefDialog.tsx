@@ -277,6 +277,55 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
                 </div>
               ) : updatedDebriefData.chunk2 !== null && patientMode === 'full_assessment' ? (
                 <>
+                  {/* Your Submissions Section */}
+                  {(updatedDebriefData.dtpSubmission || updatedDebriefData.recommendationSubmission) && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-5 h-5" style={{ color: UI_COLORS.text.heading }} />
+                        <h3 className="text-lg font-semibold" style={{ color: UI_COLORS.text.heading }}>
+                          Your Submissions
+                        </h3>
+                      </div>
+                      <div className="pl-7 space-y-4">
+                        {updatedDebriefData.dtpSubmission && updatedDebriefData.dtpSubmission.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                              Drug Therapy Problems
+                            </h4>
+                            <ul className="space-y-1">
+                              {updatedDebriefData.dtpSubmission.map((dtp, i) => (
+                                <li key={i} className="text-sm" style={{ color: UI_COLORS.text.body }}>
+                                  {i + 1}. {dtp}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {updatedDebriefData.recommendationSubmission && updatedDebriefData.recommendationSubmission.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2" style={{ color: UI_COLORS.text.heading }}>
+                              Recommendations
+                            </h4>
+                            <div className="space-y-3">
+                              {updatedDebriefData.recommendationSubmission.map((rec, i) => (
+                                <div key={i} className="border-l-2 pl-3" style={{ borderColor: UI_COLORS.border.default }}>
+                                  <p className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
+                                    {i + 1}. {rec.recommendation}
+                                  </p>
+                                  {rec.rationale && (
+                                    <p className="text-sm mt-0.5" style={{ color: UI_COLORS.text.body }}>
+                                      <span className="font-medium">Rationale:</span> {rec.rationale}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* DTP Comparison Section */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
