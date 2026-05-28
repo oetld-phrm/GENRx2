@@ -21,6 +21,21 @@ def set_stream_callback_url(url: str | None):
     global _stream_callback_url
     _stream_callback_url = url
 
+# Shared token for authenticating POSTs to /stream-callback. Loaded once at
+# cold start so every invocation pays only a dict lookup, not a network call.
+def _load_stream_callback_token() -> str | None:
+    secret_name = os.environ.get("SM_STREAM_CALLBACK_SECRET")
+    if not secret_name:
+        return None
+    try:
+        sm = boto3.client("secretsmanager")
+        return sm.get_secret_value(SecretId=secret_name)["SecretString"]
+    except Exception as e:
+        logger.error(f"Failed to load stream callback secret: {e}")
+        return None
+
+_stream_callback_token: str | None = _load_stream_callback_token()
+
 from langchain_aws import ChatBedrock
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
@@ -499,9 +514,11 @@ def publish_to_appsync(session_id: str, data: dict):
     # ── Fast path: ECS callback ──────────────────────────────────────────
     if _stream_callback_url:
         try:
+            headers = {"x-callback-token": _stream_callback_token} if _stream_callback_token else {}
             requests.post(
                 f"{_stream_callback_url}/stream-callback",
                 json={"session_id": session_id, "data": data},
+                headers=headers,
                 timeout=5,
             )
         except Exception as e:

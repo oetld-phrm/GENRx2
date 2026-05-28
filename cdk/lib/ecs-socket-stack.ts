@@ -131,7 +131,8 @@ export class EcsSocketStack extends Stack {
         actions: ["secretsmanager:GetSecretValue"],
         resources: [
           db.secretPathUser.secretArn,
-          apiServiceStack.secret.secretArn
+          apiServiceStack.secret.secretArn,
+          apiServiceStack.streamCallbackSecret.secretArn,
         ],
       })
     );
@@ -183,6 +184,7 @@ export class EcsSocketStack extends Stack {
         STUN_SERVER_URL: turnServerStack.stunServerUrl,
         BEDROCK_GUARDRAIL_ID: apiServiceStack.getGuardrailId(),
         TABLE_NAME: dynamoTableName,
+        SM_STREAM_CALLBACK_SECRET: apiServiceStack.streamCallbackSecret.secretName,
         ...(resolvedVoiceAgentEndpoint ? { VOICE_AGENT_ENDPOINT: resolvedVoiceAgentEndpoint } : {}),
       },
       secrets: {
