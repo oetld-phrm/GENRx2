@@ -2418,6 +2418,22 @@ export class ApiServiceStack extends cdk.Stack {
             metricName: "AWS-AWSManagedRulesAmazonIpReputationList",
           },
         },
+        {
+          name: "AWS-AWSManagedRulesSQLiRuleSet",
+          priority: 5,
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name: "AWSManagedRulesSQLiRuleSet",
+            },
+          },
+          overrideAction: { none: {} },
+          visibilityConfig: {
+            sampledRequestsEnabled: true,
+            cloudWatchMetricsEnabled: true,
+            metricName: "AWS-AWSManagedRulesSQLiRuleSet",
+          },
+        },
       ],
     });
     const wafAssociation = new wafv2.CfnWebACLAssociation(

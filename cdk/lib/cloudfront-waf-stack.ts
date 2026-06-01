@@ -86,6 +86,22 @@ export class CloudFrontWafStack extends cdk.Stack {
             metricName: "CloudFront-AWSManagedRulesAmazonIpReputationList",
           },
         },
+        {
+          name: "AWS-AWSManagedRulesSQLiRuleSet",
+          priority: 5,
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name: "AWSManagedRulesSQLiRuleSet",
+            },
+          },
+          overrideAction: { none: {} },
+          visibilityConfig: {
+            sampledRequestsEnabled: true,
+            cloudWatchMetricsEnabled: true,
+            metricName: "CloudFront-AWSManagedRulesSQLiRuleSet",
+          },
+        },
       ],
     });
 
