@@ -393,6 +393,8 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - session_name
               properties:
                 session_name:
                   type: string
