@@ -75,7 +75,13 @@ exports.handler = async (event, context) => {
       process.env.AUTH_ALLOWED_ROLES
     );
 
-    if (!allowed) {
+    // NOTE: The app assigns roles in the database (users.roles column), NOT via Cognito groups.
+    // Most users will not have the cognito:groups claim in their token at all.
+    // Only enforce the role check if the claim is actually present in the token.
+    const hasRolesClaim =
+      payload[process.env.AUTH_ROLES_CLAIM || "cognito:groups"] !== undefined;
+
+    if (hasRolesClaim && !allowed) {
       console.error(
         JSON.stringify({
           level: "ERROR",

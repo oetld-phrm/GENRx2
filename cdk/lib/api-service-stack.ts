@@ -45,6 +45,7 @@ export class ApiServiceStack extends cdk.Stack {
   private readonly dynamoTableName: string;
   private readonly layerList: { [key: string]: LayerVersion };
   private readonly guardrailId: string;
+  private readonly allowedOriginsEnv: string;
   public readonly stageARN_APIGW: string;
   public readonly apiGW_basedURL: string;
   public readonly secret: secretsmanager.ISecret;
@@ -56,6 +57,7 @@ export class ApiServiceStack extends cdk.Stack {
   public getIdentityPoolId = () => this.identityPool.ref;
   public getGuardrailId = () => this.guardrailId;
   public getDynamoTableName = () => this.dynamoTableName;
+  public getAllowedOriginsEnv = () => this.allowedOriginsEnv;
   public addLayer = (name: string, layer: LayerVersion) =>
     (this.layerList[name] = layer);
   public getLayers = () => this.layerList;
@@ -82,6 +84,10 @@ export class ApiServiceStack extends cdk.Stack {
       "http://localhost:5173",
       "http://localhost:5174",
     ];
+
+    // Comma-separated string for Lambda/ECS environment variables
+    const allowedOriginsEnv = allowedOrigins.join(",");
+    this.allowedOriginsEnv = allowedOriginsEnv;
 
     const embeddingStorageBucket = new s3.Bucket(
       this,
@@ -555,6 +561,7 @@ export class ApiServiceStack extends cdk.Stack {
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-studentFunction`,
         memorySize: 256,
@@ -588,6 +595,7 @@ export class ApiServiceStack extends cdk.Stack {
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-instructorFunction`,
         memorySize: 256,
@@ -623,6 +631,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
           USER_POOL_ID: this.userPool.userPoolId,
           EMBEDDING_STORAGE_BUCKET: embeddingStorageBucket.bucketName,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-adminFunction`,
         memorySize: 256,
