@@ -167,6 +167,13 @@ export class ApiServiceStack extends cdk.Stack {
       description: "RSA + pyasn1 for CloudFront signed URL generation",
     });
 
+    // CORS helper layer for Python Lambdas
+    const corsLayer = new LayerVersion(this, "corsHelperLayer", {
+      code: Code.fromAsset("./layers/cors"),
+      compatibleRuntimes: [Runtime.PYTHON_3_12],
+      description: "CORS origin helper (reads ALLOWED_ORIGINS env var)",
+    });
+
     this.layerList["psycopg2"] = psycopgLayer;
     this.layerList["postgres"] = postgres;
     this.layerList["jwt"] = jwt;
@@ -1692,9 +1699,10 @@ export class ApiServiceStack extends cdk.Stack {
           REGION: this.region,
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-GeneratePreSignedURLFunction`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -1955,9 +1963,10 @@ export class ApiServiceStack extends cdk.Stack {
           CLOUDFRONT_DOMAIN: docsDistribution.domainName,
           CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
           SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-GetFilesFunction`,
-        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -2014,9 +2023,10 @@ export class ApiServiceStack extends cdk.Stack {
           CLOUDFRONT_DOMAIN: docsDistribution.domainName,
           CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
           SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-GetFilesFunctionStudent`,
-        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -2073,9 +2083,10 @@ export class ApiServiceStack extends cdk.Stack {
           CLOUDFRONT_DOMAIN: docsDistribution.domainName,
           CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
           SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-GetProfilePictures`,
-        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -2129,9 +2140,10 @@ export class ApiServiceStack extends cdk.Stack {
           CLOUDFRONT_DOMAIN: docsDistribution.domainName,
           CLOUDFRONT_KEY_PAIR_ID: cfPublicKey.publicKeyId,
           SM_CLOUDFRONT_PRIVATE_KEY: "GenRx/CloudFrontSigningKey",
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-GetProfilePicturesStudent`,
-        layers: [psycopgLayer, powertoolsLayer, rsaLayer],
+        layers: [psycopgLayer, powertoolsLayer, rsaLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -2179,9 +2191,10 @@ export class ApiServiceStack extends cdk.Stack {
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // RDS Proxy Endpoint
         BUCKET: dataIngestionBucket.bucketName,
         REGION: this.region,
+        ALLOWED_ORIGINS: allowedOriginsEnv,
       },
       functionName: `${id}-DeleteFileFunction`,
-      layers: [psycopgLayer, powertoolsLayer],
+      layers: [psycopgLayer, powertoolsLayer, corsLayer],
       logRetention: logs.RetentionDays.INFINITE,
     });
 
@@ -2233,9 +2246,10 @@ export class ApiServiceStack extends cdk.Stack {
           REGION: this.region,
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-DeletePatientFunction`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
@@ -2295,9 +2309,10 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
           REGION: this.region,
+          ALLOWED_ORIGINS: allowedOriginsEnv,
         },
         functionName: `${id}-DeleteLastMessage`,
-        layers: [psycopgLayer, powertoolsLayer],
+        layers: [psycopgLayer, powertoolsLayer, corsLayer],
         logRetention: logs.RetentionDays.INFINITE,
       }
     );
