@@ -288,14 +288,12 @@ export class ApiServiceStack extends cdk.Stack {
       },
     });
 
-    // REVIEW: allowUnauthenticatedIdentities is true. While the unauthenticated role has no
-    // policies, this still allows anyone to obtain temporary AWS credentials. Set to false
-    // unless there is a specific use case for unauthenticated access.
+    // Unauthenticated identities disabled — the app requires sign-in for all functionality.
     this.identityPool = new cognito.CfnIdentityPool(
       this,
       `${id}-identity-pool`,
       {
-        allowUnauthenticatedIdentities: true,
+        allowUnauthenticatedIdentities: false,
         identityPoolName: `${id}-IdentityPool`,
         cognitoIdentityProviders: [
           {
