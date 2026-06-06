@@ -2280,8 +2280,14 @@ paths:
             type: string
         - name: student_id
           in: query
-          required: true
-          description: UUID of the student
+          required: false
+          description: UUID of the student (preferred)
+          schema:
+            type: string
+        - name: student_email
+          in: query
+          required: false
+          description: Email of the student (fallback if student_id not provided)
           schema:
             type: string
       responses:
@@ -2684,10 +2690,16 @@ paths:
           description: ID of the group
         - in: query
           name: student_id
-          required: true
+          required: false
           schema:
             type: string
-          description: UUID of the student
+          description: UUID of the student (preferred)
+        - in: query
+          name: student_email
+          required: false
+          schema:
+            type: string
+          description: Email of the student (fallback if student_id not provided)
       responses:
         "200":
           description: Successfully retrieved student messages
@@ -2786,10 +2798,16 @@ paths:
           description: ID of the group
         - in: query
           name: student_id
-          required: true
+          required: false
           schema:
             type: string
-          description: UUID of the student
+          description: UUID of the student (preferred)
+        - in: query
+          name: student_email
+          required: false
+          schema:
+            type: string
+          description: Email of the student (fallback if student_id not provided)
       responses:
         "200":
           description: Successfully retrieved completion statuses for interactions
@@ -3409,8 +3427,14 @@ paths:
             type: string
         - in: query
           name: student_id
-          required: true
+          required: false
           description: UUID of the student
+          schema:
+            type: string
+        - in: query
+          name: student_email
+          required: false
+          description: Email of the student (fallback if student_id not provided)
           schema:
             type: string
       responses:

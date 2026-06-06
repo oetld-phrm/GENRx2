@@ -14,6 +14,9 @@ import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 import { TurnServerStack } from "./turn-server-stack";
 
+/** SSM parameter name where the socket URL is published for other stacks to read. */
+export const getSocketUrlSsmParam = (stackPrefix: string) => `/${stackPrefix}/socket-url`;
+
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
 
@@ -273,10 +276,17 @@ export class EcsSocketStack extends Stack {
 
     // 8) Output CloudFront URL
     this.socketUrl = `wss://${distro.domainName}`;
+
+    // Publish to SSM so other stacks can read without a cross-stack export dependency.
+    new ssm.StringParameter(this, "SocketUrlParam", {
+      parameterName: getSocketUrlSsmParam(stackPrefix),
+      stringValue: this.socketUrl,
+      description: "WebSocket server URL via CloudFront + NLB",
+    });
+
     new CfnOutput(this, "SocketUrl", {
       value: this.socketUrl,
       description: "WebSocket server URL via CloudFront + NLB",
-      exportName: `${id}-SocketUrl`,
     });
     
   }

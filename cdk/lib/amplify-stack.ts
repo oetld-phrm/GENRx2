@@ -1,8 +1,9 @@
 import * as cdk from "aws-cdk-lib";
 import * as amplify from "aws-cdk-lib/aws-amplify";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { ApiServiceStack } from "./api-service-stack";
-import { EcsSocketStack } from "./ecs-socket-stack";
+import { getSocketUrlSsmParam } from "./ecs-socket-stack";
 
 
 export class AmplifyStack extends cdk.Stack {
@@ -10,10 +11,13 @@ export class AmplifyStack extends cdk.Stack {
     scope: Construct,
     id: string,
     apiStack: ApiServiceStack,
-    ecsSocketStack: EcsSocketStack,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
+
+    // Read socket URL from SSM (written by EcsSocket stack) — no cross-stack export dependency.
+    const stackPrefix = this.node.tryGetContext("StackPrefix");
+    const socketUrl = ssm.StringParameter.valueForStringParameter(this, getSocketUrlSsmParam(stackPrefix));
 
     // Context values
     const githubRepoName = this.node.tryGetContext("githubRepo");
@@ -64,7 +68,7 @@ export class AmplifyStack extends cdk.Stack {
         { name: "VITE_COGNITO_USER_POOL_CLIENT_ID", value: apiStack.getUserPoolClientId() },
         { name: "VITE_API_ENDPOINT", value: apiStack.getEndpointUrl() },
         { name: "VITE_IDENTITY_POOL_ID", value: apiStack.getIdentityPoolId() },
-        { name: "VITE_SOCKET_URL", value: ecsSocketStack.socketUrl },
+        { name: "VITE_SOCKET_URL", value: socketUrl },
         { name: "VITE_APPSYNC_GRAPHQL_URL", value: apiStack.appSyncApi.graphqlUrl },
       ],
       buildSpec: `version: 1

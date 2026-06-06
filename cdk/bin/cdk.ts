@@ -117,11 +117,14 @@ const amplifyStack = new AmplifyStack(
   app,
   `${StackPrefix}-Amplify`,
   apiStack,
-  ecsSocketStack,
   {
     env,
   }
 );
+// Amplify reads the socket URL from SSM written by EcsSocket.
+// addDependency ensures EcsSocket deploys first (creates the param)
+// without creating a cross-stack CloudFormation export.
+amplifyStack.addDependency(ecsSocketStack);
 // Tag all resources for cost allocation.
 // EcsSocket stack excluded entirely — AWS::CloudFront::VpcOrigin cannot be
 // updated (even tag changes) while attached to a distribution. Any resource
