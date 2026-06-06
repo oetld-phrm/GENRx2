@@ -35,15 +35,21 @@ exports.handler = async (event, context) => {
     logger.info("Database connection initialized");
   }
 
-  // --- Role-based authorization: DB is the single source of truth ---
-  // Verify the authenticated user has 'admin' role in the database.
+  // --- Role-based authorization ---
+  // Admin access is granted if the user has 'admin' in EITHER:
+  //   1. The Cognito 'admin' group (cognito:groups claim in the JWT), OR
+  //   2. The database roles array.
+  // This allows fresh deployers to bootstrap admin access via Cognito group
+  // without needing direct DB access.
   const adminEmail = event.requestContext.authorizer.email;
+  const cognitoGroups = JSON.parse(event.requestContext.authorizer.cognitoGroups || "[]");
   const roleCheckResult = await sqlConnectionTableCreator`
     SELECT roles FROM "users" WHERE user_email = ${adminEmail};
   `;
   const userRoles = roleCheckResult[0]?.roles || [];
-  if (!userRoles.includes("admin")) {
-    logger.warn("Forbidden: user lacks admin role", { adminEmail, userRoles });
+  const hasAdminAccess = cognitoGroups.includes("admin") || userRoles.includes("admin");
+  if (!hasAdminAccess) {
+    logger.warn("Forbidden: user lacks admin role", { adminEmail, userRoles, cognitoGroups });
     return {
       statusCode: 403,
       headers: getCorsHeaders(event),

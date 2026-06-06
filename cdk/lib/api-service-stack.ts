@@ -794,6 +794,15 @@ export class ApiServiceStack extends cdk.Stack {
       AutoSignupLambda
     );
 
+    // Create 'admin' Cognito group for bootstrap admin access on fresh deployments.
+    // After deploying, run:
+    //   aws cognito-idp admin-add-user-to-group --user-pool-id <pool-id> --username <email> --group-name admin
+    new cognito.CfnUserPoolGroup(this, `${id}-AdminGroup`, {
+      userPoolId: this.userPool.userPoolId,
+      groupName: "admin",
+      description: "Organization administrators — grants admin API access via cognito:groups claim",
+    });
+
     // const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'genrxAuthorizer', {
     //   cognitoUserPools: [this.userPool],
     // });
