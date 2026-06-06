@@ -1202,7 +1202,7 @@ async function getDebriefPrompt(simulationGroupId: string): Promise<string> {
  */
 async function updateSystemPrompt(
   simulationGroupId: string,
-  instructorEmail: string,
+  _instructorEmail: string,
   prompt: string
 ): Promise<void> {
   await apiClient.request(
@@ -1216,7 +1216,7 @@ async function updateSystemPrompt(
  */
 async function updateDebriefPrompt(
   simulationGroupId: string,
-  instructorEmail: string,
+  _instructorEmail: string,
   prompt: string
 ): Promise<void> {
   await apiClient.request(

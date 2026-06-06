@@ -68,8 +68,8 @@ export const mockOrganizations: AdminOrganization[] = [
 ];
 
 export const mockGroupInstructors: AdminInstructor[] = [
-  { user_email: 'email1@random.com', first_name: 'Tom', last_name: 'Doe' },
-  { user_email: 'mary.jane@email.com', first_name: 'Mary', last_name: 'Jane' },
+  { user_id: 'mock-1', user_email: 'email1@random.com', first_name: 'Tom', last_name: 'Doe' },
+  { user_id: 'mock-2', user_email: 'mary.jane@email.com', first_name: 'Mary', last_name: 'Jane' },
 ];
 
 /**

@@ -20,7 +20,6 @@
  */
 
 import { apiClient } from '@/lib/api-client';
-import { authService } from '@/lib/auth';
 import type { QuestionBankItem } from '@/services/instructorService';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
