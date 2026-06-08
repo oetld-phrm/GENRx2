@@ -6,7 +6,6 @@ const {
 const { Client } = require("pg");
 const crypto = require("crypto");
 const path = require("path");
-const fs = require("fs");
 const migrate = require("node-pg-migrate").default;
 
 const sm = new SecretsManagerClient();

@@ -63,11 +63,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Function to format student full names (lowercase and spaces replaced with "_")
-  const formatNames = (name) => {
-    return name.toLowerCase().replace(/\s+/g, "_");
-  };
-
   function generateAccessCode() {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code = "";
@@ -77,7 +72,6 @@ exports.handler = async (event, context) => {
     return code.match(/.{1,4}/g).join("-");
   }
 
-  let data;
   try {
     const pathData = event.httpMethod + " " + event.resource;
     switch (pathData) {
@@ -365,7 +359,7 @@ exports.handler = async (event, context) => {
                   `;
 
             if (existingFile.length === 0) {
-              const result = await sqlConnection`
+              await sqlConnection`
                 INSERT INTO "persona_data" (persona_id, filename, filetype, metadata, display_name)
                 VALUES (${persona_id}, ${filename}, ${filetype}, ${metadata}, ${display_name || null})
                 RETURNING *;
@@ -1279,7 +1273,7 @@ exports.handler = async (event, context) => {
             const newAccessCode = generateAccessCode();
 
             // Update the access code in the simulation_groups table
-            const updatedGroup = await sqlConnection`
+            await sqlConnection`
               UPDATE "simulation_groups"
               SET group_access_code = ${newAccessCode}
               WHERE simulation_group_id = ${simulationGroupId}

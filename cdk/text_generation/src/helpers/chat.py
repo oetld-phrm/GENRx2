@@ -3118,7 +3118,7 @@ def extract_text_from_file(file_bytes: bytes, file_extension: str) -> str:
             try:
                 os.unlink(tmp_path)
             except OSError:
-                pass
+                pass  # Temp file may already be removed
     except Exception as e:
         logger.error(f"Failed to extract text from file (ext={ext}): {e}")
         return ""

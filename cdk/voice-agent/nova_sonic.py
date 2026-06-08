@@ -340,7 +340,7 @@ class NovaSonic:
                 try:
                     pg_conn_pool.putconn(conn)
                 except Exception:
-                    pass
+                    pass  # Connection may already be returned or invalid
             
         return ""
 
@@ -1064,7 +1064,7 @@ class NovaSonic:
             try:
                 pg_conn_pool.putconn(conn, close=True)
             except Exception:
-                pass
+                pass  # Connection may already be invalid; nothing to clean up
             return None
 
     # ------------------------------------------------------------------
@@ -1121,7 +1121,7 @@ class NovaSonic:
                         try:
                             await self.stream.input_stream.close()
                         except Exception:
-                            pass
+                            pass  # Stream may already be closed
 
                 elif msg_type == "set_voice":
                     voice_id = msg.get("voice_id")

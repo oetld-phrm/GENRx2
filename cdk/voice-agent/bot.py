@@ -94,7 +94,7 @@ async def websocket_handler(websocket, context):
         try:
             await websocket.close()
         except Exception:
-            pass
+            pass  # WebSocket may already be disconnected
         logger.info("WebSocket connection closed")
 
 

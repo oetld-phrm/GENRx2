@@ -47,12 +47,6 @@ exports.handler = async (event, context) => {
     logger.info("Database connection initialized");
   }
 
-  // Function to format student full names (lowercase and spaces replaced with "_")
-  const formatNames = (name) => {
-    return name.toLowerCase().replace(/\s+/g, "_");
-  };
-
-  let data;
   try {
     const pathData = event.httpMethod + " " + event.resource;
     switch (pathData) {
@@ -63,7 +57,6 @@ exports.handler = async (event, context) => {
             username,
             first_name,
             last_name,
-            preferred_name,
           } = event.queryStringParameters;
 
           try {
@@ -1618,7 +1611,6 @@ exports.handler = async (event, context) => {
             `;
 
             // Step 4: Get user_id from the authorizer for engagement logging
-            const userId = cognito_id;
             const userResult = await sqlConnection`
               SELECT user_id FROM "users"
               WHERE user_id = (

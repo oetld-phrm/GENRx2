@@ -120,8 +120,6 @@ class MockEmbeddingsModel:
 
     def _hash_to_vector(self, text: str) -> list[float]:
         """Generate a deterministic unit vector from text via SHA-256 hashing."""
-        # Use SHA-256 to get enough bytes for the vector
-        h = hashlib.sha256(text.encode("utf-8")).digest()
         # Expand hash to fill dimension using repeated hashing
         raw_bytes = b""
         seed = text.encode("utf-8")

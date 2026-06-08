@@ -13,52 +13,52 @@ from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWith
 print(f"🔍 BOTO3 VERSION: {boto3.__version__}", flush=True)
 try:
     print(f"🔍 BOTOCORE VERSION: {botocore.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 BOTOCORE VERSION: Unable to determine", flush=True)
 try:
     import smithy_aws_core
     print(f"🔍 SMITHY_AWS_CORE VERSION: {smithy_aws_core.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 SMITHY_AWS_CORE VERSION: Unable to determine", flush=True)
 try:
     import aws_sdk_bedrock_runtime
     print(f"🔍 AWS_SDK_BEDROCK_RUNTIME VERSION: {aws_sdk_bedrock_runtime.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 AWS_SDK_BEDROCK_RUNTIME VERSION: Unable to determine", flush=True)
 try:
     import langchain_community
     print(f"🔍 LANGCHAIN_COMMUNITY VERSION: {langchain_community.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 LANGCHAIN_COMMUNITY VERSION: Unable to determine", flush=True)
 try:
     import langchain_core
     print(f"🔍 LANGCHAIN_CORE VERSION: {langchain_core.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 LANGCHAIN_CORE VERSION: Unable to determine", flush=True)
 try:
     import langchain_aws
     print(f"🔍 LANGCHAIN_AWS VERSION: {langchain_aws.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 LANGCHAIN_AWS VERSION: Unable to determine", flush=True)
 try:
     import pgvector
     print(f"🔍 PGVECTOR VERSION: {pgvector.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 PGVECTOR VERSION: Unable to determine", flush=True)
 try:
     import requests
     print(f"🔍 REQUESTS VERSION: {requests.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 REQUESTS VERSION: Unable to determine", flush=True)
 try:
     import smithy_core
     print(f"🔍 SMITHY_CORE VERSION: {smithy_core.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 SMITHY_CORE VERSION: Unable to determine", flush=True)
 try:
     import aws_sdk_signers
     print(f"🔍 AWS_SDK_SIGNERS VERSION: {aws_sdk_signers.__version__}", flush=True)
-except:
+except Exception:
     print(f"🔍 AWS_SDK_SIGNERS VERSION: Unable to determine", flush=True)
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
 from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
@@ -707,9 +707,6 @@ VOICE MODE OVERRIDE (IMPORTANT):
                                         print(json.dumps({"type": "text", "text": completion_msg}), flush=True)
                                 except Exception as fallback_error:
                                     logger.error(f"Fallback diagnosis evaluation also failed: {fallback_error}")
-                    # Skip diagnosis evaluation for now
-                    # if self.llm_completion:
-                    #     asyncio.create_task(self._evaluate_diagnosis_async(text))
 
             print(f"🔍 DEBUG: Final role processing - Role: {self.role}, Text length: {len(text)}", flush=True)
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
@@ -767,120 +764,7 @@ VOICE MODE OVERRIDE (IMPORTANT):
             logger.error("Guardrail check failed (%s): %s", source, e)
             # Fail open — don't block the conversation if the guardrail API is unreachable
             return True, None
-    
-    # ── Empathy prompt methods disabled — may be re-enabled later ───────────
-    # def _get_empathy_prompt(self):
-    #     """Retrieve the latest empathy prompt from the empathy_prompt_history table."""
-    #     ...
-    #
-    # def _get_default_empathy_prompt(self):
-    #     """Default empathy evaluation prompt."""
-    #     ...
-    # ── End empathy prompt methods ──────────────────────────────────────────
-    
-    # ── Empathy evaluation disabled — may be re-enabled later ──────────────
-    # async def _evaluate_empathy_async(self, user_text):
-    #     """Async empathy evaluation to reduce blocking"""
-    #     try:
-    #         patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-    #         bedrock_client = self._get_bedrock_client()
-    #         
-    #         # Get empathy prompt from database
-    #         empathy_prompt_template = self._get_empathy_prompt()
-    #         
-    #         # Format the prompt with actual values
-    #         evaluation_prompt = empathy_prompt_template.format(
-    #             patient_context=patient_context,
-    #             user_text=user_text
-    #         )
-    #         
-    #         body = {"messages": [{"role": "user", "content": [{"text": evaluation_prompt}]}], "inferenceConfig": {"temperature": 0.1, "maxTokens": 600}}
-    #         
-    #         # Run in thread pool to avoid blocking
-    #         loop = asyncio.get_event_loop()
-    #         response = await loop.run_in_executor(None, lambda: bedrock_client.invoke_model(
-    #             modelId="amazon.nova-lite-v1:0",  # Use faster model
-    #             contentType="application/json", 
-    #             accept="application/json", 
-    #             body=json.dumps(body)
-    #         ))
-    #         
-    #         result = json.loads(response["body"].read())
-    #         response_text = result["output"]["message"]["content"][0]["text"]
-    #         
-    #         json_start = response_text.find('{')
-    #         json_end = response_text.rfind('}') + 1
-    #         
-    #         if json_start != -1 and json_end > json_start:
-    #             json_text = response_text[json_start:json_end]
-    #             empathy_result = json.loads(json_text)
-    #             # Async DB save
-    #             await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, empathy_result)
-    #             empathy_feedback = self._build_empathy_feedback(empathy_result)
-    #             if empathy_feedback:
-    #                 print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
-    #                 # Also send raw empathy data for frontend processing
-    #                 print(json.dumps({"type": "empathy_data", "content": json.dumps(empathy_result)}), flush=True)
-    #                     
-    #     except Exception as e:
-    #         print(f"Empathy evaluation failed: {e}", flush=True)
-    #         try:
-    #             loop = asyncio.get_event_loop()
-    #             await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
-    #         except:
-    #             pass
-    
-    # async def _is_empathy_enabled(self):
-    #     """Check if empathy evaluation is enabled for this simulation group via API"""
-    #     try:
-    #         # Get simulation_group_id from session
-    #         conn = get_pg_connection()
-    #         cursor = conn.cursor()
-    #         cursor.execute('SELECT simulation_group_id FROM sessions WHERE session_id = %s', (self.session_id,))
-    #         result = cursor.fetchone()
-    #         cursor.close()
-    #         pg_conn_pool.putconn(conn)
-    #         
-    #         if not result:
-    #             logger.warning(f"🧠 No session found for {self.session_id}, defaulting to disabled")
-    #             return False
-    #             
-    #         simulation_group_id = result[0]
-    #         
-    #         # Call API endpoint
-    #         api_endpoint = os.environ.get('API_ENDPOINT')
-    #         if not api_endpoint:
-    #             logger.warning("API_ENDPOINT not set, defaulting to disabled")
-    #             return False
-    #         url = f"{api_endpoint}student/empathy_enabled?simulation_group_id={simulation_group_id}"
-    #         
-    #         loop = asyncio.get_event_loop()
-    #         response = await loop.run_in_executor(None, lambda: requests.get(url, timeout=5))
-    #         if response.status_code == 200:
-    #             data = response.json()
-    #             empathy_enabled = data.get('empathy_enabled', False)
-    #             logger.info(f"🧠 Empathy enabled status for group {simulation_group_id}: {empathy_enabled}")
-    #             return empathy_enabled
-    #         else:
-    #             logger.warning(f"🧠 API call failed with status {response.status_code}, defaulting to disabled")
-    #             return False
-    #             
-    #     except Exception as e:
-    #         logger.error(f"Error checking empathy enabled status: {e}")
-    #         return False
-    
-    # async def _check_and_evaluate_empathy(self, user_text):
-    #     """Check if empathy is enabled and evaluate if so"""
-    #     try:
-    #         if await self._is_empathy_enabled():
-    #             logger.info(f"🧠 Empathy enabled, evaluating empathy for voice input")
-    #             await self._evaluate_empathy_async(user_text)
-    #         else:
-    #             logger.info(f"🧠 Empathy disabled, skipping evaluation for voice input")
-    #     except Exception as e:
-    #         logger.error(f"Error in empathy check and evaluation: {e}")
-    # ── End empathy evaluation ──────────────────────────────────────────────
-    
+
     def _clean_transcript(self, text):
         """Basic capitalization and whitespace cleanup for voice transcripts.
 
@@ -978,8 +862,8 @@ VOICE MODE OVERRIDE (IMPORTANT):
             logger.error(f"Error saving message: {e}")
             try:
                 pg_conn_pool.putconn(conn, close=True)  # Close bad connection
-            except:
-                pass
+            except Exception:
+                pass  # Connection may already be invalid; nothing to clean up
             return None
 
 
@@ -1009,8 +893,8 @@ async def handle_stdin(nova_client, reader):
                 if nova_client.stream:
                     try:
                         await nova_client.stream.input_stream.close()
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Stream may already be closed
             elif msg["type"] == "set_voice":
                 voice_id = msg.get("voice_id")
                 print(f"🎭 Received voice change request: {voice_id}", flush=True)

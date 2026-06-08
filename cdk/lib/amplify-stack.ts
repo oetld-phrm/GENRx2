@@ -1,7 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import * as amplify from "aws-cdk-lib/aws-amplify";
 import * as ssm from "aws-cdk-lib/aws-ssm";
-import * as route53 from "aws-cdk-lib/aws-route53";
 import { Construct } from "constructs";
 import { ApiServiceStack } from "./api-service-stack";
 import { getSocketUrlSsmParam } from "./ecs-socket-stack";

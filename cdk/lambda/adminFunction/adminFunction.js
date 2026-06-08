@@ -57,12 +57,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Function to format student full names (lowercase and spaces replaced with "_")
-  const formatNames = (name) => {
-    return name.toLowerCase().replace(/\s+/g, "_");
-  };
-
-  let data;
   try {
     const pathData = event.httpMethod + " " + event.resource;
     switch (pathData) {

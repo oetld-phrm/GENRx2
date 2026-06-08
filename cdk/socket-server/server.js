@@ -3,8 +3,6 @@ const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { spawn } = require("child_process");
-const fs = require("fs");
-const path = require("path");
 const WebSocket = require("ws");
 const { verifyToken, getStsCredentials } = require("./auth");
 const { SignatureV4 } = require("@smithy/signature-v4");
@@ -180,31 +178,6 @@ function generateTurnCredentials(username, sharedSecret, ttlSeconds = 86400) {
   hmac.update(turnUsername);
   const turnPassword = hmac.digest("base64");
   return { username: turnUsername, credential: turnPassword };
-}
-
-/**
- * Build the ICE server configuration array for a given user.
- * Reads STUN_SERVER_URL, TURN_SERVER_URL, and TURN_SHARED_SECRET from env.
- * @param {string} userId — authenticated user id to scope TURN credentials
- * @returns {Array<{urls: string, username?: string, credential?: string}>}
- */
-function getIceServers(userId) {
-  const stunUrl = process.env.STUN_SERVER_URL || "stun:stun.l.google.com:19302";
-  const turnUrl = process.env.TURN_SERVER_URL;
-  const turnSecret = process.env.TURN_SHARED_SECRET;
-
-  const iceServers = [{ urls: stunUrl }];
-
-  if (turnUrl && turnSecret) {
-    const creds = generateTurnCredentials(userId, turnSecret);
-    iceServers.push({
-      urls: turnUrl,
-      username: creds.username,
-      credential: creds.credential,
-    });
-  }
-
-  return iceServers;
 }
 
 // ─── Voice Preview Rate Limiting ──────────────────────────────────────────────

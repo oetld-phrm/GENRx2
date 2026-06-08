@@ -8,18 +8,14 @@ import { Construct } from "constructs";
 import { Duration } from "aws-cdk-lib";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import {
-  Architecture,
   Code,
-  Function,
   LayerVersion,
   Runtime,
 } from "aws-cdk-lib/aws-lambda";
 //import { VpcStack } from './vpc-stack';
 import * as cognito from "aws-cdk-lib/aws-cognito";
-import { CfnJson } from "aws-cdk-lib";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
-import { parse, stringify } from "yaml";
 import { Fn } from "aws-cdk-lib";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import * as s3 from "aws-cdk-lib/aws-s3";

@@ -21,7 +21,7 @@
   - [Enable DynamoDB TTL](#enable-dynamodb-ttl)
   - [Request SES Production Access (Optional)](#request-ses-production-access-optional)
   - [Build the Amplify App](#build-the-amplify-app)
-  - [Deploy the Voice Agent (Optional)](#deploy-the-voice-agent-optional)
+  - [Deploy the Voice Agent](#deploy-the-voice-agent)
   - [Visit the Web App](#visit-the-web-app)
 - [Cleanup](#cleanup)
 - [Troubleshooting](#troubleshooting)
@@ -647,9 +647,9 @@ After the first deployment, Amplify needs to run its initial build:
 3. If the build has not triggered automatically, click **Run build** on the `main` branch.
 4. Wait for the build to complete (typically 3–5 minutes).
 
-### Deploy the Voice Agent (Optional)
+### Deploy the Voice Agent
 
-The voice agent runs on **Amazon Bedrock AgentCore** and requires the CDK stacks to be deployed first (since the CI/CD pipeline builds and pushes the voice-agent Docker image to ECR). Follow this order of operations:
+The voice agent runs on **Amazon Bedrock AgentCore** and is required for the voice mode functionality. It requires the CDK stacks to be deployed first (since the CI/CD pipeline builds and pushes the voice-agent Docker image to ECR). Follow this order of operations:
 
 #### Step A: Complete the Initial CDK Deployment
 

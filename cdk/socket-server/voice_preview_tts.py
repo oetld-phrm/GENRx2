@@ -324,8 +324,6 @@ async def handle_stdin(stream, prompt_name, done_event: asyncio.Event):
                     }
                 }
             })
-            audio_content_name = None
-            got_audio = True
             # Signal that the user is done — one exchange only
             done_event.set()
             break
@@ -425,7 +423,7 @@ async def run(voice_id: str):
         await send_event(stream, {"event": {"sessionEnd": {}}})
         await stream.input_stream.close()
     except Exception:
-        pass
+        pass  # Stream may already be closed
 
     emit({"type": "done"})
 
