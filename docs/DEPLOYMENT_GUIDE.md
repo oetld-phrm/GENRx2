@@ -1,7 +1,7 @@
 # Deployment Guide
 
 > **Type:** Procedural Guide
-> **Last updated:** 2026-06-04
+> **Last updated:** 2026-06-08
 
 ## Table of Contents
 
@@ -14,6 +14,7 @@
   - [Step 4: Upload Secrets and Parameters](#step-4-upload-secrets-and-parameters)
   - [Step 5: Bootstrap CDK](#step-5-bootstrap-cdk)
   - [Step 6: Deploy Stacks](#step-6-deploy-stacks)
+  - [Monitoring the Deployment](#monitoring-the-deployment)
 - [Verification](#verification)
 - [Post-Deployment](#post-deployment)
   - [Push Initial Docker Images](#push-initial-docker-images)
@@ -223,6 +224,8 @@ aws ssm put-parameter ^
 #### Parameter 2: /GenRx/AllowedEmailDomains
 
 Create a comma-separated list of email domains allowed to sign up (e.g., `gmail.com,ubc.ca`). The Cognito pre-signup Lambda reads this parameter to block registrations from unauthorized domains. Store it as a `SecureString` since it controls access.
+
+> **Important:** The value must be comma-separated with no spaces between domains. Use `gmail.com,ubc.ca`, not `gmail.com, ubc.ca`. A space before a domain will cause sign-up validation to fail silently for that domain.
 
 <details>
 <summary>macOS / Linux</summary>
@@ -452,13 +455,23 @@ CDK must be bootstrapped in **two regions**: your deployment region and `us-east
 
 ```bash
 # Bootstrap your primary deployment region
-cdk bootstrap aws://<YOUR-ACCOUNT-ID>/<YOUR-REGION> --profile <YOUR-AWS-PROFILE>
+cdk bootstrap aws://<YOUR-ACCOUNT-ID>/<YOUR-REGION> \
+  -c StackPrefix=GenRx \
+  -c githubRepo=GenRx \
+  -c githubBranch=main \
+  --profile <YOUR-AWS-PROFILE>
 
 # Bootstrap us-east-1 (required for the CloudFront WAF stack)
-cdk bootstrap aws://<YOUR-ACCOUNT-ID>/us-east-1 --profile <YOUR-AWS-PROFILE>
+cdk bootstrap aws://<YOUR-ACCOUNT-ID>/us-east-1 \
+  -c StackPrefix=GenRx \
+  -c githubRepo=GenRx \
+  -c githubBranch=main \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 > **Note:** If your deployment region IS `us-east-1`, you only need to run the command once. The second bootstrap is only needed when deploying to a different region (e.g., `ca-central-1`).
+
+> **If bootstrapping fails**, ensure you are also passing the CDK context flags (`-c StackPrefix`, `-c githubRepo`, `-c githubBranch`) just like the deploy command. Without these, CDK may fail to synthesize the app before bootstrapping.
 
 ### Step 6: Deploy Stacks
 
@@ -524,6 +537,18 @@ The CDK app creates the following stacks in dependency order:
 
 > **Note:** `--all` handles the dependency order automatically. Deployment takes approximately 30–45 minutes on first run.
 
+### Monitoring the Deployment
+
+While the stacks deploy, you can monitor progress in real time through the AWS Console:
+
+1. Open the [CloudFormation console](https://console.aws.amazon.com/cloudformation/) in your deployment region.
+2. You will see each stack appear as it begins creating (e.g., `GenRx-VpcStack`, `GenRx-Database`, etc.).
+3. Click into any stack and go to the **Events** tab to see individual resource creation progress.
+4. A stack showing `CREATE_IN_PROGRESS` is still deploying. Wait for `CREATE_COMPLETE`.
+5. If a stack shows `ROLLBACK_IN_PROGRESS` or `CREATE_FAILED`, check the Events tab for the specific resource and error message that caused the failure. Do not attempt to delete or redeploy the stack until it reaches `ROLLBACK_COMPLETE`. CloudFormation must finish rolling back all provisioned resources before it can accept new operations on that stack.
+
+> **Tip:** Also check the [CloudFormation console in us-east-1](https://us-east-1.console.aws.amazon.com/cloudformation/) for the `{StackPrefix}-CloudFrontWaf` stack, since it deploys to that region separately.
+
 ---
 
 ## Verification
@@ -568,7 +593,8 @@ The `DynamoDB-Conversation-Table` is created automatically on the first Lambda i
 aws dynamodb update-time-to-live \
   --table-name DynamoDB-Conversation-Table \
   --time-to-live-specification "Enabled=true, AttributeName=expireAt" \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -580,7 +606,8 @@ aws dynamodb update-time-to-live \
 aws dynamodb update-time-to-live `
   --table-name DynamoDB-Conversation-Table `
   --time-to-live-specification "Enabled=true, AttributeName=expireAt" `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -592,7 +619,8 @@ aws dynamodb update-time-to-live `
 aws dynamodb update-time-to-live ^
   --table-name DynamoDB-Conversation-Table ^
   --time-to-live-specification "Enabled=true, AttributeName=expireAt" ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -803,6 +831,38 @@ aws secretsmanager update-secret \
   --secret-string '{"my-github-token": "<NEW-TOKEN>"}' \
   --region <YOUR-REGION>
 ```
+
+### GitHub token secret not stored as valid JSON
+
+**Cause:** On some systems (particularly Windows), escape characters can cause the secret value to be stored as malformed JSON rather than a proper `{"my-github-token": "..."}` object. This happens due to differences in how shells handle quotes and escape characters across Windows CMD, PowerShell, macOS, and Linux.
+
+**Symptoms:** CodePipeline or Amplify fails with authentication errors even though the token is correct. Retrieving the secret value shows it is not valid JSON (e.g., extra backslashes, missing quotes, or the string stored as plain text instead of a JSON object).
+
+**Fix:** Delete the secret and recreate it:
+
+```bash
+# Delete the malformed secret (force immediate deletion)
+aws secretsmanager delete-secret \
+  --secret-id github-personal-access-token \
+  --force-delete-without-recovery \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
+
+# Wait a few seconds, then recreate it
+aws secretsmanager create-secret \
+  --name github-personal-access-token \
+  --secret-string '{"my-github-token": "<YOUR-GITHUB-PAT>"}' \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+> **Tip:** After creating the secret, verify the stored value is valid JSON by retrieving it:
+>
+> ```bash
+> aws secretsmanager get-secret-value --secret-id github-personal-access-token --region <YOUR-REGION> --profile <YOUR-AWS-PROFILE> --query SecretString --output text
+> ```
+>
+> The output should be exactly: `{"my-github-token": "ghp_xxxxx..."}`
 
 ### Lambda functions return errors after first deploy
 
