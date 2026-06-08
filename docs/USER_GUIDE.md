@@ -62,6 +62,7 @@ Select a simulation group from your dashboard to view its available patient pers
 
 Click on a patient persona to open the patient dashboard, then select **Start Chat** to begin a new conversation where you can enter your clinical questions and assessments in the message field. This enables simulated pharmacist–patient interactions, allowing you to practice clinical questioning and apply clinical reasoning, with the AI patient responding based on its configured case materials and persona.
 
+<img width="956" height="410" alt="Screenshot 2026-06-08 12583" src="https://github.com/user-attachments/assets/2fb6b4a3-fbad-4931-8c70-d9478a51b58d" />
 
 ### Using Voice Chat
 
