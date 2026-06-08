@@ -54,9 +54,9 @@ Use the access code provided by your instructor (shared in class or via your ins
 
 ### Viewing Available Patients
 
-1. Select a simulation group from your dashboard.
-2. Browse the list of patient personas available in that group.
-3. Each patient card displays the patient's name, age, and gender to help you identify the scenario.
+Select a simulation group from your dashboard to view its available patient personas, then browse the list where each patient card displays the patient’s name, age, and gender to help you identify the scenario.
+
+
 
 ### Starting a Chat Session
 
