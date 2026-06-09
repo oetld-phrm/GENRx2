@@ -34,7 +34,7 @@ GenRx supports three user roles, each with different capabilities:
 |------|-------------|
 | **Student** | Join simulation groups, interact with virtual patients (text and voice), submit conclusions, view debriefs and chat history |
 | **Instructor** | Create and manage simulation groups, configure patients, include/exclude bank items, and review student work and analytics |
-| **Admin** | Everything instructors can do, plus: manage organizations, enroll/remove instructors, create/edit/delete bank items at the org level, manage prompts, and view student issues and feedback |
+| **Admin** | Everything instructors can do, plus: manage organizations, enroll/remove instructors, create/edit/delete bank items at the organization level, manage prompts, and view student issues and feedback |
 
 Your role determines which dashboard you see after logging in. If you have questions about your assigned role, contact your institution's administrator.
 
@@ -60,6 +60,8 @@ Select a simulation group from your dashboard to view its available patient pers
 
 Click on a patient persona to open the patient dashboard, then select **Start New Interaction** to begin a new conversation where you can enter your clinical questions and assessments in the message field. This enables simulated pharmacist–patient interactions, allowing you to practice clinical questioning and apply clinical reasoning, with the AI patient responding based on its configured case materials and persona.
 
+> **Tip:** For best results, ask only one clinical question per message. This allows the system to accurately match your questions against the evaluation criteria.
+
 <img width="954" height="408" alt="image" src="media/student-chat-text-mode.png" />
 
 ### Using Learning Media
@@ -77,13 +79,13 @@ If voice is enabled for the patient, a **Voice** option appears in the chat inte
 
 ### Concluding an Interaction
 
-After gathering all necessary information, click **Conclude Interaction**. Enter your clinical diagnosis, recommendations, and rationale in the provided form, then submit to complete the session. A debrief will be generated to evaluate your interaction.
+After gathering all necessary information, click **Conclude Interaction**. Enter the drug therapy problems you identified during the interaction, your recommendations, and rationale in the provided form, then submit to complete the session. A debrief will be generated to evaluate your interaction.
 
 <img width="954" height="408" alt="image" src="media/student-conclude-interactions.png" />
 
 ### Viewing Your Debrief
 
-The debrief includes an AI-generated summary and evaluation of the user’s clinical interview, including identifying gaps in clinical reasoning, highlighting missed opportunities, and evaluating student assessments. A notice is included indicating that this content is AI-generated and should be used as guidance alongside your own clinical judgment, with any questions directed to your instructor.
+The debrief includes an AI-generated summary and evaluation of the user’s clinical interview, including identifying gaps in clinical reasoning, highlighting missed opportunities, and evaluating student submissions. A notice is included indicating that this content is AI-generated and should be used as guidance alongside your own clinical judgment, with any questions directed to your instructor.
   
 <img width="954" height="408" alt="image" src="media/student-chat-view-debrief.png" />
 
@@ -262,7 +264,7 @@ To create a new organization, click **Create New Organization** and fill in the 
 
 <img width="954" height="408" alt="image" src="media/admin-create-new-org.png" />
 
-Once inside an organization, admins can view all simulation groups within that org. The **Manage Banks** button at the top right provides access to create, edit, and delete bank items (key questions, DTPs, recommendations) at the organization level. These are then available for inclusion/exclusion across all simulation groups in that organization.
+Once inside an organization, admins can view all simulation groups within that organization. The **Manage Banks** button at the top right provides access to create, edit, and delete bank items (key questions, DTPs, recommendations) at the organization level. These are then available for inclusion/exclusion across all simulation groups in that organization.
 
 <img width="954" height="408" alt="image" src="media/admin-pharmacy-org.png" />
 
@@ -383,7 +385,7 @@ A: When creating or editing a patient, use the file upload area to attach PDF do
 A: Yes. Navigate to the organization page and manage instructor assignments from there. Removing an instructor does not delete their simulation groups.
 
 **Q: How do question banks relate to individual patients?**
-A: Bank items (key questions, DTPs, recommendations) are created at the organization level by admins, giving all simulation groups in that organization access to a shared pool. Within a simulation group, instructors or admins can then include or exclude any of these items at two levels: global (applies to all patients in that sim group) or patient-specific (applies only to a particular patient). This means you define items once at the org level and selectively apply them where needed: globally for broad coverage, or per-patient for scenario-specific evaluations. During a student interaction, only the items that have been included (either globally or for that specific patient) are used to evaluate the student's performance.
+A: Bank items (key questions, DTPs, recommendations) are created at the organization level by admins, giving all simulation groups in that organization access to a shared pool. Within a simulation group, instructors or admins can then include or exclude any of these items at two levels: global (applies to all patients in that sim group) or patient-specific (applies only to a particular patient). This means you define items once at the organization level and selectively apply them where needed: globally for broad coverage, or per-patient for scenario-specific evaluations. During a student interaction, only the items that have been included (either globally or for that specific patient) are used to evaluate the student's performance.
 
 ---
 
