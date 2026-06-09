@@ -84,9 +84,7 @@ The debrief includes an AI-generated summary and evaluation of the user’s clin
 
 ### Reviewing Chat History
 
-1. From your dashboard, click **Chat History**.
-2. Browse past sessions organized by simulation group and patient.
-3. Select any session to review the full conversation transcript and debrief.
+Students can access **Chat History** from their dashboard to browse past sessions organized by simulation group and patient, then select any session to review the full conversation transcript and debrief.
 
 ---
 
