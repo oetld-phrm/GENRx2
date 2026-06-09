@@ -78,13 +78,7 @@ After gathering all necessary information, click **Conclude Interaction**. Enter
 
 ### Viewing Your Debrief
 
-1. After concluding an interaction, navigate to your **Chat History**.
-2. Select the completed session to view the AI-generated debrief.
-3. The debrief includes:
-   - A summary of your conversation
-   - Scores against key clinical questions
-   - Comparison with the answer key (if configured by your instructor)
-   - Areas for improvement
+The debrief includes an AI-generated summary and evaluation of the user’s clinical interview, including identifying gaps in clinical reasoning, highlighting missed opportunities, and evaluating student assessments. A notice is included indicating that this content is AI-generated and should be used as guidance alongside your own clinical judgment, with any questions directed to your instructor.
   
      <img width="481" height="361" alt="image" src="https://github.com/user-attachments/assets/66a28474-d7a6-4e5c-89a3-6436ea0b9591" />
 
