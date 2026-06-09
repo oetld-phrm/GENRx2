@@ -44,11 +44,11 @@ Your role determines which dashboard you see after logging in. If you have quest
 
 ## Student Workflow
 
-As a student, you practice clinical assessment skills by interacting with AI-powered patient personas in a safe, simulated environment.
+Students' are able to practice clinical assessment skills by interacting with AI-powered patient personas in a safe, simulated environment.
 
 ### Joining a Simulation Group
 
-Use the access code provided by your instructor (shared in class or via your institution’s Learning Management System) to join a group from your **Student Dashboard** by clicking **Join Group**, entering the code, and confirming. Once completed, the simulation group will appear on your dashboard with its available patient personas.
+Use the access code provided by your instructor (shared in class or via your institution’s Learning Management System) to join a group from the **Student Dashboard** by clicking **Join Group**, entering the code, and confirming. Once completed, the simulation group will appear in the users dashboard with its available patient personas.
 
 <img width="1883" height="817" alt="Screenshot 2026-06-08 115437" src="https://github.com/user-attachments/assets/a62953fc-483f-45d5-862f-40a78c60a331" />
 
@@ -63,6 +63,11 @@ Select a simulation group from your dashboard to view its available patient pers
 Click on a patient persona to open the patient dashboard, then select **Start Chat** to begin a new conversation where you can enter your clinical questions and assessments in the message field. This enables simulated pharmacist–patient interactions, allowing you to practice clinical questioning and apply clinical reasoning, with the AI patient responding based on its configured case materials and persona.
 
 <img width="956" height="410" alt="Screenshot 2026-06-08 12583" src="https://github.com/user-attachments/assets/2fb6b4a3-fbad-4931-8c70-d9478a51b58d" />
+
+### Using Learning Media
+Students can engage with embedded media (e.g., H5P) within virtual patient scenarios to support the development of physical assessment and clinical skills.
+
+
 
 ### Using Voice Chat
 
@@ -80,13 +85,13 @@ After gathering all necessary information, click **Conclude Interaction**. Enter
 
 The debrief includes an AI-generated summary and evaluation of the user’s clinical interview, including identifying gaps in clinical reasoning, highlighting missed opportunities, and evaluating student assessments. A notice is included indicating that this content is AI-generated and should be used as guidance alongside your own clinical judgment, with any questions directed to your instructor.
   
-     <img width="481" height="361" alt="image" src="https://github.com/user-attachments/assets/66a28474-d7a6-4e5c-89a3-6436ea0b9591" />
+<img width="956" height="406" alt="image" src="https://github.com/user-attachments/assets/90706a2d-40a7-437e-96ab-052f8af708d8" />
 
 ### Reviewing Chat History
 
-1. From your dashboard, click **Chat History**.
-2. Browse past sessions organized by simulation group and patient.
-3. Select any session to review the full conversation transcript and debrief.
+From their dashboard, students can access past sessions, browse by simulation group and patient, and select any session to review the full interaction transcript and debrief.
+
+<img width="954" height="408" alt="image" src="https://github.com/user-attachments/assets/e9983277-16a1-4491-80f5-d8d49cabb0c5" />
 
 ---
 
