@@ -186,9 +186,14 @@ export class ApiServiceStack extends cdk.Stack {
      * When SesVerifiedDomain is provided, CDK looks up the Route 53 hosted zone
      * and creates an SES EmailIdentity with automatic DKIM/MAIL FROM DNS records.
      *
-     * Without it, Cognito uses its built-in email (50/day sandbox limit).
+     * Skip identity creation with SesSkipIdentityCreation=true when the identity
+     * already exists (e.g., created by another stack in the same account).
+     *
+     * Without SesVerifiedDomain, Cognito uses its built-in email (50/day sandbox limit).
      */
-    if (sesVerifiedDomain) {
+    const skipIdentityCreation = this.node.tryGetContext("SesSkipIdentityCreation") === "true";
+
+    if (sesVerifiedDomain && !skipIdentityCreation) {
       const hostedZone = route53.HostedZone.fromLookup(
         this,
         `${id}-HostedZone`,
