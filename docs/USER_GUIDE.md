@@ -72,10 +72,7 @@ If voice is enabled for the patient, a **Voice** option appears in the chat inte
 
 ### Concluding an Interaction
 
-1. When you have gathered enough information, click **Conclude Interaction**.
-2. Enter your clinical recommendation or diagnosis in the provided form.
-3. Submit your recommendation to end the session.
-4. The system generates a debrief evaluating your performance.
+After gathering all necessary information, click **Conclude Interaction**. Enter your clinical recommendation or diagnosis in the provided form, then submit to complete the session. A debrief will be generated to evaluate your interaction.
 
 ### Viewing Your Debrief
 
