@@ -72,6 +72,8 @@ A React SPA built with Vite is hosted on AWS Amplify. Amplify auto-builds from t
 
 Amazon Cognito User Pool handles sign-up, sign-in, and email verification. A custom Lambda authorizer (`jwtAuthorizer.js`) validates JWTs on every API request and injects `userId` and `email` into the request context. Roles are stored in the database, not in JWT claims.
 
+**Email delivery** is configurable. If the deployer sets the `SesVerifiedDomain` CDK context variable, Cognito sends verification codes and password-reset emails through Amazon SES using a verified domain identity (e.g., `noreply@yourdomain.com`). CDK automatically creates the SES Email Identity and configures DKIM/MAIL FROM DNS records via Route 53. Without `SesVerifiedDomain`, Cognito falls back to its built-in email service, which is limited to 50 emails per day (sandbox). See [Custom Domain & SES Setup](./CUSTOM_DOMAIN_AND_SES.md) for configuration details.
+
 ### API Layer
 
 Amazon API Gateway (REST) routes requests to monolithic Lambda handlers per role: `studentFunction.js`, `instructorFunction.js`, and `adminFunction.js`. Each handler uses `httpMethod + resource` switch routing. An OpenAPI/Swagger definition drives the API Gateway configuration.
@@ -104,7 +106,7 @@ A Docker Lambda (`text_generation`) handles chat, debrief generation, and semant
 
 The voice pipeline uses Amazon Bedrock AgentCore to host a containerized voice agent (`cdk/voice-agent/bot.py`). The ECS Socket.IO server connects to AgentCore via a SigV4-authenticated WebSocket, relaying audio frames between the frontend and the voice agent. The voice agent container uses Nova Sonic 2.0's bidirectional streaming API for real-time speech-to-speech interaction.
 
-A TURN server stack exists in the CDK deployment but is effectively dead code — it was provisioned for a WebRTC-based approach that was superseded by the AgentCore design. It remains available if anyone wants to explore WebRTC in the future. See the [Voice Agent Deep Dive](./VOICE_AGENT_DEEP_DIVE.md) for design decision context.
+ See the [Voice Agent Deep Dive](./VOICE_AGENT_DEEP_DIVE.md) for design decision context.
 
 ### CI/CD Pipeline
 
