@@ -311,5 +311,4 @@ The guardrail ID is stored at `/{StackPrefix}/GenRx/BedrockGuardrailId` in Param
 ## Cross-References
 
 - [Architecture Deep Dive](./ARCHITECTURE_DEEP_DIVE.md) — Overall system architecture including the text generation service
-- [Security Overview](./SECURITY_OVERVIEW.md) — OWASP assessment covering guardrail gaps and prompt injection risks
 - [Deployment Guide](./DEPLOYMENT_GUIDE.md) — Deploying the CDK stacks that provision the guardrail

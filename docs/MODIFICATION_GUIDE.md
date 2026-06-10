@@ -367,7 +367,7 @@ const bedrockLLMParameter = new ssm.StringParameter(
   {
     parameterName: `/${id}/GenRx/BedrockLLMId`,
     description: "Parameter containing the Bedrock LLM ID",
-    stringValue: "anthropic.claude-3-5-sonnet-20241022-v2:0", // ← Change this
+    stringValue: "us.anthropic.claude-sonnet-4-6", // ← Change this
   }
 );
 ```
@@ -391,7 +391,7 @@ const embeddingModelParameter = new ssm.StringParameter(
   {
     parameterName: `/${id}/GenRx/EmbeddingModelId`,
     description: "Parameter containing the Embedding Model ID",
-    stringValue: "amazon.titan-embed-text-v2:0", // ← Change this
+    stringValue: "cohere.embed-v4:0", // ← Change this
   }
 );
 ```
@@ -402,8 +402,8 @@ const embeddingModelParameter = new ssm.StringParameter(
 
 | Parameter | Default Value | Purpose |
 |-----------|---------------|---------|
-| `/{id}/GenRx/BedrockLLMId` | `meta.llama3-70b-instruct-v1:0` | Primary chat and debrief LLM |
-| `/{id}/GenRx/EmbeddingModelId` | `amazon.titan-embed-text-v2:0` | Document and query embeddings |
+| `/{id}/GenRx/BedrockLLMId` | `us.anthropic.claude-sonnet-4-6` | Primary chat and debrief LLM (cross-region inference profile) |
+| `/{id}/GenRx/EmbeddingModelId` | `cohere.embed-v4:0` | Document and query embeddings |
 | `/{id}/GenRx/TableName` | `DynamoDB-Conversation-Table` | DynamoDB table for conversations |
 
 ### Prompt Management

@@ -54,7 +54,7 @@
 
 ## Overview
 
-The GenRx platform is a clinical simulation system for pharmacy education. Students interact with AI-powered patient personas through text and voice chat, practicing clinical assessment skills in a safe environment. The system is built on AWS using CDK for infrastructure-as-code, with a React SPA frontend, monolithic Lambda API handlers, real-time streaming via Socket.IO on ECS Fargate, and AI inference through Amazon Bedrock.
+The GenRx platform is a clinical simulation system for pharmacy education. Students interact with AI-powered patient personas through text and voice chat, practicing clinical assessment skills in a safe environment. The system is built on AWS using CDK for infrastructure-as-code, with a React SPA frontend, monolithic Lambda API handlers, real-time streaming via Socket.IO on ECS Fargate, and AI inference through Amazon Bedrock. DynamoDB provides fast key-value storage for LangChain conversation history and embedding caches, while RDS PostgreSQL holds all relational application data.
 
 ![GenRx Architecture](./architecture-diagram-no-numberings-with-ses.drawio.png)
 
@@ -82,7 +82,13 @@ Both text chat and voice flow through a Socket.IO server running on ECS Fargate.
 
 ### Data Persistence
 
-Amazon RDS PostgreSQL 16 (encrypted at rest) stores all application data. Three RDS Proxy instances (user, table creator, admin) pool connections. The `pgvector` extension enables semantic similarity search on document embeddings.
+**Amazon RDS PostgreSQL 16** (encrypted at rest) stores all application data. Three RDS Proxy instances (user, table creator, admin) pool connections. The `pgvector` extension enables semantic similarity search on document embeddings.
+
+**Amazon DynamoDB** serves two roles in the system:
+
+1. **LangChain conversation history** — The `DynamoDBChatMessageHistory` table stores the rolling message context fed into each LLM call. Both the text generation Lambda and the voice agent read/write here so the AI maintains conversational continuity across turns. Items are keyed by `SessionId` (the chat UUID).
+
+2. **Embedding cache** — Key question embeddings, DTP embeddings, and recommendation embeddings are cached in DynamoDB (keyed by `QCACHE#{session_id}`, `DTPCACHE#{group}#{persona}`, `RECCACHE#{group}#{persona}`) to avoid redundant Cohere API calls. Embeddings are computed once on the first student message or conclude action and reused for all subsequent semantic matching within that session.
 
 ### Object Storage
 
@@ -114,20 +120,23 @@ sequenceDiagram
     participant CF as CloudFront
     participant ECS as Socket.IO Server (ECS)
     participant TG as Text Generation Lambda
+    participant DDB as DynamoDB
     participant Bedrock as Amazon Bedrock
     participant RDS as PostgreSQL (RDS)
 
     Student->>CF: WebSocket connect
     CF->>ECS: Forward connection
     Student->>ECS: Send message (Socket.IO event)
-    ECS->>RDS: Store student message
     ECS->>TG: Invoke text generation
-    TG->>RDS: Fetch persona context & history
+    TG->>RDS: Store student message
+    TG->>DDB: Load conversation history
+    TG->>RDS: Fetch persona context (RAG)
     TG->>Bedrock: LLM inference (streaming)
     Bedrock-->>TG: Token stream
-    TG-->>ECS: Stream tokens
+    TG-->>ECS: Stream tokens (POST /stream-callback)
     ECS-->>Student: Emit tokens (Socket.IO)
-    ECS->>RDS: Store AI response
+    TG->>RDS: Store AI response
+    TG->>DDB: Save AI message to history
 ```
 
 ### Voice Interaction Flow
@@ -649,8 +658,6 @@ recommendations_bank (1) ──── (N) simulation_group_recommendations
 
 ## Cross-References
 
-- [CDK Technical Review](./CDK_TECHNICAL_REVIEW.md) — Infrastructure code review and recommendations
-- [Security Overview](./SECURITY_OVERVIEW.md) — OWASP assessment and remediation roadmap
 - [Voice Agent Deep Dive](./VOICE_AGENT_DEEP_DIVE.md) — Voice architecture and design decisions
 - [Data Ingestion](./DATA_INGESTION.md) — Document processing pipeline and vector store
 - [Deployment Guide](./DEPLOYMENT_GUIDE.md) — Full deployment from scratch

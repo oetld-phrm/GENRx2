@@ -500,4 +500,4 @@ The AgentCore container uses **FastAPI** to accept the WebSocket audio stream na
 
 ---
 
-*This document covers the voice agent architecture and design rationale. For console setup and deployment instructions, see [AGENTCORE_VOICE_AGENT_SETUP.md](AGENTCORE_VOICE_AGENT_SETUP.md). For infrastructure review, see [CDK_TECHNICAL_REVIEW.md](CDK_TECHNICAL_REVIEW.md).*
+*This document covers the voice agent architecture and design rationale. For console setup and deployment instructions, see [AGENTCORE_VOICE_AGENT_SETUP.md](AGENTCORE_VOICE_AGENT_SETUP.md).*

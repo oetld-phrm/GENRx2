@@ -28,7 +28,7 @@ You must update documentation when your code change affects any of the following
 - **Database schema** — New migrations or schema changes require updates to [Database Migrations](./DATABASE_MIGRATIONS.md) and potentially [Architecture Deep Dive](./ARCHITECTURE_DEEP_DIVE.md).
 - **Dependencies** — Adding, removing, or upgrading dependencies requires updates to [Dependency Management](./DEPENDENCY_MANAGEMENT.md).
 - **User-facing behavior** — Changes to workflows, UI, or API contracts visible to students, instructors, or admins require updates to [User Guide](./USER_GUIDE.md).
-- **Security** — Changes to authentication, authorization, guardrails, or content filtering require updates to [Security Overview](./SECURITY_OVERVIEW.md) or [Bedrock Guardrails](./BEDROCK_GUARDRAILS.md).
+- **Security** — Changes to authentication, authorization, guardrails, or content filtering require updates to [Bedrock Guardrails](./BEDROCK_GUARDRAILS.md).
 
 ### Rule of Thumb
 

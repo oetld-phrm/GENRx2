@@ -25,8 +25,6 @@
 - [User Guide](./USER_GUIDE.md) — Student, instructor, and admin workflows
 
 ## Supplementary Documents
-- [CDK Technical Review](./CDK_TECHNICAL_REVIEW.md) — Infrastructure code review and recommendations
-- [Security Overview](./SECURITY_OVERVIEW.md) — OWASP assessment and remediation roadmap
 - [Voice Agent Deep Dive](./VOICE_AGENT_DEEP_DIVE.md) — Voice architecture and design decisions
 - [AgentCore Voice Agent Setup](./AGENTCORE_VOICE_AGENT_SETUP.md) — Console-side voice agent configuration
 
