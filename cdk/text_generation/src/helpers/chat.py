@@ -358,6 +358,10 @@ Use the documents provided as your medical history and symptoms. Be subtle and r
     result = get_llm_output(response, llm_completion)
     
     ai_message_id = save_message_to_db(session_id, persona_id, 'ai', result["llm_output"])
+
+    # Ensure matching threads complete before we return — Lambda freezes
+    # the execution environment on return, killing daemon threads.
+    flush_matching_threads(session_id, timeout=10.0)
     
     return result
 
@@ -478,6 +482,11 @@ def generate_streaming_response(
 
         publish_to_appsync(session_id, {"type": "end", "content": full_response})
         ai_message_id = save_message_to_db(session_id, persona_id, 'ai', full_response)
+
+        # Ensure matching threads complete before we return — Lambda freezes
+        # the execution environment on return, killing daemon threads before
+        # they can write matched_question_ids to the DB.
+        flush_matching_threads(session_id, timeout=10.0)
 
         # Signal the frontend to lock the chat if the patient ended the session
         if "SESSION COMPLETED" in full_response:
@@ -825,6 +834,7 @@ def cache_key_questions(
             table.put_item(Item={
                 "SessionId": f"QCACHE#{session_id}",
                 "questions": [],
+                "cache_version": 2,
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "expireAt": int(time.time()) + (7 * 24 * 60 * 60),
             })
