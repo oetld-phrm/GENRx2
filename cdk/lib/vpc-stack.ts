@@ -129,22 +129,15 @@ export class VpcStack extends Stack {
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
 
-      this.vpc.addInterfaceEndpoint("RDS Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
-      });
-
-      // Add API Gateway VPC endpoint
-      this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-        privateDnsEnabled: true,
-      });
-
       // Free gateway endpoint — routes DynamoDB traffic within the AWS backbone instead of through NAT
       this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
         service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+        subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
+      });
+
+      // Free gateway endpoint — routes S3 traffic within the AWS backbone instead of through NAT
+      this.vpc.addGatewayEndpoint("S3 Endpoint", {
+        service: ec2.GatewayVpcEndpointAwsService.S3,
         subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
       });
 
@@ -190,12 +183,6 @@ export class VpcStack extends Stack {
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
 
-      // Add RDS endpoint to VPC
-      this.vpc.addInterfaceEndpoint(`${id}-RDS Endpoint`, {
-        service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      });
-
       this.vpc.addInterfaceEndpoint(`${id}-SSM Endpoint`, {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
         subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
@@ -205,6 +192,12 @@ export class VpcStack extends Stack {
       // Free gateway endpoint — routes DynamoDB traffic within the AWS backbone instead of through NAT
       this.vpc.addGatewayEndpoint(`${id}-DynamoDB Endpoint`, {
         service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+        subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
+      });
+
+      // Free gateway endpoint — routes S3 traffic within the AWS backbone instead of through NAT
+      this.vpc.addGatewayEndpoint(`${id}-S3 Endpoint`, {
+        service: ec2.GatewayVpcEndpointAwsService.S3,
         subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
       });
     }
