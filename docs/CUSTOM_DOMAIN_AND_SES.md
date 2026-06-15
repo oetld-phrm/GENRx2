@@ -107,26 +107,37 @@ Approval is usually within 24 hours.
 |----------|-------------|----------|
 | `SesVerifiedDomain` | Domain with a Route 53 hosted zone (e.g., `app.YOUR-DOMAIN.com`) | Yes (for SES) |
 | `SesIdentityVerified` | Set to `"true"` after the SES identity is verified | Yes (for Cognito to use SES) |
-| `SesSkipIdentityCreation` | Set to `"true"` to skip SES identity creation (when it already exists in the account) | No |
+| `SesSkipIdentityCreation` | Set to `"true"` **only** if the SES identity was created outside of this CDK stack (e.g., manually or by another stack). See warning below. | No |
 
 All are passed as `-c` context flags at deploy time. They are not set in `cdk.json` to avoid conflicts with first-time deployments that don't have a verified domain yet.
 
+> **⚠️ CRITICAL: Do NOT use `SesSkipIdentityCreation=true` if the SES identity was created by this CDK stack.**
+>
+> When you pass `SesSkipIdentityCreation=true`, CDK removes the `ses.EmailIdentity` resource from the CloudFormation template. CloudFormation interprets this as a resource deletion and **destroys the SES identity from your account**. This causes Cognito's SES email configuration to break, reverting sign-up emails back to the default Cognito sender (50/day limit).
+>
+> Only use this flag if the SES identity was created by a different stack or manually in the console — i.e., it was never part of this stack's CloudFormation template.
+
 ## Day-to-Day Deployment
 
-After initial setup, include the SES flags on every deploy:
+After initial setup, include the SES flags on **every** deploy:
 
 ```bash
 cdk deploy --all \
   -c StackPrefix=<PREFIX> \
   -c githubRepo=<REPO> \
-  -c githubBranch=main \
+  -c githubBranch=<BRANCH> \
   -c SesVerifiedDomain=<YOUR-DOMAIN> \
   -c SesIdentityVerified=true \
-  -c SesSkipIdentityCreation=true \
   --profile <PROFILE>
 ```
 
-> **Tip:** If your environment already owns the SES identity (created it on a prior deploy), always pass `-c SesSkipIdentityCreation=true` to avoid "already exists" errors.
+> **⚠️ You MUST pass `SesVerifiedDomain` and `SesIdentityVerified=true` on every deploy.** If you omit these flags, CDK will:
+> 1. Remove the SES identity resource → CloudFormation deletes it from your account
+> 2. Switch Cognito back to its built-in email sender (50 emails/day limit)
+>
+> There is no way to "lock in" SES — the flags must be present every time.
+
+> **Do NOT pass `SesSkipIdentityCreation=true`** on day-to-day deploys. The SES identity resource must stay in the CloudFormation template so CloudFormation does not delete it.
 
 ## What Gets Created
 
