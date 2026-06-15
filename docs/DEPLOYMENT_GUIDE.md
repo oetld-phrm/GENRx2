@@ -1,7 +1,7 @@
 # Deployment Guide
 
 > **Type:** Procedural Guide
-> **Last updated:** 2026-06-08
+> **Last updated:** 2026-06-15
 
 ## Table of Contents
 
@@ -14,6 +14,7 @@
   - [Step 4: Upload Secrets and Parameters](#step-4-upload-secrets-and-parameters)
   - [Step 5: Bootstrap CDK](#step-5-bootstrap-cdk)
   - [Step 6: Deploy Stacks](#step-6-deploy-stacks)
+  - [VPC Configuration](#vpc-configuration)
   - [Monitoring the Deployment](#monitoring-the-deployment)
 - [Verification](#verification)
 - [Post-Deployment](#post-deployment)
@@ -485,7 +486,7 @@ cdk bootstrap aws://<YOUR-ACCOUNT-ID>/us-east-1 \
 >
 > Everything else is parameterized from there — the custom resource creates whatever name you set, it gets written to the SSM parameter `/{id}/GenRx/TableName`, and the Python Lambdas read it from SSM at runtime. No other code changes needed.
 
-The CDK app requires two context variables at deploy time:
+The CDK app requires two context variables at deploy time, plus optional VPC configuration:
 
 | Context Variable | Description | Required |
 |-----------------|-------------|----------|
@@ -496,6 +497,15 @@ The CDK app requires two context variables at deploy time:
 | `SesVerifiedDomain` | Domain with a Route 53 hosted zone for SES email + Amplify custom domain | No |
 | `SesIdentityVerified` | Set to `"true"` after SES domain is verified (see [Custom Domain & SES](./CUSTOM_DOMAIN_AND_SES.md)) | No |
 | `SesSkipIdentityCreation` | Set to `"true"` to skip SES identity creation (when it already exists) | No |
+| `existingVpcId` | VPC ID to use an existing VPC instead of creating a new one (see [VPC Configuration](#vpc-configuration)) | No |
+| `controlTowerStackSet` | Control Tower StackSet name for importing subnet/route table exports | No |
+| `existingPublicSubnetId` | ID of an existing public subnet (skips creating a new one) | No |
+| `existingVpcCidr` | CIDR of the existing VPC (e.g., `172.31.128.0/20`) | No |
+| `publicSubnetCidr` | CIDR for the new public subnet — must be a small slice within the VPC range (e.g., `172.31.128.240/28`) | No |
+| `availabilityZones` | JSON array of AZ names (e.g., `["us-east-1a","us-east-1b","us-east-1c"]`) | No |
+| `vpcCidr` | CIDR for a new VPC (default: `10.0.0.0/16`) | No |
+| `maxAzs` | Number of availability zones for a new VPC (default: `2`) | No |
+| `natGateways` | Number of NAT Gateways for a new VPC (default: `1`; use `2` for prod HA) | No |
 
 Choose one of the following deployment options:
 
@@ -549,6 +559,127 @@ The CDK app creates the following stacks in dependency order:
 9. **`{StackPrefix}-Amplify`** : Amplify hosting for the React frontend
 
 > **Note:** `--all` handles the dependency order automatically. Deployment takes approximately 30–45 minutes on first run.
+
+### VPC Configuration
+
+By default, CDK creates a brand-new VPC with public, private, and isolated subnets. If you need to deploy into an **existing VPC** (e.g., one created by AWS Control Tower Account Factory, or a shared-services VPC), you can configure this entirely through context variables — no source code edits required.
+
+#### Option 1: New VPC (Default — No Extra Config Needed)
+
+If you omit all VPC context variables, CDK creates a fresh VPC with:
+- CIDR `10.0.0.0/16` (override with `-c vpcCidr=...`)
+- 2 availability zones (override with `-c maxAzs=3`)
+- 1 NAT Gateway (override with `-c natGateways=2` for production high availability)
+- Public, private (with egress), and isolated subnets
+
+```bash
+# Example: new VPC with high availability NAT Gateways
+cdk deploy --all \
+  -c StackPrefix=GenRx \
+  -c githubRepo=GenRx \
+  -c natGateways=2 \
+  -c maxAzs=3 \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+#### Option 2: Existing VPC with AWS Control Tower Exports
+
+If your account was provisioned by AWS Control Tower (Account Factory), your VPC's subnet IDs, route tables, and CIDRs are exported as CloudFormation outputs by a StackSet. Provide the VPC ID and StackSet name:
+
+```bash
+cdk deploy --all \
+  -c StackPrefix=GenRx \
+  -c githubRepo=GenRx \
+  -c existingVpcId=vpc-0abc123def456789a \
+  -c controlTowerStackSet="StackSet-AWSControlTowerBP-VPC-ACCOUNT-FACTORY-V1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" \
+  -c publicSubnetCidr="172.31.128.240/28" \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+**How to find your Control Tower StackSet name:**
+1. Open the [CloudFormation console](https://console.aws.amazon.com/cloudformation/).
+2. Go to **Exports**.
+3. Look for exports matching the pattern `StackSet-AWSControlTowerBP-VPC-ACCOUNT-FACTORY-*-PrivateSubnet1AID`.
+4. The prefix before `-PrivateSubnet1AID` is your StackSet name.
+
+**Required context variables for this option:**
+
+| Variable | Description |
+|----------|-------------|
+| `existingVpcId` | The VPC ID (e.g., `vpc-0abc123...`) |
+| `controlTowerStackSet` | Full StackSet name including the GUID suffix |
+| `publicSubnetCidr` | A small CIDR (e.g., `/28`) within your VPC range for the public subnet with IGW/NAT. **Must not overlap** with existing private subnets. |
+
+**Optional context variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `existingPublicSubnetId` | `""` (create new) | If a public subnet already exists, provide its ID to skip creating IGW/NAT resources |
+| `existingVpcCidr` | `172.31.128.0/20` | Your VPC's CIDR block (used for security group rules) |
+| `availabilityZones` | Derived from stack environment | JSON array of AZ names if auto-detection isn't available |
+
+#### Option 3: Existing VPC Without Control Tower
+
+If you have an existing VPC that was **not** created by Control Tower (no StackSet exports), you have two choices:
+
+1. **Create matching CloudFormation exports manually** that follow the Control Tower naming convention, then use Option 2.
+2. **Use the default new-VPC path** and peer/connect it to your existing networking as needed.
+
+> **Note:** A future enhancement will add `Vpc.fromLookup()` support which automatically discovers subnets and route tables without requiring CloudFormation exports. For now, Option 2 with manual exports is the supported path for existing VPCs.
+
+#### Important Notes
+
+- **`publicSubnetCidr` must be a small CIDR slice** (e.g., `/27` or `/28`), NOT the entire VPC CIDR. It needs to fit within the VPC range and must not overlap with existing subnets. For example, if your VPC is `172.31.128.0/20`, a good choice is `172.31.143.240/28` (the last 16 IPs in the range).
+- **Availability zones** are auto-detected from the stack's `env` (account + region). You only need to pass `availabilityZones` if CDK cannot resolve them (e.g., environment-agnostic synthesis without `-c` or `env`).
+- **The `StackPrefix` context variable is used for route naming** in the existing-VPC branch. Ensure it's consistent across deploys to avoid orphaned routes.
+
+#### Migrating from Source-Edited Deployments
+
+If you previously deployed by editing the hardcoded values in `vpc-stack.ts` directly, you can migrate to the context-driven approach with a no-op deploy:
+
+1. Add the values you previously hardcoded to your `cdk.json` context section:
+
+```jsonc
+{
+  "context": {
+    "StackPrefix": "GENRX-production",
+    "existingVpcId": "vpc-0abc123...",
+    "controlTowerStackSet": "StackSet-AWSControlTowerBP-VPC-ACCOUNT-FACTORY-V1-df80d055-...",
+    "existingVpcCidr": "172.31.128.0/20",
+    "publicSubnetCidr": "172.31.128.0/20"
+  }
+}
+```
+
+> **Note:** For existing deployments, set `publicSubnetCidr` to the same value that was previously used (the VPC CIDR). This ensures CloudFormation sees no change. On future fresh deployments, use a proper small CIDR instead.
+
+2. Run `cdk diff` to confirm **no changes** are detected:
+
+```bash
+cdk diff --all \
+  -c StackPrefix=GENRX-production \
+  -c githubRepo=GenRx \
+  -c existingVpcId=vpc-0abc123... \
+  -c controlTowerStackSet="StackSet-AWSControlTowerBP-..." \
+  -c existingVpcCidr="172.31.128.0/20" \
+  -c publicSubnetCidr="172.31.128.0/20" \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+3. If the diff is clean (no resource changes), deploy to confirm:
+
+```bash
+cdk deploy --all \
+  -c StackPrefix=GENRX-production \
+  -c githubRepo=GenRx \
+  -c existingVpcId=vpc-0abc123... \
+  -c controlTowerStackSet="StackSet-AWSControlTowerBP-..." \
+  -c existingVpcCidr="172.31.128.0/20" \
+  -c publicSubnetCidr="172.31.128.0/20" \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+4. Once confirmed, remove any manual edits from `vpc-stack.ts` and rely solely on context going forward.
 
 ### Monitoring the Deployment
 
