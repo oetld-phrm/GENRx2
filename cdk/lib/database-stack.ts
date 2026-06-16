@@ -5,9 +5,8 @@ import { Duration } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as secretmanager from 'aws-cdk-lib/aws-secretsmanager';  // NOTE: duplicate import — 'secretmanager' and 'secretsmanager' both reference the same module
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'; // NOTE: this is the same module as 'secretmanager' above — consolidate to one alias
 
 import { VpcStack } from './vpc-stack';
 
@@ -34,7 +33,7 @@ export class DatabaseStack extends Stack {
         /**
          * Retrieve a secret from Secret Manager
          */
-        const secret = secretmanager.Secret.fromSecretNameV2(this, "ImportedSecrets", "GENRXSecrets");
+        const secret = secretsmanager.Secret.fromSecretNameV2(this, "ImportedSecrets", "GENRXSecrets");
 
         /**
          * Create Secrets for various users
@@ -145,7 +144,7 @@ export class DatabaseStack extends Stack {
          * The Api stack has been updated to only use rdsProxyEndpoint — once all environments
          * have deployed this code, a follow-up PR will consolidate to a single proxy.
          */
-        const secretPathAdmin = secretmanager.Secret.fromSecretNameV2(this, 'AdminSecret', this.secretPathAdminName);
+        const secretPathAdmin = secretsmanager.Secret.fromSecretNameV2(this, 'AdminSecret', this.secretPathAdminName);
 
         const rdsProxy = this.dbInstance.addProxy(id + '-proxy', {
             secrets: [this.secretPathUser!],

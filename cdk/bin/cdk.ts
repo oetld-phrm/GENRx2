@@ -51,9 +51,13 @@ const cicdStack = new CICDStack(app, `${StackPrefix}-CICD`, {
   ],
 });
 
-const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
+const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, {
+  env,
+  terminationProtection: true,
+});
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
   env,
+  terminationProtection: true,
 });
 
 // CloudFront WAF must be in us-east-1 (AWS requirement for CLOUDFRONT scope)
@@ -78,7 +82,7 @@ const apiStack = new ApiServiceStack(
   cicdStack.buildProjects["dataIngestion"]?.projectName,
   cloudFrontWafStack.webAclArn,
   sesVerifiedDomain || undefined,
-  { env, crossRegionReferences: true }
+  { env, crossRegionReferences: true, terminationProtection: true }
 );
 const turnServerStack = new TurnServerStack(
   app,

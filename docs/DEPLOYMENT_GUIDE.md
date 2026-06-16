@@ -923,7 +923,29 @@ aws cloudformation describe-stacks \
 
 ## Cleanup
 
-To tear down all deployed resources, run:
+To tear down all deployed resources, you must first disable termination protection on the critical stacks, then destroy them.
+
+### Step 1: Disable Stack Termination Protection
+
+The VPC, Database, and Api stacks have CloudFormation termination protection enabled. You must disable it before `cdk destroy` will work:
+
+1. Open the [CloudFormation console](https://console.aws.amazon.com/cloudformation/) in your deployment region.
+2. For each of these stacks — `{StackPrefix}-VpcStack`, `{StackPrefix}-Database`, `{StackPrefix}-Api`:
+   - Select the stack.
+   - Click **Stack actions** → **Edit termination protection**.
+   - Set to **Disabled** and confirm.
+
+### Step 2: Disable RDS Deletion Protection
+
+The RDS instance itself also has deletion protection enabled (separate from stack termination protection):
+
+1. Open the [RDS console](https://console.aws.amazon.com/rds/).
+2. Select the database instance.
+3. Click **Modify**.
+4. Uncheck **Enable deletion protection**.
+5. Apply immediately.
+
+### Step 3: Destroy Stacks
 
 ```bash
 cdk destroy --all \
@@ -933,7 +955,7 @@ cdk destroy --all \
   --profile <YOUR-AWS-PROFILE>
 ```
 
-> **Warning:** The RDS instance has `deletionProtection: true`. You must disable deletion protection in the RDS console before the database stack can be deleted. The S3 bucket also has `removalPolicy: RETAIN`, so you need to empty and delete it manually after stack deletion.
+> **Note:** S3 buckets have `removalPolicy: RETAIN`, so you need to empty and delete them manually after stack deletion.
 
 To delete individual stacks, destroy them in reverse dependency order:
 
@@ -955,16 +977,13 @@ cdk destroy GenRx-CICD -c StackPrefix=GenRx -c githubRepo=GenRx -c githubBranch=
 
 ### Stack deletion fails for Database stack
 
-**Cause:** Deletion protection is enabled on the RDS instance.
+**Cause:** The Database, VPC, and Api stacks have CloudFormation termination protection enabled, and the RDS instance has deletion protection enabled.
 
 **Fix:**
 
-1. Open the [RDS console](https://console.aws.amazon.com/rds/).
-2. Select the database instance.
-3. Click **Modify**.
-4. Uncheck **Enable deletion protection**.
-5. Apply immediately.
-6. Retry `cdk destroy`.
+1. Disable termination protection on the stack (see [Step 1 in Cleanup](#step-1-disable-stack-termination-protection)).
+2. Disable RDS deletion protection (see [Step 2 in Cleanup](#step-2-disable-rds-deletion-protection)).
+3. Retry `cdk destroy`.
 
 ### RDS username constraint error
 
