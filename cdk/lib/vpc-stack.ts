@@ -134,30 +134,37 @@ export class VpcStack extends Stack {
         );
       }
 
-      // Add interface endpoints for private subnets
-      this.vpc.addInterfaceEndpoint("SSM Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.SSM,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
-      });
+      const skipVpcEndpoints: boolean =
+        (this.node.tryGetContext("skipVpcEndpoints") ?? false) === true;
 
-      this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
-      });
+      if (!skipVpcEndpoints) {
+        // Add interface endpoints for private subnets
+        this.vpc.addInterfaceEndpoint("SSM Endpoint", {
+          service: ec2.InterfaceVpcEndpointAwsService.SSM,
+          subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+          privateDnsEnabled: true, // Enable private DNS for proper resolution
+        });
 
-      // Free gateway endpoint — routes DynamoDB traffic within the AWS backbone instead of through NAT
-      this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
-        service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
-        subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
-      });
+        this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
+          service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+          subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+          privateDnsEnabled: true, // Enable private DNS for proper resolution
+        });
 
-      // Free gateway endpoint — routes S3 traffic within the AWS backbone instead of through NAT
-      this.vpc.addGatewayEndpoint("S3 Endpoint", {
-        service: ec2.GatewayVpcEndpointAwsService.S3,
-        subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
-      });
+        // Free gateway endpoint — routes DynamoDB traffic within the AWS backbone instead of through NAT
+        this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
+          service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+          subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
+        });
+
+        // Free gateway endpoint — routes S3 traffic within the AWS backbone instead of through NAT
+        this.vpc.addGatewayEndpoint("S3 Endpoint", {
+          service: ec2.GatewayVpcEndpointAwsService.S3,
+          subnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
+        });
+      } else {
+        console.log("Skipping VPC endpoint creation — endpoints already exist on this VPC.");
+      }
 
       this.vpc.addFlowLog(`${id}-vpcFlowLog`);
 
