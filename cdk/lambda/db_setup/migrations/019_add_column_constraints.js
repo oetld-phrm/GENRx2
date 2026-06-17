@@ -44,15 +44,21 @@ exports.up = (pgm) => {
   // ============================================================
 
   pgm.sql(`
-    ALTER TABLE enrollments
-    ADD CONSTRAINT chk_enrollment_type
-    CHECK (enrollment_type IN ('student', 'instructor', 'preview'))
+    DO $$ BEGIN
+      ALTER TABLE enrollments
+      ADD CONSTRAINT chk_enrollment_type
+      CHECK (enrollment_type IN ('student', 'instructor', 'preview'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `);
 
   pgm.sql(`
-    ALTER TABLE messages
-    ADD CONSTRAINT chk_sender_type
-    CHECK (sender_type IN ('student', 'ai', 'system'))
+    DO $$ BEGIN
+      ALTER TABLE messages
+      ADD CONSTRAINT chk_sender_type
+      CHECK (sender_type IN ('student', 'ai', 'system'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `);
 };
 

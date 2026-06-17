@@ -18,9 +18,15 @@ exports.up = (pgm) => {
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_type varchar
   `);
   pgm.sql(`
-    UPDATE messages
-    SET sender_type = CASE WHEN student_sent = true THEN 'student' ELSE 'ai' END
-    WHERE sender_type IS NULL AND student_sent IS NOT NULL
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT FROM information_schema.columns
+                 WHERE table_name = 'messages' AND column_name = 'student_sent') THEN
+        UPDATE messages
+        SET sender_type = CASE WHEN student_sent = true THEN 'student' ELSE 'ai' END
+        WHERE sender_type IS NULL AND student_sent IS NOT NULL;
+      END IF;
+    END $$;
   `);
 
   // Add user_id column (nullable — existing rows won't have it)

@@ -82,7 +82,7 @@ const apiStack = new ApiServiceStack(
   cicdStack.buildProjects["dataIngestion"]?.projectName,
   cloudFrontWafStack.webAclArn,
   sesVerifiedDomain || undefined,
-  { env, crossRegionReferences: true, terminationProtection: true }
+  { env, crossRegionReferences: true }
 );
 const turnServerStack = new TurnServerStack(
   app,
