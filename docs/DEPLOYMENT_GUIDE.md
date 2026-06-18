@@ -1,7 +1,7 @@
 # Deployment Guide
 
 > **Type:** Procedural Guide
-> **Last updated:** 2026-06-15
+> **Last updated:** 2026-06-18
 
 ## Table of Contents
 
@@ -99,6 +99,16 @@ npm install
 
 Before deploying, create the following secrets and parameters in AWS. These are referenced by the CDK stacks at synthesis time.
 
+> **⚠️ Important — Always pass `--profile`:** Every AWS CLI command in this guide requires the `--profile <YOUR-AWS-PROFILE>` flag to target the correct account. If you omit it, the CLI uses the default profile which may point to a different account.
+
+> **⚠️ Important — JSON secrets:** When creating secrets that contain JSON (like `GENRXSecrets` and `github-personal-access-token`), ensure the stored value has proper double quotes around keys and values. Shell escaping (especially on Windows) can silently corrupt JSON. After creating any JSON secret, verify it:
+>
+> ```bash
+> aws secretsmanager get-secret-value --secret-id <SECRET-NAME> --region <YOUR-REGION> --profile <YOUR-AWS-PROFILE> --query SecretString --output text
+> ```
+>
+> If the output doesn't look like valid JSON, fix it via the AWS Console (Secrets Manager → select the secret → Retrieve secret value → Edit → Plaintext tab → paste the correct JSON → Save).
+
 #### Secret 1: GENRXSecrets
 
 This secret contains the admin username for the RDS PostgreSQL instance. You choose this value; it becomes the master username for your database. The database stack reads `DB_Username` from this secret at deploy time.
@@ -110,7 +120,8 @@ This secret contains the admin username for the RDS PostgreSQL instance. You cho
 aws secretsmanager create-secret \
   --name GENRXSecrets \
   --secret-string '{"DB_Username": "<YOUR-DB-ADMIN-USERNAME>"}' \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -122,7 +133,8 @@ aws secretsmanager create-secret \
 aws secretsmanager create-secret `
   --name GENRXSecrets `
   --secret-string '{\"DB_Username\": \"<YOUR-DB-ADMIN-USERNAME>\"}' `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -134,7 +146,8 @@ aws secretsmanager create-secret `
 aws secretsmanager create-secret ^
   --name GENRXSecrets ^
   --secret-string "{\"DB_Username\": \"<YOUR-DB-ADMIN-USERNAME>\"}" ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -145,6 +158,8 @@ aws secretsmanager create-secret ^
 
 This secret is used by the CI/CD pipeline and Amplify to access your GitHub repository.
 
+> **⚠️ Important — JSON formatting:** The secret value must be valid JSON with double quotes around both the key and the value. It should look exactly like: `{"my-github-token": "ghp_xxxx..."}`. Shell escaping issues (especially on Windows) can silently corrupt the JSON. If the CLI gives you trouble, create/edit the secret via the AWS Console instead (see troubleshooting below).
+
 <details>
 <summary>macOS / Linux</summary>
 
@@ -152,7 +167,8 @@ This secret is used by the CI/CD pipeline and Amplify to access your GitHub repo
 aws secretsmanager create-secret \
   --name github-personal-access-token \
   --secret-string '{"my-github-token": "<YOUR-GITHUB-PAT>"}' \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -164,7 +180,8 @@ aws secretsmanager create-secret \
 aws secretsmanager create-secret `
   --name github-personal-access-token `
   --secret-string '{\"my-github-token\": \"<YOUR-GITHUB-PAT>\"}' `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -176,8 +193,24 @@ aws secretsmanager create-secret `
 aws secretsmanager create-secret ^
   --name github-personal-access-token ^
   --secret-string "{\"my-github-token\": \"<YOUR-GITHUB-PAT>\"}" ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
+
+</details>
+
+<details>
+<summary>Alternative: Create/fix via AWS Console (recommended if CLI escaping is problematic)</summary>
+
+1. Go to **Secrets Manager** in the AWS Console → find `github-personal-access-token`
+2. Click on it → scroll to **Secret value** section
+3. Click **Retrieve secret value**
+4. Click **Edit**
+5. Switch to the **Plaintext** tab
+6. Replace the content with exactly: `{"my-github-token": "<YOUR-GITHUB-PAT>"}`
+7. Click **Save**
+
+Make sure the key `my-github-token` and your token value both have double quotes around them.
 
 </details>
 
@@ -193,7 +226,8 @@ aws ssm put-parameter \
   --name "genrx-owner-name" \
   --value "<YOUR-GITHUB-USERNAME>" \
   --type String \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -206,7 +240,8 @@ aws ssm put-parameter `
   --name "genrx-owner-name" `
   --value "<YOUR-GITHUB-USERNAME>" `
   --type String `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -219,7 +254,8 @@ aws ssm put-parameter ^
   --name "genrx-owner-name" ^
   --value "<YOUR-GITHUB-USERNAME>" ^
   --type String ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -238,7 +274,8 @@ aws ssm put-parameter \
   --name "/GenRx/AllowedEmailDomains" \
   --value "<COMMA-SEPARATED-DOMAINS>" \
   --type SecureString \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -251,7 +288,8 @@ aws ssm put-parameter `
   --name "/GenRx/AllowedEmailDomains" `
   --value "<COMMA-SEPARATED-DOMAINS>" `
   --type SecureString `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -264,7 +302,8 @@ aws ssm put-parameter ^
   --name "/GenRx/AllowedEmailDomains" ^
   --value "<COMMA-SEPARATED-DOMAINS>" ^
   --type SecureString ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -285,7 +324,8 @@ aws ssm put-parameter \
   --name "/<YOUR-STACK-PREFIX>/voiceAgentArn" \
   --value "placeholder" \
   --type String \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -298,7 +338,8 @@ aws ssm put-parameter `
   --name "/<YOUR-STACK-PREFIX>/voiceAgentArn" `
   --value "placeholder" `
   --type String `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -311,7 +352,8 @@ aws ssm put-parameter ^
   --name "/<YOUR-STACK-PREFIX>/voiceAgentArn" ^
   --value "placeholder" ^
   --type String ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -326,27 +368,32 @@ The API service stack uses CloudFront signed URLs to deliver patient documents s
 
 **Step 1: Generate an RSA 2048-bit key pair.**
 
+> **⚠️ Critical:** The private key **must** be in PKCS#1 format (starts with `-----BEGIN RSA PRIVATE KEY-----`). OpenSSL 3.x defaults to PKCS#8 format (`-----BEGIN PRIVATE KEY-----`) which will **not** work — the Lambda function will fail at runtime with `No PEM start marker found`. Always use the `-traditional` flag to force PKCS#1 output.
+
 <details>
-<summary>macOS / Linux</summary>
+<summary>macOS / Linux (or Git Bash on Windows)</summary>
 
 ```bash
-openssl genrsa -out private_key.pem 2048
+openssl genrsa -traditional -out private_key.pem 2048
 openssl rsa -pubout -in private_key.pem -out public_key.pem
 ```
 
 </details>
 
 <details>
-<summary>Windows (PowerShell)</summary>
+<summary>Windows — OpenSSL not available in PowerShell?</summary>
 
-```powershell
-openssl genrsa -out private_key.pem 2048
+If `openssl` is not recognized in PowerShell or CMD, **open a new terminal using Git Bash** (installed with [Git for Windows](https://gitforwindows.org/)) and run the macOS/Linux commands above. Git Bash includes OpenSSL out of the box.
+
+```bash
+# In Git Bash (NOT PowerShell):
+openssl genrsa -traditional -out private_key.pem 2048
 openssl rsa -pubout -in private_key.pem -out public_key.pem
 ```
 
-> **Note:** If `openssl` is not available, install it via [Git for Windows](https://gitforwindows.org/) (included in Git Bash) or [Win32/Win64 OpenSSL](https://slproweb.com/products/Win32OpenSSL.html).
-
 </details>
+
+> **Verify the key format:** After generating, open `private_key.pem` and confirm the first line is exactly `-----BEGIN RSA PRIVATE KEY-----`. If it says `-----BEGIN PRIVATE KEY-----` (without "RSA"), you forgot the `-traditional` flag — regenerate it.
 
 **Step 2: Store the private key in Secrets Manager.**
 
@@ -360,7 +407,8 @@ aws secretsmanager create-secret \
   --name "GenRx/CloudFrontSigningKey" \
   --secret-string file://private_key.pem \
   --description "RSA private key for signing CloudFront document delivery URLs" \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -374,7 +422,8 @@ aws secretsmanager create-secret `
   --name "GenRx/CloudFrontSigningKey" `
   --secret-string $privateKey `
   --description "RSA private key for signing CloudFront document delivery URLs" `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -387,7 +436,8 @@ aws secretsmanager create-secret ^
   --name "GenRx/CloudFrontSigningKey" ^
   --secret-string file://private_key.pem ^
   --description "RSA private key for signing CloudFront document delivery URLs" ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -404,7 +454,8 @@ aws ssm put-parameter \
   --name "/GenRx/CloudFrontPublicKey" \
   --value file://public_key.pem \
   --type String \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -418,7 +469,8 @@ aws ssm put-parameter `
   --name "/GenRx/CloudFrontPublicKey" `
   --value $publicKey `
   --type String `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -431,7 +483,8 @@ aws ssm put-parameter ^
   --name "/GenRx/CloudFrontPublicKey" ^
   --value file://public_key.pem ^
   --type String ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -595,6 +648,36 @@ cdk deploy --all \
   -c publicSubnetCidr="172.31.128.240/28" \
   --profile <YOUR-AWS-PROFILE>
 ```
+
+<details>
+<summary>Alternative: Put context variables in cdk.json instead of long CLI commands</summary>
+
+If you don't want to deal with a long deploy command every time, add the context variables to the `context` section of `cdk/cdk.json`:
+
+```jsonc
+{
+  "context": {
+    "StackPrefix": "<YOUR-STACK-PREFIX>",
+    "githubRepo": "<YOUR-GITHUB-REPO>",
+    "githubBranch": "<YOUR-BRANCH>",
+    "existingVpcId": "<YOUR-VPC-ID>",
+    "controlTowerStackSet": "<YOUR-CONTROL-TOWER-STACKSET-NAME>",
+    "existingVpcCidr": "<YOUR-VPC-CIDR>",
+    "publicSubnetCidr": "<YOUR-PUBLIC-SUBNET-CIDR>",
+    "existingPublicSubnetId": "",
+    "availabilityZones": ["<AZ-1>", "<AZ-2>", "<AZ-3>"],
+    "skipVpcEndpoints": true
+  }
+}
+```
+
+Then your deploy command becomes just:
+
+```bash
+cdk deploy --all --profile <YOUR-AWS-PROFILE>
+```
+
+</details>
 
 **How to find your Control Tower StackSet name:**
 1. Open the [CloudFormation console](https://console.aws.amazon.com/cloudformation/).
@@ -820,6 +903,64 @@ After the first deployment, Amplify needs to run its initial build:
 3. If the build has not triggered automatically, click **Run build** on the `main` branch.
 4. Wait for the build to complete (typically 3–5 minutes).
 
+#### Fallback: Amplify Console Can't Detect Branches
+
+If the Amplify Console UI fails to detect branches (common when using a PAT-based connection instead of the GitHub App integration), you can create the branch and trigger a build entirely via CLI:
+
+**Get your Amplify App ID:**
+
+```bash
+aws amplify list-apps \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE> \
+  --query "apps[?contains(name, '<YOUR-STACK-PREFIX>')].appId" \
+  --output text
+```
+
+**Create the branch:**
+
+```bash
+aws amplify create-branch \
+  --app-id <APP_ID> \
+  --branch-name <BRANCH_NAME> \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+**Trigger a build:**
+
+```bash
+aws amplify start-job \
+  --app-id <APP_ID> \
+  --branch-name <BRANCH_NAME> \
+  --job-type RELEASE \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+**Check build status:**
+
+```bash
+aws amplify list-jobs \
+  --app-id <APP_ID> \
+  --branch-name <BRANCH_NAME> \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
+```
+
+**Get the Amplify URL:**
+
+```bash
+aws amplify get-branch \
+  --app-id <APP_ID> \
+  --branch-name <BRANCH_NAME> \
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE> \
+  --query "branch.displayName"
+```
+
+The app will be available at `https://<BRANCH_NAME>.<APP_ID>.amplifyapp.com`.
+
 ### Deploy the Voice Agent
 
 The voice agent runs on **Amazon Bedrock AgentCore** and is required for the voice mode functionality. It requires the CDK stacks to be deployed first (since the CI/CD pipeline builds and pushes the voice-agent Docker image to ECR). Follow this order of operations:
@@ -856,7 +997,8 @@ aws ssm put-parameter \
   --value "<YOUR-VOICE-AGENT-ARN>" \
   --type String \
   --overwrite \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -870,7 +1012,8 @@ aws ssm put-parameter `
   --value "<YOUR-VOICE-AGENT-ARN>" `
   --type String `
   --overwrite `
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> `
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -884,7 +1027,8 @@ aws ssm put-parameter ^
   --value "<YOUR-VOICE-AGENT-ARN>" ^
   --type String ^
   --overwrite ^
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> ^
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 </details>
@@ -916,7 +1060,8 @@ aws cloudformation describe-stacks \
   --stack-name <YOUR-STACK-PREFIX>-Amplify \
   --query "Stacks[0].Outputs[?OutputKey=='AmplifyDefaultDomain'].OutputValue" \
   --output text \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 ---
@@ -995,7 +1140,8 @@ cdk destroy <YOUR-STACK-PREFIX>-CICD -c StackPrefix=<YOUR-STACK-PREFIX> -c githu
 aws secretsmanager update-secret \
   --secret-id GENRXSecrets \
   --secret-string '{"DB_Username": "genrxadmin"}' \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 ### Amplify build fails
@@ -1021,7 +1167,8 @@ aws secretsmanager update-secret \
 aws secretsmanager update-secret \
   --secret-id github-personal-access-token \
   --secret-string '{"my-github-token": "<NEW-TOKEN>"}' \
-  --region <YOUR-REGION>
+  --region <YOUR-REGION> \
+  --profile <YOUR-AWS-PROFILE>
 ```
 
 ### GitHub token secret not stored as valid JSON
