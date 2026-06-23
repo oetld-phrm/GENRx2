@@ -674,7 +674,7 @@ export class ApiServiceStack extends cdk.Stack {
         securityGroups: [apiLambdaSg],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           USER_POOL_ID: this.userPool.userPoolId,
           EMBEDDING_STORAGE_BUCKET: embeddingStorageBucket.bucketName,
           ALLOWED_ORIGINS: allowedOriginsEnv,
@@ -815,7 +815,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(15),
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
         vpc: vpcStack.vpc,
         securityGroups: [apiLambdaSg],
@@ -1476,7 +1476,7 @@ export class ApiServiceStack extends cdk.Stack {
         functionName: `${id}-TextGenLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointAdmin,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           REGION: this.region,
           BEDROCK_LLM_PARAM: bedrockLLMParameter.parameterName,
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
@@ -1822,7 +1822,7 @@ export class ApiServiceStack extends cdk.Stack {
         functionName: `${id}-DataIngestLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointAdmin,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
           EMBEDDING_BUCKET_NAME: embeddingStorageBucket.bucketName,
