@@ -17,6 +17,7 @@ import AdminQuestionBankPage from './pages/admin/AdminQuestionBankPage';
 import AdminDTPBankPage from '@/pages/admin/AdminDTPBankPage';
 import AdminRecommendationsBankPage from '@/pages/admin/AdminRecommendationsBankPage';
 import AdminManageBanksPage from '@/pages/admin/AdminManageBanksPage';
+import AdminConfigurationPage from '@/pages/admin/AdminConfigurationPage';
 import PatientsPage from './pages/student/PatientsPage';
 import PatientDashboardPage from './pages/student/PatientDashboardPage';
 import StudentChatPage from './pages/student/StudentChatPage';
@@ -122,6 +123,7 @@ function AppRoutes() {
         <Route path="/admin/organization/:organizationId/question-bank" element={<ProtectedRoute><AdminQuestionBankPage /></ProtectedRoute>} />
         <Route path="/admin/organization/:organizationId/dtp-bank" element={<ProtectedRoute><AdminDTPBankPage /></ProtectedRoute>} />
         <Route path="/admin/organization/:organizationId/recommendations-bank" element={<ProtectedRoute><AdminRecommendationsBankPage /></ProtectedRoute>} />
+        <Route path="/admin/organization/:organizationId/configuration" element={<ProtectedRoute><AdminConfigurationPage /></ProtectedRoute>} />
         <Route path="/admin/organization/:organizationId/group/:groupId" element={<ProtectedRoute><AdminSimulationGroupPage /></ProtectedRoute>} />
         <Route path="/student" element={<ProtectedRoute><StudentDashboardPage /></ProtectedRoute>} />
         <Route path="/patients/:groupId" element={<ProtectedRoute><PatientsPage /></ProtectedRoute>} />

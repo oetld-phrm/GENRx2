@@ -188,14 +188,6 @@ function AdminOrganizationPage() {
     setDeleteGroupConfirm({ open: false, groupId: '', groupName: '' });
   };
 
-  const handleManageBanks = () => {
-    try {
-      navigate(`/admin/organization/${organizationId}/banks`);
-    } catch (error) {
-      console.error('Error navigating to manage banks:', error);
-    }
-  };
-
   if (loading) {
     return <DashboardSkeleton cardCount={3} />;
   }
@@ -211,7 +203,7 @@ function AdminOrganizationPage() {
         showStudentViewButton={false}
         onStudentView={() => navigate('/student')}
         showManageBanksButton={true}
-        onManageBanks={handleManageBanks}
+        onManageBanks={() => navigate(`/admin/organization/${organizationId}/banks`)}
       />
       <main className="flex-1 overflow-y-auto px-8 py-6">
         {/* Back to All Organizations button */}

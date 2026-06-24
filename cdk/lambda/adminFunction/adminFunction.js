@@ -104,6 +104,17 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify(instructors);
         }
         break;
+      case "GET /admin/users":
+        {
+          const users = await sqlConnectionTableCreator`
+            SELECT user_id, user_email, first_name, last_name, roles
+            FROM "users"
+            WHERE NOT (roles @> ARRAY['admin']::varchar[])
+            ORDER BY last_name ASC, first_name ASC
+          `;
+          response.body = JSON.stringify(users);
+        }
+        break;
       case "GET /admin/simulation_groups":
         try {
           const orgId = event.queryStringParameters?.organization_id || null;
@@ -199,11 +210,14 @@ exports.handler = async (event, context) => {
                   `;
 
               // Insert a record into student_interactions for each persona in the simulation group
+              // ON CONFLICT handles the case where the user was previously enrolled (e.g. as student)
               const studentInteractionInsertions = personasResult.map(
                 (persona) => {
                   return sqlConnectionTableCreator`
                       INSERT INTO "student_interactions" (student_interaction_id, persona_id, enrollment_id, persona_score, last_accessed, persona_context_embedding, is_completed)
-                      VALUES (uuid_generate_v4(), ${persona.persona_id}, ${enrollment_id}, 0, CURRENT_TIMESTAMP, NULL, FALSE);
+                      VALUES (uuid_generate_v4(), ${persona.persona_id}, ${enrollment_id}, 0, CURRENT_TIMESTAMP, NULL, FALSE)
+                      ON CONFLICT (persona_id, enrollment_id)
+                      DO UPDATE SET last_accessed = CURRENT_TIMESTAMP;
                     `;
                 }
               );

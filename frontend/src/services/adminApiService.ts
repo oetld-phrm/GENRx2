@@ -31,6 +31,14 @@ export interface AdminInstructor {
   last_name: string;
 }
 
+export interface RegisteredUser {
+  user_id: string;
+  user_email: string;
+  first_name: string;
+  last_name: string;
+  roles: string[];
+}
+
 export interface AdminSimulationGroup {
   simulation_group_id: string;
   group_name: string;
@@ -54,6 +62,14 @@ export interface InstructorGroup {
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────────
+
+/**
+ * Get all registered non-admin users with their roles.
+ * Used by the Configuration page to display users and manage instructor elevation.
+ */
+export async function getAllUsers(): Promise<RegisteredUser[]> {
+  return apiClient.request<RegisteredUser[]>('admin/users');
+}
 
 /**
  * Get all users with the instructor role
