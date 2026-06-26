@@ -355,6 +355,12 @@ io.on("connection", (socket) => {
               if (msg.verdict) {
                 socket.emit("diagnosis-complete", { message: "Session completed successfully" });
               }
+            } else if (msg.type === "error" && (msg.error === "session_timeout" || msg.error === "stream_error")) {
+              console.log("⏰ Voice session ended:", msg.error, msg.message);
+              socket.emit("voice-session-ended", {
+                reason: msg.error,
+                message: msg.message || "Voice had an issue. Please reconnect to continue where you left off."
+              });
             }
           } catch (err) {
             console.warn("⚠️ Failed to parse agent message:", err.message);
@@ -368,7 +374,7 @@ io.on("connection", (socket) => {
           // Notify the frontend so it can exit voice mode gracefully
           socket.emit("voice-session-ended", {
             reason: "session_limit",
-            message: "Voice session timed out. Close this panel and tap the mic again to reconnect — your conversation will continue where you left off."
+            message: "Voice had an issue. Please reconnect to continue where you left off."
           });
         });
 
