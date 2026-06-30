@@ -16,7 +16,7 @@
 
 ## Overview
 
-This document defines the rules and processes for maintaining the GenRx documentation set. Follow these guidelines when creating new documents, updating existing ones, or reviewing documentation pull requests.
+This document defines the rules and processes for maintaining the PIPT documentation set. Follow these guidelines when creating new documents, updating existing ones, or reviewing documentation pull requests.
 
 ## When to Update Documentation
 

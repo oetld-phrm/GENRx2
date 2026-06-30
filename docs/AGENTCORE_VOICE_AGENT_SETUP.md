@@ -83,7 +83,7 @@ This opens the **Host agent or tool** configuration page where you will fill in 
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| Name | `genrx-voice-agent` | Or any descriptive name for your environment |
+| Name | `pipt-voice-agent` | Or any descriptive name for your environment |
 | Description | *(optional)* | e.g. `Patient Interaction Practice Tool voice agent for Nova Sonic patient simulation` |
 
 ### 4.3 Agent Source
@@ -182,7 +182,7 @@ The socket server needs the AgentCore runtime ARN to construct the SigV4-signed 
 
 1. Go to **Amazon Bedrock** > **AgentCore** in the console.
 2. In the left sidebar under **Build**, click **Runtime**.
-3. On the **Runtime resources** page, click on your agent (e.g. `genrx-voice-agent`).
+3. On the **Runtime resources** page, click on your agent (e.g. `pipt-voice-agent`).
 4. Under **Agent and tool details**, you will find the **Runtime ARN**. Copy this value.
 
 ### 5.2 Passing the ARN to the CDK Deployment
@@ -235,7 +235,7 @@ This also applies if the voice agent behavior is not updating after a redeploy, 
 
 1. Go to **Amazon Bedrock** > **AgentCore** in the console.
 2. In the left sidebar under **Build**, click **Runtime**.
-3. On the **Runtime resources** page, click on your agent (e.g. `genrx-voice-agent`).
+3. On the **Runtime resources** page, click on your agent (e.g. `pipt-voice-agent`).
 4. Click **Update Hosting**.
 5. Go to **Agent Source** and click **Browse Images**. Verify that the image selected is the **latest** one (check the image digest or push timestamp to confirm).
 6. Scroll to the bottom and click **Host agent/tool**.

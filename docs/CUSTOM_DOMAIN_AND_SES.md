@@ -18,7 +18,7 @@ If your organization doesn't already own a domain, you need to register one firs
 
 1. Go to **Route 53** → **Registered domains** → **Register domains**
 ![alt text](route53_registered_domains.png)
-2. Search for a domain name (e.g., `genrx-clinic.com`, `mypharmacylab.ca`)
+2. Search for a domain name (e.g., `pipt-clinic.com`, `mypharmacylab.ca`)
 3. Choose a TLD — `.com`, `.ca`, `.io`, etc. (pricing ranges $3–$15/year)
 4. Fill in registrant contact info and complete the purchase
 5. AWS automatically creates a hosted zone and configures nameservers for you
@@ -233,7 +233,7 @@ Changing or removing the custom domain does not break email delivery, and vice v
 
 ## Glossary
 
-- **Domain**: A human-readable address like `genrx-clinic.com` or `app.example-domain.com`. You either buy one or use a subdomain of one your organization already owns.
+- **Domain**: A human-readable address like `pipt-clinic.com` or `app.example-domain.com`. You either buy one or use a subdomain of one your organization already owns.
 - **Hosted Zone**: A Route 53 container that holds DNS records for your domain. Think of it as the phone book entry that tells the internet where your domain's services live.
 - **NS (Name Server) Records**: These tell the internet which DNS servers are authoritative for your domain. When you create a hosted zone, Route 53 gives you 4 NS records.
 - **Delegation**: If using a subdomain of an existing domain, the parent domain's DNS must add NS records pointing the subdomain to Route 53. This is how Route 53 gets "permission" to manage the subdomain.

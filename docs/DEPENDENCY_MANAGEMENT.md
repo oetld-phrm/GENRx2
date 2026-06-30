@@ -283,7 +283,7 @@ After modifying dependencies:
 - **Lambda layers**: Deploy the CDK stack that references the layer:
 
   ```bash
-  npx cdk deploy GenRx-Api -c StackPrefix=GenRx -c githubRepo=genrx
+  npx cdk deploy <STACK PREFIX HERE>-Api -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
   ```
 
 ### Best Practices

@@ -3,7 +3,7 @@
 > **Type:** Changelog
 > **Last updated:** 2026-05-30
 
-All notable changes to the GenRx project are documented here.
+All notable changes to the PIPT project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 

@@ -15,9 +15,9 @@
 
 ## Overview
 
-This guide covers the GenRx database migration system — how it works, how to create new migrations, common patterns, and safety guidelines.
+This guide covers the PIPT database migration system — how it works, how to create new migrations, common patterns, and safety guidelines.
 
-GenRx uses [node-pg-migrate](https://github.com/salsita/node-pg-migrate) to manage PostgreSQL schema changes. Migrations are JavaScript files that export `up` and `down` functions. They run automatically on every CDK deployment via a Lambda trigger function.
+PIPT uses [node-pg-migrate](https://github.com/salsita/node-pg-migrate) to manage PostgreSQL schema changes. Migrations are JavaScript files that export `up` and `down` functions. They run automatically on every CDK deployment via a Lambda trigger function.
 
 ### Migration System Architecture
 
@@ -135,14 +135,14 @@ Before you create or run migrations, ensure you have the following:
 4. **Test locally** (optional). If you have direct database access, run the migration against a dev database:
 
    ```bash
-   DATABASE_URL="postgresql://user:pass@localhost:5432/genrx" \
+   DATABASE_URL="postgresql://user:pass@localhost:5432/<database name>" \
      npx node-pg-migrate up --migrations-dir cdk/lambda/db_setup/migrations
    ```
 
 5. **Deploy via CDK.** Run the deployment to apply your migration:
 
    ```bash
-   npx cdk deploy GenRx-DBFlow -c StackPrefix=GenRx -c githubRepo=genrx
+   npx cdk deploy <STACK PREFIX HERE>-DBFlow -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
    ```
 
 ### Running Migrations
@@ -152,13 +152,13 @@ Before you create or run migrations, ensure you have the following:
 Migrations run automatically on every `cdk deploy` that includes the DBFlow stack:
 
 ```bash
-npx cdk deploy GenRx-DBFlow -c StackPrefix=GenRx -c githubRepo=genrx
+npx cdk deploy <STACK PREFIX HERE>-DBFlow -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
 ```
 
 Or as part of a full deployment:
 
 ```bash
-npx cdk deploy --all -c StackPrefix=GenRx -c githubRepo=genrx
+npx cdk deploy --all -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<STACK PREFIX HERE>
 ```
 
 #### Manual (CLI)
@@ -166,7 +166,7 @@ npx cdk deploy --all -c StackPrefix=GenRx -c githubRepo=genrx
 If you have direct database access, you can run migrations manually:
 
 ```bash
-DATABASE_URL="postgresql://admin:password@rds-proxy-endpoint:5432/genrx" \
+DATABASE_URL="postgresql://admin:password@rds-proxy-endpoint:5432/<database name>" \
   npx node-pg-migrate up \
     --migrations-dir cdk/lambda/db_setup/migrations \
     --migrations-table pgmigrations
@@ -177,7 +177,7 @@ DATABASE_URL="postgresql://admin:password@rds-proxy-endpoint:5432/genrx" \
 To roll back the last migration:
 
 ```bash
-DATABASE_URL="postgresql://admin:password@rds-proxy-endpoint:5432/genrx" \
+DATABASE_URL="postgresql://admin:password@rds-proxy-endpoint:5432/<DATABASE NAME HERE>" \
   npx node-pg-migrate down \
     --migrations-dir cdk/lambda/db_setup/migrations \
     --migrations-table pgmigrations \

@@ -156,7 +156,7 @@ VITE_APPSYNC_GRAPHQL_URL=https://xxxxxxxxxxxxxxxxxxxxxx.appsync-api.ca-central-1
 | `VITE_SOCKET_URL` | WebSocket URL for real-time features | CDK output (EcsSocket stack) |
 | `VITE_APPSYNC_GRAPHQL_URL` | AppSync GraphQL endpoint | CDK output or AppSync console |
 
-You can find all these values in the Secrets Manager secret named `{StackPrefix}-Api-GenRx_Cognito_Secrets` or from the CDK stack outputs.
+You can find all these values in the Secrets Manager secret named `{StackPrefix}-Api-Cognito_Secrets` or from the CDK stack outputs.
 
 #### Step 3: Start the Dev Server
 
@@ -227,7 +227,7 @@ The email is a full HTML document with:
 4. Deploy the API stack:
 
 ```bash
-npx cdk deploy GenRx-Api -c StackPrefix=GenRx -c githubRepo=genrx
+npx cdk deploy <STACK PREFIX HERE>-Api -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
 ```
 
 > **Note:** Changes only affect new verification emails. Users who already received a code will not see the updated template.
@@ -292,7 +292,7 @@ Edit `cdk/OpenAPI_Swagger_Definition.yaml` to add the new path:
 #### Step 3: Deploy
 
 ```bash
-npx cdk deploy GenRx-Api -c StackPrefix=GenRx -c githubRepo=genrx
+npx cdk deploy <STACK PREFIX HERE>-Api -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
 ```
 
 #### Step 4: Add Frontend Service Method
@@ -350,7 +350,7 @@ Administrators can change the active LLM model through the admin interface:
 2. Navigate to **Settings → Prompt Management**.
 3. Select a different model from the available options.
 
-This updates the SSM parameter `/{StackPrefix}-Api/GenRx/BedrockLLMId` at runtime.
+This updates the SSM parameter `/{StackPrefix}-Api/BedrockLLMId` at runtime.
 
 ### Changing Available Models (Code)
 
@@ -365,7 +365,7 @@ const bedrockLLMParameter = new ssm.StringParameter(
   this,
   "BedrockLLMParameter",
   {
-    parameterName: `/${id}/GenRx/BedrockLLMId`,
+    parameterName: `/${id}/BedrockLLMId`,
     description: "Parameter containing the Bedrock LLM ID",
     stringValue: "us.anthropic.claude-sonnet-4-6", // ← Change this
   }
@@ -376,7 +376,7 @@ const bedrockLLMParameter = new ssm.StringParameter(
 4. Deploy:
 
 ```bash
-npx cdk deploy GenRx-Api -c StackPrefix=GenRx -c githubRepo=genrx
+npx cdk deploy <REPO NAME HERE>-Api -c StackPrefix=<STACK PREFIX HERE> -c githubRepo=<REPO NAME HERE>
 ```
 
 ### Changing the Embedding Model
@@ -389,7 +389,7 @@ const embeddingModelParameter = new ssm.StringParameter(
   this,
   "EmbeddingModelParameter",
   {
-    parameterName: `/${id}/GenRx/EmbeddingModelId`,
+    parameterName: `/${id}/PIPT/EmbeddingModelId`,
     description: "Parameter containing the Embedding Model ID",
     stringValue: "cohere.embed-v4:0", // ← Change this
   }
@@ -402,9 +402,9 @@ const embeddingModelParameter = new ssm.StringParameter(
 
 | Parameter | Default Value | Purpose |
 |-----------|---------------|---------|
-| `/{id}/GenRx/BedrockLLMId` | `us.anthropic.claude-sonnet-4-6` | Primary chat and debrief LLM (cross-region inference profile) |
-| `/{id}/GenRx/EmbeddingModelId` | `cohere.embed-v4:0` | Document and query embeddings |
-| `/{id}/GenRx/TableName` | `DynamoDB-Conversation-Table` | DynamoDB table for conversations |
+| `/{id}/PIPT/BedrockLLMId` | `us.anthropic.claude-sonnet-4-6` | Primary chat and debrief LLM (cross-region inference profile) |
+| `/{id}/PIPT/EmbeddingModelId` | `cohere.embed-v4:0` | Document and query embeddings |
+| `/{id}/PIPT/TableName` | `DynamoDB-Conversation-Table` | DynamoDB table for conversations |
 
 ### Prompt Management
 

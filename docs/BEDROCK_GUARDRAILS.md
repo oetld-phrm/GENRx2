@@ -14,7 +14,7 @@
 
 ## Overview
 
-GenRx uses Amazon Bedrock Guardrails to protect AI-powered patient interactions from harmful content, prompt injection attacks, and role-reversal attempts. The guardrail system operates as a layered defense alongside prompt-level role guardrails embedded in the system prompt.
+PIPT uses Amazon Bedrock Guardrails to protect AI-powered patient interactions from harmful content, prompt injection attacks, and role-reversal attempts. The guardrail system operates as a layered defense alongside prompt-level role guardrails embedded in the system prompt.
 
 The guardrail applies to both directions of conversation:
 
@@ -39,13 +39,13 @@ The guardrail is defined as a `CfnGuardrail` resource in the API Service stack a
 ```typescript
 // cdk/lib/api-service-stack.ts
 const guardrail = new bedrock.CfnGuardrail(this, `${id}-BedrockGuardrail`, {
-  name: `${id}-GenRxGuardrail`,
+  name: `${id}-Guardrail`,
   blockedInputMessaging:
     "I'm sorry, I can't process that input. Please rephrase your message and try again.",
   blockedOutputsMessaging:
     "I'm sorry, I'm unable to provide that response. Let's continue with the clinical encounter.",
   description:
-    "Guardrail for GenRx medical simulation platform — enforces patient-only role, blocks harmful content, and prevents role reversal or jailbreak attempts.",
+    "Guardrail for PIPT medical simulation platform — enforces patient-only role, blocks harmful content, and prevents role reversal or jailbreak attempts.",
 });
 ```
 
@@ -69,12 +69,12 @@ const guardrailVersion = new bedrock.CfnGuardrailVersion(
   `${id}-BedrockGuardrailVersion`,
   {
     guardrailIdentifier: guardrail.attrGuardrailId,
-    description: "Initial guardrail version for GenRx medical simulation",
+    description: "Initial guardrail version for PIPT medical simulation",
   }
 );
 ```
 
-The guardrail ID is also stored in AWS Systems Manager Parameter Store at `/{StackPrefix}/GenRx/BedrockGuardrailId` for cross-stack and cross-service reference.
+The guardrail ID is also stored in AWS Systems Manager Parameter Store at `/{StackPrefix}/PIPT/BedrockGuardrailId` for cross-stack and cross-service reference.
 
 ### Runtime Invocation
 
@@ -173,7 +173,7 @@ This content flows freely because the system prompt exemption and the educationa
 
 ## Prompt Injection Defenses
 
-GenRx employs a multi-layered defense against prompt injection attacks, combining Bedrock Guardrails with prompt-level structural protections.
+PIPT employs a multi-layered defense against prompt injection attacks, combining Bedrock Guardrails with prompt-level structural protections.
 
 ### Layer 1: Bedrock Guardrail Topic Policies
 
@@ -306,7 +306,7 @@ The stack exports guardrail identifiers for operational reference:
 
 ### SSM Parameter
 
-The guardrail ID is stored at `/{StackPrefix}/GenRx/BedrockGuardrailId` in Parameter Store, enabling other services and operational scripts to discover the active guardrail without hardcoding.
+The guardrail ID is stored at `/{StackPrefix}/PIPT/BedrockGuardrailId` in Parameter Store, enabling other services and operational scripts to discover the active guardrail without hardcoding.
 
 ## Cross-References
 
