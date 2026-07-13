@@ -745,6 +745,13 @@ def get_llm_output(response: str, llm_completion: bool) -> dict:
                         llm_verdict=True
                     )
 
+    # Fallback: should not be reached given the conditions above, but satisfies
+    # the linter requirement for an explicit return on all code paths.
+    return dict(
+        llm_output=response,
+        llm_verdict=False
+    )
+
 def split_into_sentences(paragraph: str) -> list[str]:
     """
     Splits a given paragraph into individual sentences using a regular expression to detect sentence boundaries.
