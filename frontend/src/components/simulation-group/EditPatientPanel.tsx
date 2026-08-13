@@ -294,7 +294,7 @@ function InfoTab({
       {/* Patient Name */}
       <div>
         <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
-          Patient Name
+          Patient Name <span style={{ color: UI_COLORS.text.error }}>*</span>
         </label>
         <Input
           value={patientEditor.editPatientName}
@@ -313,7 +313,7 @@ function InfoTab({
       {/* Patient Age */}
       <div>
         <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
-          Patient Age
+          Patient Age <span style={{ color: UI_COLORS.text.error }}>*</span>
         </label>
         <Input
           type="number"
@@ -344,7 +344,7 @@ function InfoTab({
       {/* Gender */}
       <div>
         <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
-          Gender
+          Gender <span style={{ color: UI_COLORS.text.error }}>*</span>
         </label>
         <Input
           value={patientEditor.editPatientGender}
@@ -405,8 +405,22 @@ function InfoTab({
               outlineColor: UI_COLORS.border.medium,
               minHeight: '140px',
             }}
-            placeholder="Describe who this persona is: their personality, emotional state, backstory, and how they reveal information. Include behavioral rules like what they withhold until asked, and how they refer to things in their own words. Structure and conditionals are fine here."
+            placeholder="Leave empty to use the default persona prompt. The AI will use only information from uploaded documents without inventing symptoms or history."
           />
+          <div className="flex justify-end mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const defaultPrompt = await instructorService.getDefaultPersonaPrompt();
+                if (defaultPrompt) {
+                  patientEditor.setEditPatientPrompt(defaultPrompt);
+                }
+              }}
+            >
+              Load Default Prompt
+            </Button>
+          </div>
           <PromptGuidanceToggle mode="text" />
         </div>
 
