@@ -412,6 +412,8 @@ export interface InstructorDataService {
   getChatNotes: (attemptId: string) => string;
   getDefaultPatientPrompt: () => string;
   getGlobalQuestionBank: () => Promise<QuestionBankItem[]>;
+  createQuestionBankQuestion: (organizationId: string, data: { title: string; question_text: string; clinical_intent?: string; evaluation_criteria: string; category?: string; difficulty_level?: string; is_mandatory?: boolean; weight?: number; max_score?: number; tags?: string[] }) => Promise<QuestionBankItem>;
+  updateQuestionBankQuestion: (questionId: string, data: { title?: string; question_text?: string; clinical_intent?: string; evaluation_criteria?: string; is_mandatory?: boolean; tags?: string[] }) => Promise<QuestionBankItem>;
   getPatientSpecificQuestionBank: () => QuestionBankItem[];
   addToGlobalQuestionBank: (question: QuestionBankItem) => void;
   addToPatientSpecificQuestionBank: (question: QuestionBankItem) => void;
@@ -1097,6 +1099,8 @@ export interface UploadedFileInfo {
   metadata: string | null;
   url: string;
   folderType: 'documents' | 'info' | 'answer_key';
+  /** Ingestion status from the DB, available on initial file load. */
+  ingestionStatus: IngestionStatus | null;
 }
 
 /**
@@ -1109,21 +1113,23 @@ async function fetchPatientUploadedFiles(
 ): Promise<{ files: Record<'llm' | 'patientInfo' | 'answerKey', UploadedFileInfo[]>; profilePictureUrl: string | null }> {
   try {
     const data = await apiClient.request<{
-      document_files: Record<string, { url: string; metadata: string | null; display_name?: string | null }>;
-      info_files: Record<string, { url: string; metadata: string | null; display_name?: string | null }>;
-      answer_key_files: Record<string, { url: string; metadata: string | null; display_name?: string | null }>;
+      document_files: Record<string, { url: string; metadata: string | null; display_name?: string | null; ingestion_status?: string | null }>;
+      info_files: Record<string, { url: string; metadata: string | null; display_name?: string | null; ingestion_status?: string | null }>;
+      answer_key_files: Record<string, { url: string; metadata: string | null; display_name?: string | null; ingestion_status?: string | null }>;
       profile_picture_url?: string | null;
     }>(
       `instructor/get_all_files?simulation_group_id=${encodeURIComponent(simulationGroupId)}&persona_id=${encodeURIComponent(patientId)}&patient_name=${encodeURIComponent(patientId)}`
     );
 
-    const mapFiles = (files: Record<string, { url: string; metadata: string | null; display_name?: string | null }>, folderType: 'documents' | 'info' | 'answer_key'): UploadedFileInfo[] =>
+    const validStatuses: IngestionStatus[] = ['not processing', 'processing', 'completed', 'error'];
+    const mapFiles = (files: Record<string, { url: string; metadata: string | null; display_name?: string | null; ingestion_status?: string | null }>, folderType: 'documents' | 'info' | 'answer_key'): UploadedFileInfo[] =>
       Object.entries(files ?? {}).map(([filename, info]) => ({
         filename,
         displayName: info.display_name ?? null,
         metadata: info.metadata ?? null,
         url: info.url,
         folderType,
+        ingestionStatus: (validStatuses.includes(info.ingestion_status as IngestionStatus) ? info.ingestion_status as IngestionStatus : null),
       }));
 
     return {
@@ -1887,6 +1893,52 @@ async function getGlobalQuestionBank(): Promise<QuestionBankItem[]> {
 }
 
 /**
+ * Create a new question in the global question bank
+ */
+async function createQuestionBankQuestion(
+  organizationId: string,
+  data: {
+    title: string;
+    question_text: string;
+    clinical_intent?: string;
+    evaluation_criteria: string;
+    category?: string;
+    difficulty_level?: string;
+    is_mandatory?: boolean;
+    weight?: number;
+    max_score?: number;
+    tags?: string[];
+  }
+): Promise<QuestionBankItem> {
+  const response = await apiClient.request<any>(
+    `instructor/question_bank?organization_id=${encodeURIComponent(organizationId)}`,
+    { method: 'POST', body: data }
+  );
+  return mapBackendToQuestionBankItem(response);
+}
+
+/**
+ * Update an existing question in the global question bank
+ */
+async function updateQuestionBankQuestion(
+  questionId: string,
+  data: {
+    title?: string;
+    question_text?: string;
+    clinical_intent?: string;
+    evaluation_criteria?: string;
+    is_mandatory?: boolean;
+    tags?: string[];
+  }
+): Promise<QuestionBankItem> {
+  const response = await apiClient.request<any>(
+    `instructor/question_bank?question_id=${encodeURIComponent(questionId)}`,
+    { method: 'PUT', body: data }
+  );
+  return mapBackendToQuestionBankItem(response);
+}
+
+/**
  * Get patient-specific question bank — requires API
  */
 function getPatientSpecificQuestionBank(): QuestionBankItem[] {
@@ -2359,6 +2411,8 @@ export const instructorService: InstructorDataService = {
   getChatNotes,
   getDefaultPatientPrompt,
   getGlobalQuestionBank,
+  createQuestionBankQuestion,
+  updateQuestionBankQuestion,
   getPatientSpecificQuestionBank,
   addToGlobalQuestionBank,
   addToPatientSpecificQuestionBank,
