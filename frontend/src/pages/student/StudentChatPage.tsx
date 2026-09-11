@@ -1480,6 +1480,19 @@ function StudentChatPage() {
                   <h4 className="font-semibold text-sm mb-2" style={{ color: UI_COLORS.text.heading }}>
                     {selectedPatientFile.filename}
                   </h4>
+                  {selectedPatientFile.url && (
+                      <a
+                        href={selectedPatientFile.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-sm px-3 py-1 rounded transition-colors no-underline"
+                        style={{ backgroundColor: UI_COLORS.button.secondary, color: UI_COLORS.button.text }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondaryHover}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.secondary}
+                      >
+                        Open in new tab
+                      </a>
+                    )}
                   {selectedPatientFile.url ? (
                     isImageFile(selectedPatientFile.filename) || isImageFile(selectedPatientFile.url) ? (
                       <ImageViewer url={selectedPatientFile.url} title={selectedPatientFile.filename} />
