@@ -357,7 +357,7 @@ function PatientDashboardPage() {
                   }}
                 >
                   <p className="text-base" style={{ color: UI_COLORS.text.muted }}>
-                    Start an interaction to view key question coverage
+                    Complete an interaction with a interview or full simulation patient to view key question coverage
                   </p>
                 </div>
               )}
@@ -439,7 +439,7 @@ function PatientDashboardPage() {
                       <span className="text-sm" style={{ color: UI_COLORS.text.body }}>Loading patient files…</span>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="flex items-center justify-center py-12">
                       {patientFiles.length === 0 ? (
                         <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>No patient information files uploaded.</p>
                       ) : (
