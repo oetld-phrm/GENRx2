@@ -1344,7 +1344,7 @@ function StudentChatPage() {
               value={noteText}
               onChange={handleNoteChange}
               placeholder="Type your notes here..."
-              maxLength={500}
+              maxLength={5000}
               className="w-full px-3 py-2 rounded-lg resize-none focus:outline-none focus:ring-2 flex-1"
               style={{ 
                 borderWidth: '1px', 
@@ -1385,7 +1385,7 @@ function StudentChatPage() {
               <Stethoscope className="w-5 h-5 mr-2" />
               Physical Assessment
             </Button>
-            {sessionStatus === 'active' && (
+            {sessionStatus === 'active' && patient.mode !== 'conversation_only' && (
               <Button
                 variant="outline"
                 className="w-full justify-start text-white hover:opacity-90 border-0 whitespace-nowrap"
