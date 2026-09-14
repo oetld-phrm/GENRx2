@@ -16,7 +16,7 @@ interface AIDebriefDialogProps {
   patientId?: string;
   chatId?: string;
   showAnswerKey?: boolean;
-  patientMode?: 'interview_practice' | 'full_assessment';
+  patientMode?: 'conversation_only' |'interview_practice' | 'full_assessment';
 }
 
 /**

@@ -1385,8 +1385,7 @@ function StudentChatPage() {
               <Stethoscope className="w-5 h-5 mr-2" />
               Physical Assessment
             </Button>
-            {/*sessionStatus === 'active' && patient.mode !== 'conversation_only' && ( */}
-            {sessionStatus === 'active' && (
+            {(sessionStatus === 'active' && patient.mode !== 'conversation_only') && (
               <Button
                 variant="outline"
                 className="w-full justify-start text-white hover:opacity-90 border-0 whitespace-nowrap"
