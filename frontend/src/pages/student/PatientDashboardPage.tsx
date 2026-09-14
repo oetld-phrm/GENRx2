@@ -439,9 +439,11 @@ function PatientDashboardPage() {
                       <span className="text-sm" style={{ color: UI_COLORS.text.body }}>Loading patient files…</span>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center py-12">
+                    <div className="space-y-3">
                       {patientFiles.length === 0 ? (
+                        <div className="flex items-center justify-center py-12">
                         <p className="text-sm" style={{ color: UI_COLORS.text.muted }}>No patient information files uploaded.</p>
+                        </div>
                       ) : (
                         patientFiles.map((file) => (
                           <div
