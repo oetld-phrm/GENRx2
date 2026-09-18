@@ -1459,10 +1459,17 @@ function StudentChatPage() {
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
+              
             </div>
+           
           )}
 
           {/* Content Area - Patient info files with inline PDF viewer */}
+          <div className="p-4" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
+              <div className="flex items-center gap-3 px-4 py-4 rounded-lg" style={{ backgroundColor: UI_COLORS.background.hoverLight }}>
+                <p className="text-xs mt-0.5" style={{ color: UI_COLORS.text.muted }}>Drag the handle on the right of this panel to resize it.</p>
+              </div>
+            </div>
           <div className="flex-1 overflow-y-auto p-4">
             {isPatientInfoSidebarOpen && (
               selectedPatientFile ? (
@@ -1813,7 +1820,11 @@ function StudentChatPage() {
               </div>
             </div>
           )}
-
+          <div className="p-6" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
+              <div className="flex items-center gap-3 px-4 py-4 rounded-lg" style={{ backgroundColor: UI_COLORS.background.hoverLight }}>
+                <p className="text-xs mt-0.5" style={{ color: UI_COLORS.text.muted }}>Troubleshooting Tips: Choose either voice or text for your interaction. If the your mic or audio becomes unresponsive, click "Back to Patient Dashboard" at the top of the screen, then load back into this interaction.</p>
+              </div>
+            </div>
           {/* Generating Debrief indicator */}
           {sessionStatus === 'generating_debrief' && (
             <div className="p-8 flex items-center justify-center" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
@@ -1867,6 +1878,11 @@ function StudentChatPage() {
           )}
 
           {/* Content Area */}
+          <div className="p-4" style={{ borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: UI_COLORS.border.default }}>
+              <div className="flex items-center gap-3 px-4 py-4 rounded-lg" style={{ backgroundColor: UI_COLORS.background.hoverLight }}>
+                <p className="text-xs mt-0.5" style={{ color: UI_COLORS.text.muted }}>Drag the handle on the left of this panel to resize it.</p>
+              </div>
+            </div>
           <div className="flex-1 overflow-y-auto p-4">
             {contentSidebarType === 'physical-assessment' && (
               <PhysicalAssessmentContent materials={personaMedia} loading={personaMediaLoading} />
