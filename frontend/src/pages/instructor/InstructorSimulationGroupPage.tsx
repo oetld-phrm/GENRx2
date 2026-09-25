@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
-import { ArrowLeft, BarChart3, Users, UserCog, FileText, Menu, HelpCircle, Pill, ClipboardList, FileCode } from 'lucide-react';
+import { ArrowLeft, BarChart3, Users, UserCog, Menu, HelpCircle, Pill, ClipboardList, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import PageContainer from '@/components/PageContainer';
@@ -608,7 +608,7 @@ function InstructorSimulationGroupPage() {
         if (idsToAdd.length > 0) {
           await instructorService.assignQuestionToGroup(groupId || '1', idsToAdd, selectedPatientForQuestionBank);
         }
-        
+
         includedQuestionIds.forEach(id => {
           if (!pendingQuestionIds.has(id)) {
             instructorService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);
