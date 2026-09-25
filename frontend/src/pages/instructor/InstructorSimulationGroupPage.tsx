@@ -604,15 +604,10 @@ function InstructorSimulationGroupPage() {
           if (bankQ) await handleToggleQuestionInclusion(id, bankQ, false);
         }
       } else if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank) {
-        pendingQuestionIds.forEach(id => {
-          if (!includedQuestionIds.has(id)) {
-            const bankQ = allBankQuestions.find(q => q.id === id);
-            if (bankQ) {
-              instructorService.addCaseSpecificQuestion(selectedPatientForQuestionBank, { id: bankQ.id, title: bankQ.title, keyQuestion: bankQ.questionText, clinicalIntent: bankQ.clinicalIntent, evaluationCriteria: bankQ.evaluationCriteria, required: bankQ.isMandatory });
-              if (patientEditor.selectedPatientForEdit === selectedPatientForQuestionBank) patientEditor.setCaseSpecificQuestions(instructorService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
-            }
-          }
-        });
+        const idsToAdd = Array.from(pendingQuestionIds).filter(id => !includedQuestionIds.has(id));
+        if (idsToAdd.length > 0) {
+          await instructorService.assignQuestionToGroup(groupId || '1', idsToAdd, selectedPatientForQuestionBank);
+        }
         includedQuestionIds.forEach(id => {
           if (!pendingQuestionIds.has(id)) {
             instructorService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);
