@@ -30,6 +30,10 @@ export function RubricSection({
   const filteredQuestions = questions.filter(q =>
     q.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  //remove duplicate questions based on id
+  const uniqueQuestions = Array.from(
+    new Map(filteredQuestions.map(question => [question.id, question])).values()
+  );
 
   return (
     <div className="flex h-full relative">
@@ -80,7 +84,8 @@ export function RubricSection({
 
         {/* Question List */}
         <div className="flex-1 overflow-y-auto">
-          {filteredQuestions.map((question, idx) => (
+          {uniqueQuestions.map((question, idx) => (
+            console.log(question),
             <button
               key={question.id}
               onClick={() => onSelectQuestion(question.id)}
@@ -242,21 +247,7 @@ export function RubricSection({
                       Save Changes
                     </Button>
                   )}
-                  {onDeleteQuestion && (
-                    <Button
-                      onClick={onDeleteQuestion}
-                      variant="outline"
-                      className="px-8 py-3 text-base font-medium transition-colors text-white"
-                      style={{
-                        backgroundColor: SIMULATION_GROUP_COLOR_PALETTE[0],
-                        borderColor: SIMULATION_GROUP_COLOR_PALETTE[0]
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                    >
-                      Remove
-                    </Button>
-                  )}
+
                 </div>
               )}
             </div>
