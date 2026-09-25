@@ -608,6 +608,7 @@ function InstructorSimulationGroupPage() {
         if (idsToAdd.length > 0) {
           await instructorService.assignQuestionToGroup(groupId || '1', idsToAdd, selectedPatientForQuestionBank);
         }
+        
         includedQuestionIds.forEach(id => {
           if (!pendingQuestionIds.has(id)) {
             instructorService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);

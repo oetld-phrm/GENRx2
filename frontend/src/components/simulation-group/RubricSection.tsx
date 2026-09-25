@@ -30,6 +30,7 @@ export function RubricSection({
   const filteredQuestions = questions.filter(q =>
     q.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
   //remove duplicate questions based on id
   const uniqueQuestions = Array.from(
     new Map(filteredQuestions.map(question => [question.id, question])).values()
