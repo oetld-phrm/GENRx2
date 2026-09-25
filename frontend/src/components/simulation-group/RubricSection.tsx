@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
+import { UI_COLORS } from '@/lib/colors';
 import type { GlobalRubricQuestion } from '@/services/instructorService';
 
 export interface RubricSectionProps {
