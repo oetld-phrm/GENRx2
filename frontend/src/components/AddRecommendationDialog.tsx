@@ -127,6 +127,9 @@ export function AddRecommendationDialog({ open, onOpenChange, onSave, isPatientS
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Title
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              Only used for internal searching and filtering. Not displayed to students or given to model.
+            </p>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -144,6 +147,9 @@ export function AddRecommendationDialog({ open, onOpenChange, onSave, isPatientS
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Recommendation Text
             </label>
+             <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+              </p>
             <textarea
               value={recommendationText}
               onChange={(e) => setRecommendationText(e.target.value)}
@@ -163,6 +169,9 @@ export function AddRecommendationDialog({ open, onOpenChange, onSave, isPatientS
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Evaluation Criteria
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+            </p>
             <textarea
               value={evaluationCriteria}
               onChange={(e) => setEvaluationCriteria(e.target.value)}
@@ -182,6 +191,9 @@ export function AddRecommendationDialog({ open, onOpenChange, onSave, isPatientS
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Rationale
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+            Write this as you would expect the student to write it. This will be used by the model to evaluate the student's recommendation & provide feedback.
+            </p>
             <textarea
               value={rationale}
               onChange={(e) => setRationale(e.target.value)}

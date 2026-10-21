@@ -132,6 +132,9 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Title
             </label>
+              <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              Only used for internal searching and filtering. Not displayed to students or given to model.
+            </p>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -149,6 +152,10 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Expected DTP Text
             </label>
+              <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+              </p>
+            
             <textarea
               value={expectedDTPText}
               onChange={(e) => setExpectedDTPText(e.target.value)}
@@ -168,6 +175,10 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Clinical Intent
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+               This is the clinical intent behind the DTP and is only used for internal reference. Not displayed to students or given to the model.
+            </p>
+            
             <textarea
               value={clinicalIntent}
               onChange={(e) => setClinicalIntent(e.target.value)}
@@ -187,6 +198,9 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Evaluation Criteria
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+            </p>
             <textarea
               value={evaluationCriteria}
               onChange={(e) => setEvaluationCriteria(e.target.value)}
@@ -265,7 +279,7 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
               <div
                 className="w-11 h-6 rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2 transition-colors"
                 style={{
-                  backgroundColor: isRequired ? UI_COLORS.button.primary : UI_COLORS.background.tableHeader,
+                  backgroundColor: isRequired ? UI_COLORS.button.primary : UI_COLORS.button.primary,
                 }}
               >
                 <div
@@ -276,9 +290,14 @@ export function AddDTPDialog({ open, onOpenChange, onSave, isPatientSpecific = f
                 />
               </div>
             </label>
-            <span className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
+            <div>
+            <p className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
               Required for Case Completion
-            </span>
+            </p>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              Is this an optional DTP or is it required for the student to complete the case?
+            </p>
+            </div>
           </div>
         </div>
 

@@ -942,6 +942,9 @@ function QuestionsTab({
                     <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
                       Title
                     </label>
+                    <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                      Only used for internal searching and filtering. Not displayed to students or given to model.
+                    </p>
                     <Input
                       value={question.title}
                       onChange={(e) => {
@@ -967,6 +970,9 @@ function QuestionsTab({
                     <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
                       Key Question
                     </label>
+                    <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                      This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+                    </p>
                     <textarea
                       value={question.keyQuestion}
                       onChange={(e) => {
@@ -993,6 +999,9 @@ function QuestionsTab({
                     <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
                       Clinical Intent
                     </label>
+                    <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        This is the clinical intent behind this question and is only used for internal reference. Not displayed to students or given to the model.
+                    </p>
                     <textarea
                       value={question.clinicalIntent}
                       onChange={(e) => {
@@ -1019,6 +1028,9 @@ function QuestionsTab({
                     <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>
                       Evaluation Criteria
                     </label>
+                    <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                      These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+                    </p>
                     <textarea
                       value={question.evaluationCriteria}
                       onChange={(e) => {
@@ -1064,9 +1076,14 @@ function QuestionsTab({
                         }}
                       />
                     </button>
-                    <span className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>
-                      Required for Case Completion
-                    </span>
+                     <div>
+                      <span className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
+                        Required for Case Completion
+                      </span>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        Is this an optional question or is it required for the student to complete the case?
+                      </p>
+                      </div>
                   </div>
 
                   {/* Action Buttons */}
@@ -1121,7 +1138,7 @@ function QuestionsTab({
           GROUP-WIDE KEY QUESTIONS
         </h3>
         <p className="text-xs italic mb-4" style={{ color: UI_COLORS.text.muted }}>
-          The following group-wide questions are shown for reference to prevent redundancy. Edit group-wide questions from the Group-Wide Key Questions tab.
+          The following group-wide questions are shown for reference to prevent redundancy. Edit group-wide questions from the bank.
         </p>
 
         {/* Search Bar for Group-Wide Questions */}
@@ -1177,13 +1194,14 @@ function QuestionsTab({
               >
                 <div className="space-y-4 pt-4">
                   {[
-                    { label: 'Title', value: question.title, minHeight: undefined },
-                    { label: 'Key Question', value: question.keyQuestion, minHeight: '150px' },
-                    { label: 'Clinical Intent', value: question.clinicalIntent, minHeight: '100px' },
-                    { label: 'Evaluation Criteria', value: question.evaluationCriteria, minHeight: '100px' },
-                  ].map(({ label, value, minHeight }) => (
+                    { label: 'Title', details:' Only used for internal searching and filtering. Not displayed to students or given to model.', value: question.title, minHeight: undefined },
+                    { label: 'Key Question', details:'This is the text that will be compared against the student\'s response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.', value: question.keyQuestion, minHeight: '150px' },
+                    { label: 'Clinical Intent',details:'This is the clinical intent behind this question and is only used for internal reference. Not displayed to students or given to the model.', value: question.clinicalIntent, minHeight: '100px' },
+                    { label: 'Evaluation Criteria', details:'These are the criteria that will be used by the model to evaluate the student\'s response & provide feedback. Be specific about what constitutes a correct answer.', value: question.evaluationCriteria, minHeight: '100px' },
+                  ].map(({ label, details, value, minHeight }) => (
                     <div key={label}>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>{label}</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>{details}</p>
                       <div
                         className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap"
                         style={{
@@ -1718,6 +1736,9 @@ function PatientDTPsTab({
                     {/* Title */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Title</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        Only used for internal searching and filtering. Not displayed to students or given to model.
+                      </p>
                       <Input
                         value={dtp.title || ''}
                         onChange={(e) => updateEditableDTP(dtp.groupDtpId, { title: e.target.value })}
@@ -1731,6 +1752,9 @@ function PatientDTPsTab({
                     {/* Expected DTP Text */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Expected DTP Text</label>
+                     <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                      This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+                    </p>
                       <textarea
                         value={dtp.expectedDTPText || ''}
                         onChange={(e) => updateEditableDTP(dtp.groupDtpId, { expectedDTPText: e.target.value })}
@@ -1744,6 +1768,9 @@ function PatientDTPsTab({
                     {/* Clinical Intent */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Clinical Intent</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        This is the clinical intent behind the DTP and is only used for internal reference. Not displayed to students or given to the model.
+                      </p>
                       <textarea
                         value={dtp.clinicalIntent || ''}
                         onChange={(e) => updateEditableDTP(dtp.groupDtpId, { clinicalIntent: e.target.value })}
@@ -1757,6 +1784,9 @@ function PatientDTPsTab({
                     {/* Evaluation Criteria */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Evaluation Criteria</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+                      </p>
                       <textarea
                         value={dtp.evaluationCriteria || ''}
                         onChange={(e) => updateEditableDTP(dtp.groupDtpId, { evaluationCriteria: e.target.value })}
@@ -1779,7 +1809,14 @@ function PatientDTPsTab({
                       >
                         <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: dtp.isRequired ? 'translateX(22px)' : 'translateX(2px)' }} />
                       </button>
-                      <span className="text-sm font-medium" style={{ color: UI_COLORS.text.body }}>Required for Case Completion</span>
+                      <div>
+                      <p className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
+                        Required for Case Completion
+                      </p>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        Is this an optional DTP or is it required for the student to complete the case?
+                      </p>
+                      </div>
                     </div>
 
                     {/* Action Buttons */}
@@ -1841,13 +1878,14 @@ function PatientDTPsTab({
                   <AccordionContent className="px-4 pb-4" style={{ backgroundColor: UI_COLORS.background.white }}>
                     <div className="space-y-4 pt-4">
                       {[
-                        { label: 'Title', value: dtp.title, minHeight: undefined },
-                        { label: 'Expected DTP Text', value: dtp.expectedDTPText, minHeight: '100px' },
-                        { label: 'Clinical Intent', value: dtp.clinicalIntent, minHeight: '100px' },
-                        { label: 'Evaluation Criteria', value: dtp.evaluationCriteria, minHeight: '100px' },
-                      ].map(({ label, value, minHeight }) => (
+                        { label: 'Title', details:'Only used for internal searching and filtering. Not displayed to students or given to model.', value: dtp.title, minHeight: undefined },
+                        { label: 'Expected DTP Text', details:'This is the text that will be compared against the student\'s response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.',  value: dtp.expectedDTPText, minHeight: '100px' },
+                        { label: 'Clinical Intent', details:'This is the clinical intent behind the DTP and is only used for internal reference. Not displayed to students or given to the model.',  value: dtp.clinicalIntent, minHeight: '100px' },
+                        { label: 'Evaluation Criteria', details:'These are the criteria that will be used by the model to evaluate the student\'s response & provide feedback. Be specific about what constitutes a correct answer.',  value: dtp.evaluationCriteria, minHeight: '100px' },
+                      ].map(({ label, details, value, minHeight }) => (
                         <div key={label}>
                           <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>{label}</label>
+                          <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>{details}</p>
                           <div
                             className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap"
                             style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.hoverLight, color: UI_COLORS.text.body, minHeight }}
@@ -2019,6 +2057,9 @@ function PatientRecommendationsTab({
                     {/* Title */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Title</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        Only used for internal searching and filtering. Not displayed to students or given to model.
+                      </p>
                       <Input
                         value={rec.title || ''}
                         onChange={(e) => updateEditableRec(rec.groupRecommendationId, { title: e.target.value })}
@@ -2032,6 +2073,9 @@ function PatientRecommendationsTab({
                     {/* Recommendation Text */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Recommendation Text</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+                      </p>
                       <textarea
                         value={rec.recommendationText || ''}
                         onChange={(e) => updateEditableRec(rec.groupRecommendationId, { recommendationText: e.target.value })}
@@ -2045,6 +2089,9 @@ function PatientRecommendationsTab({
                     {/* Evaluation Criteria */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Evaluation Criteria</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+                      </p>
                       <textarea
                         value={rec.evaluationCriteria || ''}
                         onChange={(e) => updateEditableRec(rec.groupRecommendationId, { evaluationCriteria: e.target.value })}
@@ -2058,6 +2105,9 @@ function PatientRecommendationsTab({
                     {/* Rationale */}
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Rationale</label>
+                      <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                        Write this as you would expect the student to write it. This will be used by the model to evaluate the student's recommendation & provide feedback.
+                        </p>
                       <textarea
                         value={rec.rationale || ''}
                         onChange={(e) => updateEditableRec(rec.groupRecommendationId, { rationale: e.target.value })}
@@ -2126,13 +2176,14 @@ function PatientRecommendationsTab({
                   <AccordionContent className="px-4 pb-4" style={{ backgroundColor: UI_COLORS.background.white }}>
                     <div className="space-y-4 pt-4">
                       {[
-                        { label: 'Title', value: rec.title, minHeight: undefined },
-                        { label: 'Recommendation Text', value: rec.recommendationText, minHeight: '100px' },
-                        { label: 'Evaluation Criteria', value: rec.evaluationCriteria, minHeight: '100px' },
-                        { label: 'Rationale', value: rec.rationale, minHeight: '100px' },
-                      ].map(({ label, value, minHeight }) => (
+                        { label: 'Title', details:'Only used for internal searching and filtering. Not displayed to students or given to model.', value: rec.title, minHeight: undefined },
+                        { label: 'Recommendation Text', details:'This is the text that will be compared against the student\'s response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.',  value: rec.recommendationText, minHeight: '100px' },
+                        { label: 'Evaluation Criteria', details:' These are the criteria that will be used by the model to evaluate the student\'s response & provide feedback. Be specific about what constitutes a correct answer.',  value: rec.evaluationCriteria, minHeight: '100px' },
+                        { label: 'Rationale', details:'Write this as you would expect the student to write it. This will be used by the model to evaluate the student\'s recommendation & provide feedback.', value: rec.rationale, minHeight: '100px' },
+                      ].map(({ label, details,value, minHeight }) => (
                         <div key={label}>
                           <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>{label}</label>
+                          <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>{details}</p>
                           <div
                             className="w-full px-3 py-3 rounded-lg text-base whitespace-pre-wrap"
                             style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.hoverLight, color: UI_COLORS.text.body, minHeight }}

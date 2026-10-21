@@ -122,6 +122,9 @@ export function AddPatientSpecificQuestionBankDialog({
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Title
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              Only used for internal searching and filtering. Not displayed to students or given to model.
+            </p>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -139,6 +142,9 @@ export function AddPatientSpecificQuestionBankDialog({
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Key Question
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+                This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+            </p>
             <textarea
               value={keyQuestion}
               onChange={(e) => setKeyQuestion(e.target.value)}
@@ -158,6 +164,9 @@ export function AddPatientSpecificQuestionBankDialog({
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Clinical Intent
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+               This is the clinical intent behind this question and is only used for internal reference. Not displayed to students or given to the model.
+            </p>
             <textarea
               value={clinicalIntent}
               onChange={(e) => setClinicalIntent(e.target.value)}
@@ -177,6 +186,9 @@ export function AddPatientSpecificQuestionBankDialog({
             <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.heading }}>
               Evaluation Criteria
             </label>
+            <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              These are the criteria that will be used by the model to evaluate the student's response & provide feedback. Be specific about what constitutes a correct answer.
+            </p>
             <textarea
               value={evaluationCriteria}
               onChange={(e) => setEvaluationCriteria(e.target.value)}
@@ -255,7 +267,7 @@ export function AddPatientSpecificQuestionBankDialog({
               <div
                 className="w-11 h-6 rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2 transition-colors"
                 style={{
-                  backgroundColor: required ? UI_COLORS.button.primary : UI_COLORS.background.tableHeader,
+                  backgroundColor: required ? UI_COLORS.button.primary : UI_COLORS.button.primary,
                 }}
               >
                 <div
@@ -266,9 +278,14 @@ export function AddPatientSpecificQuestionBankDialog({
                 />
               </div>
             </label>
+           <div>
             <span className="text-sm font-medium" style={{ color: UI_COLORS.text.heading }}>
               Required for Case Completion
             </span>
+             <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
+              Is this an optional question or is it required for the student to complete the case?
+            </p>
+            </div>
           </div>
         </div>
 
