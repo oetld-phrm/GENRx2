@@ -13,11 +13,13 @@ import { filterByTitle, paginate } from '@/lib/bankUtils';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useNotification } from '@/components/notifications';
+import * as adminApi from '@/services/adminApiService';
 
 function AdminDTPBankPage() {
   const navigate = useNavigate();
   const { organizationId } = useParams<{ organizationId: string }>();
   const { showNotification } = useNotification();
+  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
 
   // Tab state
   const [dtpBankTab, setDtpBankTab] = useState<'global' | 'patientSpecific'>('global');
@@ -68,6 +70,8 @@ function AdminDTPBankPage() {
       setError(null);
       const items = await listDTPItems(organizationId || '');
       setDtpItems(items);
+      const orgData = await adminApi.getOrganization(organizationId || '');
+      setOrganization(orgData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load DTP bank');
     } finally {
@@ -253,7 +257,7 @@ function AdminDTPBankPage() {
     <PageContainer>
       <DashboardHeader
         title="Admin Dashboard"
-        subtitle="DTP Bank Management"
+        subtitle={organization ? `${organization.name} DTP Bank Management` : 'DTP Bank Management'}
         userName={user.name}
         userAvatarUrl={user.avatarUrl}
         onSignOut={handleSignOut}

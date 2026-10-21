@@ -13,11 +13,13 @@ import { filterByTitle, paginate } from '@/lib/bankUtils';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useNotification } from '@/components/notifications';
+import * as adminApi from '@/services/adminApiService';
 
 function AdminRecommendationsBankPage() {
   const navigate = useNavigate();
   const { organizationId } = useParams<{ organizationId: string }>();
   const { showNotification } = useNotification();
+  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
 
   // Tab state
   const [recommendationsBankTab, setRecommendationsBankTab] = useState<'global' | 'patientSpecific'>('global');
@@ -64,6 +66,8 @@ function AdminRecommendationsBankPage() {
       setError(null);
       const items = await listRecommendationItems(organizationId || '');
       setRecommendationItems(items);
+      const orgData = await adminApi.getOrganization(organizationId || '');
+      setOrganization(orgData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Recommendations bank');
     } finally {
@@ -233,7 +237,7 @@ function AdminRecommendationsBankPage() {
     <PageContainer>
       <DashboardHeader
         title="Admin Dashboard"
-        subtitle="Recommendations Bank Management"
+        subtitle={organization ? `${organization.name} Recommendations Bank Management` : 'Recommendations Bank Management'}
         userName={user.name}
         userAvatarUrl={user.avatarUrl}
         onSignOut={handleSignOut}

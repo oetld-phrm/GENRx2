@@ -7,13 +7,14 @@ import PageContainer from '@/components/PageContainer';
 import DashboardHeader from '@/components/DashboardHeader';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { mockAdminDataService } from '@/services/adminService';
+import { mockAdminDataService, mockOrganizations } from '@/services/adminService';
 import { useAuth } from '@/App';
 import { UI_COLORS } from '@/lib/colors';
 import ThresholdConfigSection from '@/components/ThresholdConfigSection';
 import { useNotification } from '@/components/notifications';
 import * as adminApi from '@/services/adminApiService';
 import type { RegisteredUser } from '@/services/adminApiService';
+
 
 interface BankCard {
   title: string;
@@ -32,12 +33,31 @@ function AdminManageBanksPage() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { organizationId } = useParams<{ organizationId: string }>();
-
+  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
   let user = mockAdminDataService.getCurrentUser();
   if (!user || !user.name) {
     user = { name: 'Admin', avatarUrl: undefined };
   }
+ // Load organization details asynchronously
+  useEffect(() => {
+    const loadData = async () => {
 
+      // Load org details from API, fall back to mock
+      if (organizationId) {
+        try {
+          const orgData = await adminApi.getOrganization(organizationId);
+          setOrganization(orgData);
+        } catch (err) {
+          console.error('Failed to load organization from API, using mock:', err);
+          const mockOrg = mockOrganizations.find(o => o.organization_id === organizationId) || null;
+          setOrganization(mockOrg);
+        }
+      }
+
+    };
+    loadData();
+  }, [organizationId]);
+  
   const handleSignOut = async () => {
     try {
       await signOut();
@@ -45,7 +65,6 @@ function AdminManageBanksPage() {
       console.error('Error during sign out:', error);
     }
   };
-
   const banks: BankCard[] = [
     {
       title: 'Question Bank',
@@ -71,7 +90,7 @@ function AdminManageBanksPage() {
     <PageContainer>
       <DashboardHeader
         title="Admin Dashboard"
-        subtitle="Scoring & Configuration"
+        subtitle={organization ? `${organization.name} Scoring & Configuration` : 'Scoring & Configuration'}
         userName={user.name}
         userAvatarUrl={user.avatarUrl}
         onSignOut={handleSignOut}
@@ -92,7 +111,7 @@ function AdminManageBanksPage() {
         </div>
 
         <h2 className="text-xl font-semibold mb-6" style={{ color: UI_COLORS.text.heading }}>
-          Item Banks
+            {organization ? `${organization.name} Item Banks` : 'Item Banks'}
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

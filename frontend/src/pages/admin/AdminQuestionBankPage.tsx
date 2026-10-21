@@ -19,6 +19,7 @@ import { filterByTitle, paginate } from '@/lib/bankUtils';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS, SIMULATION_GROUP_COLOR_PALETTE } from '@/lib/colors';
 import { useNotification } from '@/components/notifications';
+import * as adminApi from '@/services/adminApiService';
 
 /**
  * AdminQuestionBankPage Component
@@ -31,7 +32,7 @@ function AdminQuestionBankPage() {
   const navigate = useNavigate();
   const { organizationId } = useParams<{ organizationId: string }>();
   const { showNotification } = useNotification();
-
+  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
   // Tab state
   const [questionBankTab, setQuestionBankTab] = useState<'global' | 'patientSpecific'>('global');
 
@@ -77,11 +78,14 @@ function AdminQuestionBankPage() {
   const user = { name: 'Admin', avatarUrl: undefined };
 
   const loadData = async () => {
+    
     try {
       setLoading(true);
       setError(null);
       const items = await getQuestionBankQuestions(organizationId || '');
       setQuestionItems(items);
+      const orgData = await adminApi.getOrganization(organizationId || '');
+      setOrganization(orgData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load question bank');
     } finally {
@@ -304,7 +308,7 @@ function AdminQuestionBankPage() {
     <PageContainer>
       <DashboardHeader
         title="Admin Dashboard"
-        subtitle="Question Bank Management"
+         subtitle={organization ? `${organization.name} Question Bank Management` : 'Question Bank Management'}
         userName={user.name}
         userAvatarUrl={user.avatarUrl}
         onSignOut={handleSignOut}
