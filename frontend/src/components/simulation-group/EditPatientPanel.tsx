@@ -2074,7 +2074,7 @@ function PatientRecommendationsTab({
                     <div>
                       <label className="block text-sm font-medium mb-2" style={{ color: UI_COLORS.text.body }}>Recommendation Text</label>
                       <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
-                        This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+                        This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.  If there are multiple possible alternatives for a single recommendation, write them all as a single recommendation separated by "OR" (e.g. Drug A OR Drug B OR Drug C).
                       </p>
                       <textarea
                         value={rec.recommendationText || ''}
@@ -2177,7 +2177,7 @@ function PatientRecommendationsTab({
                     <div className="space-y-4 pt-4">
                       {[
                         { label: 'Title', details:'Only used for internal searching and filtering. Not displayed to students or given to model.', value: rec.title, minHeight: undefined },
-                        { label: 'Recommendation Text', details:'This is the text that will be compared against the student\'s response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.',  value: rec.recommendationText, minHeight: '100px' },
+                        { label: 'Recommendation Text', details:'This is the text that will be compared against the student\'s response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.  If there are multiple possible alternatives for a single recommendation, write them all as a single recommendation separated by "OR" (e.g. Drug A OR Drug B OR Drug C).',  value: rec.recommendationText, minHeight: '100px' },
                         { label: 'Evaluation Criteria', details:' These are the criteria that will be used by the model to evaluate the student\'s response & provide feedback. Be specific about what constitutes a correct answer.',  value: rec.evaluationCriteria, minHeight: '100px' },
                         { label: 'Rationale', details:'Write this as you would expect the student to write it. This will be used by the model to evaluate the student\'s recommendation & provide feedback.', value: rec.rationale, minHeight: '100px' },
                       ].map(({ label, details,value, minHeight }) => (

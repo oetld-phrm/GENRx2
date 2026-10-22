@@ -148,7 +148,7 @@ export function AddRecommendationDialog({ open, onOpenChange, onSave, isPatientS
               Recommendation Text
             </label>
              <p className="text-xs mb-2" style={{ color: UI_COLORS.text.muted }}>
-                This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission.
+                This is the text that will be compared against the student's response for evaluation. Write this as you would expect a student to write it, as it is directly compared to the student submission. If there are multiple possible alternatives for a single recommendation, write them all as a single recommendation separated by "OR" (e.g. Drug A OR Drug B OR Drug C).
               </p>
             <textarea
               value={recommendationText}
