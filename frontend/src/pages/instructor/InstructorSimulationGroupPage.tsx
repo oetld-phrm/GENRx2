@@ -9,6 +9,7 @@ import { useAuth } from '@/App';
 import { instructorService, type GlobalRubricQuestion, type QuestionBankItem } from '@/services/instructorService';
 import { studentService } from '@/services/studentService';
 import { DashboardSkeleton } from '@/components/skeletons';
+import LoadingIndicator from '@/components/LoadingIndicator';
 import { UI_COLORS } from '@/lib/colors';
 import { useSimulationGroupData } from '@/hooks/useSimulationGroupData';
 import { usePatientEditor } from '@/hooks/usePatientEditor';
@@ -61,7 +62,7 @@ function InstructorSimulationGroupPage() {
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
 
   // Shared hooks
-  const groupData = useSimulationGroupData({ groupId, role: 'instructor' });
+  const groupData = useSimulationGroupData({ groupId, role: 'instructor', activeSection });
   const patientEditor = usePatientEditor({
     groupId, role: 'instructor',
     manageablePatients: groupData.manageablePatients, setManageablePatients: groupData.setManageablePatients,
@@ -96,6 +97,8 @@ function InstructorSimulationGroupPage() {
     patientAnalytics, analyticsDateRange, setAnalyticsDateRange, keyQuestionCoverage,
     keyQuestionAnalytics, dtpCoverage, recommendationCoverage, dtpAnalytics, recommendationAnalytics,
     studentProgress, selectedPatientId, setSelectedPatientId, loading, user,
+    error: groupError, patientsLoading, studentsLoading, analyticsLoading,
+    patientsError, studentsError, analyticsError,
   } = groupData;
 
   const { includedQuestionIds, setIncludedQuestionIds, pendingQuestionIds, setPendingQuestionIds,
@@ -638,6 +641,16 @@ function InstructorSimulationGroupPage() {
   if (loading) {
     return <DashboardSkeleton cardCount={4} />;
   }
+  if (groupError) {
+    return (
+      <PageContainer>
+        <div className="p-8 space-y-4">
+          <p role="alert" style={{ color: UI_COLORS.text.error }}>{groupError}</p>
+          <Button onClick={() => navigate('/instructor')}>Back to groups</Button>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -688,18 +701,30 @@ function InstructorSimulationGroupPage() {
         />
 
         <main className="flex-1 overflow-y-auto" style={{ padding: ['rubric', 'questionBank', 'dtpBank', 'recommendationsBank', 'editPatient', 'viewStudent', 'prompt'].includes(activeSection) ? '0' : '2rem' }}>
-          {activeSection === 'analytics' && (
+          {((activeSection === 'analytics' && analyticsLoading) ||
+            (activeSection === 'patients' && patientsLoading) ||
+            (activeSection === 'students' && studentsLoading)) && (
+            <div className="p-8"><LoadingIndicator message={`Loading ${activeSection}...`} /></div>
+          )}
+          {((activeSection === 'analytics' && analyticsError) ||
+            (activeSection === 'patients' && patientsError) ||
+            (activeSection === 'students' && studentsError)) && (
+            <p role="alert" className="p-4 text-sm" style={{ color: UI_COLORS.text.error }}>
+              {activeSection === 'analytics' ? analyticsError : activeSection === 'patients' ? patientsError : studentsError}
+            </p>
+          )}
+          {activeSection === 'analytics' && !analyticsLoading && (
             <Suspense fallback={<DashboardSkeleton />}>
               <AnalyticsSection patientAnalytics={patientAnalytics} analyticsDateRange={analyticsDateRange} onDateRangeChange={setAnalyticsDateRange} keyQuestionCoverage={keyQuestionCoverage} keyQuestionAnalytics={keyQuestionAnalytics} dtpCoverage={dtpCoverage} recommendationCoverage={recommendationCoverage} dtpAnalytics={dtpAnalytics} recommendationAnalytics={recommendationAnalytics} studentProgress={studentProgress} selectedPatientId={selectedPatientId} onPatientSelect={setSelectedPatientId} labels={labels} simulationGroup={simulationGroup} onNavigateToSection={section => setActiveSection(section as ActiveSection)} />
             </Suspense>
           )}
-          {activeSection === 'patients' && <PatientsSection patients={manageablePatients} profilePictures={profilePictures} searchQuery={searchQuery} onSearchChange={setSearchQuery} onEditPatient={handleEditPatient} onDeletePatient={handleDeletePatient} onCreatePatient={handleCreateNewPatient} onTogglePatientVoice={handleTogglePatientVoice} labels={labels} enableVoiceForAll={enableVoiceForAll} onToggleVoice={async (enabled) => {
+          {activeSection === 'patients' && !patientsLoading && !patientsError && <PatientsSection patients={manageablePatients} profilePictures={profilePictures} searchQuery={searchQuery} onSearchChange={setSearchQuery} onEditPatient={handleEditPatient} onDeletePatient={handleDeletePatient} onCreatePatient={handleCreateNewPatient} onTogglePatientVoice={handleTogglePatientVoice} labels={labels} enableVoiceForAll={enableVoiceForAll} onToggleVoice={async (enabled) => {
             for (const p of manageablePatients) {
               const pid = (p as any).id || (p as any).patient_id;
               await handleTogglePatientVoice(pid, enabled);
             }
           }} />}
-          {activeSection === 'students' && <StudentsSection students={students} searchQuery={studentSearchQuery} onSearchChange={setStudentSearchQuery} onViewStudent={handleViewStudent} labels={labels} />}
+          {activeSection === 'students' && !studentsLoading && !studentsError && <StudentsSection students={students} searchQuery={studentSearchQuery} onSearchChange={setStudentSearchQuery} onViewStudent={handleViewStudent} labels={labels} />}
           {activeSection === 'rubric' && <RubricSection questions={globalRubricQuestions} selectedQuestionId={selectedQuestionId} onSelectQuestion={setSelectedQuestionId} searchQuery={rubricSearchQuery} onSearchChange={setRubricSearchQuery} onSaveQuestion={handleSaveQuestion} onUpdateField={handleUpdateQuestionField} />}
           {activeSection === 'questionBank' && <QuestionBankSection questionBank={questionBank} role="instructor" groupId={groupId || '1'} patients={manageablePatients} onConfirmSelections={handleConfirmSelections} onGlobalTabClick={syncGlobalIds} onPatientSpecificTabClick={() => syncPatientIds(selectedPatientForQuestionBank)} onPatientSelect={syncPatientIds} />}
           {activeSection === 'dtpBank' && <DTPBankSection dtpBank={dtpBank} role="instructor" groupId={groupId || ''} patients={manageablePatients} onConfirmSelections={handleConfirmDTPSelections} onGroupWideTabClick={syncDTPGroupWideIds} onPatientSpecificTabClick={() => syncDTPPatientIds(dtpBank.selectedPatientId)} onPatientSelect={syncDTPPatientIds} />}

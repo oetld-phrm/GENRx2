@@ -89,10 +89,10 @@ export async function getAllSimulationGroups(organizationId?: string): Promise<A
 }
 
 /**
- * Get a single simulation group by ID (fetches all and filters).
+ * Get a simulation group from its organization rather than downloading every organization.
  */
-export async function getSimulationGroup(groupId: string): Promise<AdminSimulationGroup | undefined> {
-  const groups = await getAllSimulationGroups();
+export async function getSimulationGroup(groupId: string, organizationId?: string): Promise<AdminSimulationGroup | undefined> {
+  const groups = await getAllSimulationGroups(organizationId);
   return groups.find(g => g.simulation_group_id === groupId);
 }
 

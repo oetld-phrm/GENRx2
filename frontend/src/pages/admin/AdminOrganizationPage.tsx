@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import { useAsyncResource } from '@/hooks/useAsyncResource';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,15 +21,40 @@ import { useNotification } from '@/components/notifications';
  * 
  * Page for viewing and managing simulation groups within a specific organization.
  */
+const EMPTY_GROUPS: InstructorSimulationGroup[] = [];
+
 function AdminOrganizationPage() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { organizationId } = useParams<{ organizationId: string }>();
   const { showNotification } = useNotification();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [groups, setGroups] = useState<InstructorSimulationGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
+  // The two resource hooks start together and cannot publish an old route's response.
+  const loadGroups = useCallback(async (): Promise<InstructorSimulationGroup[]> => {
+    const data = await adminApi.getAllSimulationGroups(organizationId);
+    return data.map((g, i) => ({
+      simulation_group_id: g.simulation_group_id, group_name: g.group_name,
+      subtitle: g.group_description || 'Simulation Group', icon_color: getSimulationGroupColor(i),
+      group_access_code: g.group_access_code || '', student_count: g.student_count || 0,
+      instructor_count: g.instructor_count || 0, persona_count: g.persona_count || 0,
+      organization_id: g.organization_id || '',
+    }));
+  }, [organizationId]);
+  const loadOrganization = useCallback(async () => {
+    if (!organizationId) return null;
+    try { return await adminApi.getOrganization(organizationId); }
+    catch (err) {
+      console.error('Failed to load organization:', err);
+      return mockOrganizations.find(o => o.organization_id === organizationId) || null;
+    }
+  }, [organizationId]);
+  const [groups, setGroups, groupsLoading, groupsError] = useAsyncResource(
+    organizationId || '', Boolean(organizationId), loadGroups, EMPTY_GROUPS
+  );
+  const [organization, , organizationLoading] = useAsyncResource(
+    organizationId || '', Boolean(organizationId), loadOrganization, null
+  );
+  const loading = groupsLoading || organizationLoading;
 
   // Load user data from mock data service with error handling
   let user = mockAdminDataService.getCurrentUser();
@@ -40,44 +66,6 @@ function AdminOrganizationPage() {
       avatarUrl: undefined
     };
   }
-
-  // Load organization details and simulation groups asynchronously
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const groupsData = await adminApi.getAllSimulationGroups(organizationId);
-        // Map admin groups to the InstructorSimulationGroup shape used by the UI
-        setGroups(groupsData.map((g, i) => ({
-          simulation_group_id: g.simulation_group_id,
-          group_name: g.group_name,
-          subtitle: g.group_description || 'Simulation Group',
-          icon_color: getSimulationGroupColor(i),
-          group_access_code: g.group_access_code || '',
-          student_count: g.student_count || 0,
-          instructor_count: g.instructor_count || 0,
-          persona_count: g.persona_count || 0,
-          organization_id: g.organization_id || '',
-        })));
-      } catch (error) {
-        console.error('Failed to load simulation groups:', error);
-      }
-
-      // Load org details from API, fall back to mock
-      if (organizationId) {
-        try {
-          const orgData = await adminApi.getOrganization(organizationId);
-          setOrganization(orgData);
-        } catch (err) {
-          console.error('Failed to load organization from API, using mock:', err);
-          const mockOrg = mockOrganizations.find(o => o.organization_id === organizationId) || null;
-          setOrganization(mockOrg);
-        }
-      }
-
-      setLoading(false);
-    };
-    loadData();
-  }, [organizationId]);
 
   const handleSignOut = async () => {
     try {
@@ -220,6 +208,7 @@ function AdminOrganizationPage() {
           </button>
         </div>
 
+        {groupsError && <p role="alert" className="mb-4" style={{ color: UI_COLORS.text.error }}>{groupsError}</p>}
         <SimulationGroupsSection
           groups={groups.map(g => ({ ...g, name: g.group_name }))}
           onJoinGroup={handleCreateGroup}

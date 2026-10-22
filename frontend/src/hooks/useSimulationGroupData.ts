@@ -1,27 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   instructorService,
-  type KeyQuestionAnalytics,
-  type KeyQuestionCoverage,
-  type DTPCoverage,
-  type RecommendationCoverage,
-  type DTPAnalytics,
-  type RecommendationAnalytics,
-  type StudentProgressData,
-  type UserData,
-  type OrganizationLabels,
+  type KeyQuestionAnalytics, type KeyQuestionCoverage, type DTPCoverage,
+  type RecommendationCoverage, type DTPAnalytics, type RecommendationAnalytics,
+  type StudentProgressData, type UserData, type OrganizationLabels,
 } from '@/services/instructorService';
 import * as adminApi from '@/services/adminApiService';
 import { mockAdminDataService } from '@/services/adminService';
+import { useAsyncResource } from '@/hooks/useAsyncResource';
 
 export interface UseSimulationGroupDataParams {
   groupId: string | undefined;
   organizationId?: string;
   role: 'admin' | 'instructor';
+  activeSection?: string;
 }
 
 export interface UseSimulationGroupDataReturn {
-  // Core data
   simulationGroup: any;
   patientAnalytics: any[];
   students: any[];
@@ -32,9 +27,15 @@ export interface UseSimulationGroupDataReturn {
   recommendationCoverage: RecommendationCoverage[];
   labels: OrganizationLabels;
   user: UserData;
+  /** Only group metadata blocks the page shell. */
   loading: boolean;
-
-  // Analytics filtering
+  error: string | null;
+  patientsLoading: boolean;
+  studentsLoading: boolean;
+  analyticsLoading: boolean;
+  patientsError: string | null;
+  studentsError: string | null;
+  analyticsError: string | null;
   analyticsDateRange: { start: string; end: string };
   setAnalyticsDateRange: React.Dispatch<React.SetStateAction<{ start: string; end: string }>>;
   keyQuestionAnalytics: KeyQuestionAnalytics[];
@@ -43,232 +44,125 @@ export interface UseSimulationGroupDataReturn {
   studentProgress: StudentProgressData[];
   selectedPatientId: string;
   setSelectedPatientId: (id: string) => void;
-
-  // Mutations
   setManageablePatients: React.Dispatch<React.SetStateAction<any[]>>;
   setSimulationGroup: React.Dispatch<React.SetStateAction<any>>;
   setProfilePictures: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   reloadPatients: () => Promise<void>;
 }
 
-export function useSimulationGroupData({
-  groupId,
-  organizationId,
-  role,
-}: UseSimulationGroupDataParams): UseSimulationGroupDataReturn {
-  // Core data state
-  const [simulationGroup, setSimulationGroup] = useState<any>(undefined);
-  const [patientAnalytics, setPatientAnalytics] = useState<any[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
-  const [manageablePatients, setManageablePatients] = useState<any[]>([]);
-  const [profilePictures, setProfilePictures] = useState<Record<string, string>>({});
-  const [keyQuestionCoverage, setKeyQuestionCoverage] = useState<KeyQuestionCoverage[]>([]);
-  const [dtpCoverage, setDtpCoverage] = useState<DTPCoverage[]>([]);
-  const [recommendationCoverage, setRecommendationCoverage] = useState<RecommendationCoverage[]>([]);
-  const [loading, setLoading] = useState(true);
+// Stable fallbacks keep effect dependencies unchanged between renders.
+const EMPTY_ROWS: never[] = [];
+const EMPTY_PHOTOS: Record<string, string> = {};
+const DEFAULT_USER: UserData = { name: 'Instructor', avatarUrl: undefined };
+const EMPTY_ANALYTICS = {
+  patients: EMPTY_ROWS as Awaited<ReturnType<typeof instructorService.getPatientAnalytics>>,
+  questions: EMPTY_ROWS as KeyQuestionCoverage[],
+  dtps: EMPTY_ROWS as DTPCoverage[],
+  recommendations: EMPTY_ROWS as RecommendationCoverage[],
+  warning: null as string | null,
+};
+const EMPTY_DETAILS = {
+  questions: EMPTY_ROWS as KeyQuestionAnalytics[], dtps: EMPTY_ROWS as DTPAnalytics[],
+  recommendations: EMPTY_ROWS as RecommendationAnalytics[], progress: EMPTY_ROWS as StudentProgressData[],
+};
 
-  // User data - admin uses mock, instructor fetches from service
-  const [user, setUser] = useState<UserData>(
-    role === 'admin'
-      ? mockAdminDataService.getCurrentUser()
-      : { name: 'Instructor', avatarUrl: undefined }
+export function useSimulationGroupData({
+  groupId, organizationId, role, activeSection = 'analytics',
+}: UseSimulationGroupDataParams): UseSimulationGroupDataReturn {
+  const [analyticsDateRange, setAnalyticsDateRange] = useState({ start: '', end: '' });
+  const [selection, setSelection] = useState<{ groupId: string | undefined; patientId: string }>({ groupId, patientId: 'overview' });
+  const selectedPatientId = selection.groupId === groupId ? selection.patientId : 'overview';
+  const setSelectedPatientId = (patientId: string) => setSelection({ groupId, patientId });
+  const analyticsActive = activeSection === 'analytics';
+
+  const loadGroup = useCallback(async () => {
+    if (!groupId) return undefined;
+    if (role === 'admin') {
+      const group = await adminApi.getSimulationGroup(groupId, organizationId);
+      if (!group) throw new Error('Simulation group not found or unavailable.');
+      return { ...group, subtitle: 'Medical Simulation Group' };
+    }
+    const group = await instructorService.getSimulationGroup(groupId);
+    if (!group) throw new Error('Simulation group not found or unavailable.');
+    return group;
+  }, [groupId, organizationId, role]);
+  const [simulationGroup, setSimulationGroup, loading, error] = useAsyncResource<any>(
+    `${role}:${organizationId || ''}:${groupId}`, Boolean(groupId), loadGroup, undefined
   );
 
-  // Analytics filtering state
-  const [analyticsDateRange, setAnalyticsDateRange] = useState({ start: '', end: '' });
-  const [keyQuestionAnalytics, setKeyQuestionAnalytics] = useState<KeyQuestionAnalytics[]>([]);
-  const [dtpAnalytics, setDtpAnalytics] = useState<DTPAnalytics[]>([]);
-  const [recommendationAnalytics, setRecommendationAnalytics] = useState<RecommendationAnalytics[]>([]);
-  const [studentProgress, setStudentProgress] = useState<StudentProgressData[]>([]);
-  const [selectedPatientId, setSelectedPatientId] = useState<string>('overview');
+  const loadUser = useCallback(async () => role === 'admin'
+    ? mockAdminDataService.getCurrentUser() : instructorService.getCurrentUser(), [role]);
+  const [user] = useAsyncResource(role, true, loadUser, DEFAULT_USER);
 
-  // Organization-specific labels
-  const labels = instructorService.getOrganizationLabels(groupId || '1');
-
-  // Reload patients helper
+  const loadPatients = useCallback(() => instructorService.getManageablePatients(groupId!), [groupId]);
+  const [manageablePatients, setManageablePatients, patientsLoading, patientsError] = useAsyncResource<any[]>(
+    groupId || '', Boolean(groupId), loadPatients, EMPTY_ROWS
+  );
   const reloadPatients = async () => {
     if (!groupId) return;
-    try {
-      const patientsData = await instructorService.getManageablePatients(groupId);
-      setManageablePatients(patientsData);
-    } catch (error) {
-      console.error('Failed to reload patients:', error);
-    }
+    try { setManageablePatients(await loadPatients()); }
+    catch (err) { console.error('Failed to reload patients:', err); }
   };
 
-  // Reset all group-specific state when navigating to a different group
-  useEffect(() => {
-    setSimulationGroup(undefined);
-    setPatientAnalytics([]);
-    setStudents([]);
-    setManageablePatients([]);
-    setProfilePictures({});
-    setKeyQuestionCoverage([]);
-    setDtpCoverage([]);
-    setRecommendationCoverage([]);
-    setKeyQuestionAnalytics([]);
-    setDtpAnalytics([]);
-    setRecommendationAnalytics([]);
-    setStudentProgress([]);
-    setSelectedPatientId('overview');
-    setLoading(true);
-  }, [groupId]);
+  const loadStudents = useCallback(() => instructorService.getStudents(groupId!), [groupId]);
+  const [students, , studentsLoading, studentsError] = useAsyncResource<any[]>(
+    groupId || '', Boolean(groupId) && (activeSection === 'students' || activeSection === 'viewStudent'), loadStudents, EMPTY_ROWS
+  );
+  const loadPhotos = useCallback(() => instructorService.fetchProfilePictures(groupId!), [groupId]);
+  const [profilePictures, setProfilePictures] = useAsyncResource(
+    groupId || '', Boolean(groupId) && (activeSection === 'patients' || activeSection === 'editPatient'), loadPhotos, EMPTY_PHOTOS
+  );
 
-  // Load initial data
-  useEffect(() => {
-    const loadData = async () => {
-      if (!groupId) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-
-      if (role === 'instructor') {
-        // Instructor: load all data via instructorService
-        try {
-          const [userData, groupData, analyticsData, studentsData, patientsData, profilePics] = await Promise.all([
-            instructorService.getCurrentUser().catch(err => { console.error('Failed to load user:', err); return { name: 'Instructor', avatarUrl: undefined } as UserData; }),
-            instructorService.getSimulationGroup(groupId).catch(err => { console.error('Failed to load group:', err); return undefined; }),
-            instructorService.getPatientAnalytics(groupId).catch(err => { console.error('Failed to load analytics:', err); return [] as any[]; }),
-            instructorService.getStudents(groupId).catch(err => { console.error('Failed to load students:', err); return [] as any[]; }),
-            instructorService.getManageablePatients(groupId).catch(err => { console.error('Failed to load patients:', err); return [] as any[]; }),
-            instructorService.fetchProfilePictures(groupId).catch(err => { console.error('Failed to load profile pictures:', err); return {} as Record<string, string>; }),
-          ]);
-
-          setUser(userData);
-          setSimulationGroup(groupData);
-          setPatientAnalytics(analyticsData);
-          setStudents(studentsData);
-          setManageablePatients(patientsData);
-          setProfilePictures(profilePics);
-        } catch (error) {
-          console.error('Error loading instructor data:', error);
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Admin: load group via adminApi, rest via instructorService
-        try {
-          const [adminGroupData, analyticsData, studentsData, patientsData, profilePics] = await Promise.all([
-            adminApi.getSimulationGroup(groupId).catch(err => { console.error('Failed to load group:', err); return undefined; }),
-            instructorService.getPatientAnalytics(groupId).catch(err => { console.error('Failed to load analytics:', err); return [] as any[]; }),
-            instructorService.getStudents(groupId).catch(err => { console.error('Failed to load students:', err); return [] as any[]; }),
-            instructorService.getManageablePatients(groupId).catch(err => { console.error('Failed to load patients:', err); return [] as any[]; }),
-            instructorService.fetchProfilePictures(groupId).catch(err => { console.error('Failed to load profile pictures:', err); return {} as Record<string, string>; }),
-          ]);
-
-          // Map admin API shape to InstructorSimulationGroup
-          if (adminGroupData) {
-            setSimulationGroup({
-              simulation_group_id: adminGroupData.simulation_group_id,
-              group_name: adminGroupData.group_name,
-              subtitle: 'Medical Simulation Group',
-              group_access_code: adminGroupData.group_access_code || '',
-              student_count: adminGroupData.student_count || 0,
-              instructor_count: adminGroupData.instructor_count || 0,
-              persona_count: adminGroupData.persona_count || 0,
-              organization_id: adminGroupData.organization_id || '',
-            });
-          }
-
-          setPatientAnalytics(analyticsData);
-          setStudents(studentsData);
-          setManageablePatients(patientsData);
-          setProfilePictures(profilePics);
-        } catch (error) {
-          console.error('Error loading admin simulation group data:', error);
-        } finally {
-          setLoading(false);
-        }
-      }
+  // One path serves initial charts and date changes. Metadata updates no longer
+  // re-fetch every chart; reopening Analytics revalidates its last result.
+  const loadAnalytics = useCallback(async () => {
+    const args = [groupId!, analyticsDateRange.start, analyticsDateRange.end] as const;
+    const [patients, questions, dtps, recommendations] = await Promise.allSettled([
+      instructorService.getPatientAnalytics(...args), instructorService.getKeyQuestionCoverage(...args),
+      instructorService.getDTPCoverage(...args), instructorService.getRecommendationCoverage(...args),
+    ]);
+    return {
+      patients: patients.status === 'fulfilled' ? patients.value : EMPTY_ROWS,
+      questions: questions.status === 'fulfilled' ? questions.value : EMPTY_ROWS,
+      dtps: dtps.status === 'fulfilled' ? dtps.value : EMPTY_ROWS,
+      recommendations: recommendations.status === 'fulfilled' ? recommendations.value : EMPTY_ROWS,
+      warning: [patients, questions, dtps, recommendations].some(r => r.status === 'rejected')
+        ? 'Some analytics could not be loaded. Reopen Analytics to retry.' : null,
     };
+  }, [groupId, analyticsDateRange.start, analyticsDateRange.end]);
+  const analyticsKey = `${groupId}:${analyticsDateRange.start}:${analyticsDateRange.end}`;
+  const [analytics, , analyticsLoading, analyticsError] = useAsyncResource(
+    analyticsKey, Boolean(groupId) && analyticsActive, loadAnalytics, EMPTY_ANALYTICS
+  );
 
-    loadData();
-  }, [groupId, organizationId, role]);
-
-  // Filter analytics data based on date range
-  useEffect(() => {
-    if (!groupId) return;
-    const fetchFilteredAnalytics = async () => {
-      try {
-        const [analyticsData, coverageData, dtpCoverageData, recCoverageData] = await Promise.all([
-          instructorService.getPatientAnalytics(groupId, analyticsDateRange.start, analyticsDateRange.end),
-          instructorService.getKeyQuestionCoverage(groupId, analyticsDateRange.start, analyticsDateRange.end),
-          instructorService.getDTPCoverage(groupId, analyticsDateRange.start, analyticsDateRange.end),
-          instructorService.getRecommendationCoverage(groupId, analyticsDateRange.start, analyticsDateRange.end),
-        ]);
-        setPatientAnalytics(analyticsData);
-        setKeyQuestionCoverage(coverageData);
-        setDtpCoverage(dtpCoverageData);
-        setRecommendationCoverage(recCoverageData);
-      } catch (error) {
-        console.error('Error fetching filtered analytics:', error);
-      }
+  const currentPatientId = analytics.patients.find(p => p.patient_id === selectedPatientId)?.patient_id;
+  const loadDetails = useCallback(async () => {
+    const args = [groupId!, currentPatientId!, analyticsDateRange.start, analyticsDateRange.end] as const;
+    const [questions, dtps, recommendations, progress] = await Promise.allSettled([
+      instructorService.getPatientKeyQuestionAnalytics(...args), instructorService.getPatientDTPAnalytics(...args),
+      instructorService.getPatientRecommendationAnalytics(...args), instructorService.getStudentProgress(...args),
+    ]);
+    return {
+      questions: questions.status === 'fulfilled' ? questions.value : EMPTY_ROWS,
+      dtps: dtps.status === 'fulfilled' ? dtps.value : EMPTY_ROWS,
+      recommendations: recommendations.status === 'fulfilled' ? recommendations.value : EMPTY_ROWS,
+      progress: progress.status === 'fulfilled' ? progress.value : EMPTY_ROWS,
     };
-    if (simulationGroup) {
-      fetchFilteredAnalytics();
-    }
-  }, [groupId, analyticsDateRange.start, analyticsDateRange.end, simulationGroup]);
-
-  // Key question analytics per patient
-  useEffect(() => {
-    const currentPatient = patientAnalytics.find(p => p.patient_id === selectedPatientId);
-    if (currentPatient && groupId) {
-      Promise.all([
-        instructorService.getPatientKeyQuestionAnalytics(groupId, currentPatient.patient_id, analyticsDateRange.start, analyticsDateRange.end),
-        instructorService.getPatientDTPAnalytics(groupId, currentPatient.patient_id, analyticsDateRange.start, analyticsDateRange.end),
-        instructorService.getPatientRecommendationAnalytics(groupId, currentPatient.patient_id, analyticsDateRange.start, analyticsDateRange.end),
-      ]).then(([kqData, dtpData, recData]) => {
-        setKeyQuestionAnalytics(kqData);
-        setDtpAnalytics(dtpData);
-        setRecommendationAnalytics(recData);
-      }).catch(() => {
-        setKeyQuestionAnalytics([]);
-        setDtpAnalytics([]);
-        setRecommendationAnalytics([]);
-      });
-    } else {
-      setKeyQuestionAnalytics([]);
-      setDtpAnalytics([]);
-      setRecommendationAnalytics([]);
-    }
-  }, [selectedPatientId, patientAnalytics, groupId, analyticsDateRange.start, analyticsDateRange.end]);
-
-  // Student progress per patient
-  useEffect(() => {
-    if (groupId && selectedPatientId && selectedPatientId !== 'overview') {
-      instructorService.getStudentProgress(groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end)
-        .then(data => setStudentProgress(data))
-        .catch(err => console.error(err));
-    } else {
-      setStudentProgress([]);
-    }
-  }, [groupId, selectedPatientId, analyticsDateRange.start, analyticsDateRange.end]);
+  }, [groupId, currentPatientId, analyticsDateRange.start, analyticsDateRange.end]);
+  const [details] = useAsyncResource(
+    `${analyticsKey}:${currentPatientId}`, Boolean(groupId && currentPatientId) && analyticsActive, loadDetails, EMPTY_DETAILS
+  );
 
   return {
-    simulationGroup,
-    patientAnalytics,
-    students,
-    manageablePatients,
-    profilePictures,
-    keyQuestionCoverage,
-    dtpCoverage,
-    recommendationCoverage,
-    labels,
-    user,
-    loading,
-    analyticsDateRange,
-    setAnalyticsDateRange,
-    keyQuestionAnalytics,
-    dtpAnalytics,
-    recommendationAnalytics,
-    studentProgress,
-    selectedPatientId,
-    setSelectedPatientId,
-    setManageablePatients,
-    setSimulationGroup,
-    setProfilePictures,
-    reloadPatients,
+    simulationGroup, patientAnalytics: analytics.patients, students, manageablePatients, profilePictures,
+    keyQuestionCoverage: analytics.questions, dtpCoverage: analytics.dtps, recommendationCoverage: analytics.recommendations,
+    labels: instructorService.getOrganizationLabels(groupId || '1'), user, loading, error,
+    patientsLoading, studentsLoading, analyticsLoading, patientsError, studentsError,
+    analyticsError: analyticsError || analytics.warning,
+    analyticsDateRange, setAnalyticsDateRange,
+    keyQuestionAnalytics: details.questions, dtpAnalytics: details.dtps,
+    recommendationAnalytics: details.recommendations, studentProgress: details.progress,
+    selectedPatientId, setSelectedPatientId, setManageablePatients, setSimulationGroup,
+    setProfilePictures, reloadPatients,
   };
 }

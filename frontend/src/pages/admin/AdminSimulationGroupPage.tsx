@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
+import { useAsyncResource } from '@/hooks/useAsyncResource';
 import { ArrowLeft, BarChart3, Users, UserCog, Search, Trash2, Plus, Menu, UserPlus, FileCode, HelpCircle, AlertTriangle, Pill, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,7 +73,7 @@ function AdminSimulationGroupPage() {
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
 
   // Shared hooks
-  const groupData = useSimulationGroupData({ groupId, organizationId, role: 'admin' });
+  const groupData = useSimulationGroupData({ groupId, organizationId, role: 'admin', activeSection });
   const patientEditor = usePatientEditor({
     groupId, role: 'admin',
     manageablePatients: groupData.manageablePatients, setManageablePatients: groupData.setManageablePatients,
@@ -88,11 +89,13 @@ function AdminSimulationGroupPage() {
     patientAnalytics, analyticsDateRange, setAnalyticsDateRange, keyQuestionCoverage,
     keyQuestionAnalytics, dtpCoverage, recommendationCoverage, dtpAnalytics, recommendationAnalytics,
     studentProgress, selectedPatientId, setSelectedPatientId, loading, user,
+    error: groupError, patientsLoading, studentsLoading, analyticsLoading,
+    patientsError, studentsError, analyticsError,
   } = groupData;
 
   const { includedQuestionIds, setIncludedQuestionIds, questionBankTab,
     setGlobalBankQuestions, setPatientSpecificBankQuestions,
-    allExistingTags, addQuestionType,
+    allExistingTags, addQuestionType, setQuestionBankError,
     isAddQuestionDialogOpen, setIsAddQuestionDialogOpen,
     isAddPatientQuestionDialogOpen, setIsAddPatientQuestionDialogOpen,
     selectedPatientForQuestionBank,
@@ -109,7 +112,16 @@ function AdminSimulationGroupPage() {
   const [isAddInstructorDialogOpen, setIsAddInstructorDialogOpen] = useState(false);
 
   // Admin-specific state: organization
-  const [organization, setOrganization] = useState<adminApi.AdminOrganization | null>(null);
+  const loadOrganization = useCallback(async () => {
+    if (!organizationId) return null;
+    try { return await adminApi.getOrganization(organizationId); }
+    catch (err) {
+      console.error('Failed to load organization:', err);
+      return mockOrganizations.find(o => o.organization_id === organizationId) || null;
+    }
+  }, [organizationId]);
+  const [organization] = useAsyncResource(organizationId || '', Boolean(organizationId), loadOrganization, null);
+  const [questionBankLoadedGroup, setQuestionBankLoadedGroup] = useState<string | null>(null);
 
   // Admin-specific state: prompts
   const [selectedPromptType, setSelectedPromptType] = useState<'system' | 'evaluation'>('system');
@@ -119,8 +131,14 @@ function AdminSimulationGroupPage() {
   const [promptHistory, setPromptHistory] = useState<Array<{id: string; text: string; saved_at: string; modified_by_email: string | null; modified_by_first_name: string | null; modified_by_last_name: string | null}>>([]);
 
   // Admin-specific state: max messages
-  const [maxMessagesPerChat, setMaxMessagesPerChat] = useState<number | null>(null);
-  const [maxMessagesInput, setMaxMessagesInput] = useState<string>('');
+  const [messageLimitOverride, setMessageLimitOverride] = useState<{ groupId?: string; value: number | null } | null>(null);
+  const [messageInputOverride, setMessageInputOverride] = useState<{ groupId?: string; value: string } | null>(null);
+  const maxMessagesPerChat = messageLimitOverride && messageLimitOverride.groupId === groupId
+    ? messageLimitOverride.value : simulationGroup?.max_messages_per_chat ?? null;
+  const maxMessagesInput = messageInputOverride && messageInputOverride.groupId === groupId
+    ? messageInputOverride.value : String(simulationGroup?.max_messages_per_chat ?? '');
+  const setMaxMessagesPerChat = (value: number | null) => setMessageLimitOverride({ groupId, value });
+  const setMaxMessagesInput = (value: string) => setMessageInputOverride({ groupId, value });
 
   // Global rubric state
   const [globalRubricQuestions, setGlobalRubricQuestions] = useState<GlobalRubricQuestion[]>([]);
@@ -163,50 +181,26 @@ function AdminSimulationGroupPage() {
     setIssueReports([]);
     setDebriefFeedbackList([]);
     setGlobalRubricQuestions([]);
-    setMaxMessagesPerChat(null);
-    setMaxMessagesInput('');
     setSelectedQuestionId(null);
   }, [groupId]);
 
-  // ── Admin-specific data loading ──
+  // Bank rows are needed only when the question-bank section is opened.
   useEffect(() => {
-    const loadAdminData = async () => {
-      if (!groupId) return;
-      try {
-        const [bankGlobal, bankPatient] = await Promise.all([
-          organizationId
-            ? adminApi.getQuestionBankQuestions(organizationId).catch(err => { console.error('Failed to load global questions:', err); return [] as QuestionBankItem[]; })
-            : instructorService.getGlobalQuestionBank().catch(err => { console.error('Failed to load global questions:', err); return [] as QuestionBankItem[]; }),
-          Promise.resolve(instructorService.getPatientSpecificQuestionBank()),
-        ]);
-        if (organizationId) {
-          const global: QuestionBankItem[] = [];
-          const patientSpecific: QuestionBankItem[] = [];
-          for (const q of bankGlobal) {
-            if (q.tags?.includes('patient_specific')) { patientSpecific.push(q); } else { global.push(q); }
-          }
-          setGlobalBankQuestions(global);
-          setPatientSpecificBankQuestions(patientSpecific);
-        } else {
-          setGlobalBankQuestions(bankGlobal);
-          setPatientSpecificBankQuestions(bankPatient);
-        }
-        const adminGroupData = await adminApi.getSimulationGroup(groupId).catch(() => undefined);
-        if (adminGroupData?.max_messages_per_chat != null) {
-          setMaxMessagesPerChat(adminGroupData.max_messages_per_chat);
-          setMaxMessagesInput(String(adminGroupData.max_messages_per_chat));
-        } else { setMaxMessagesPerChat(null); setMaxMessagesInput(''); }
-      } catch (error) { console.error('Error loading admin-specific data:', error); }
-      if (organizationId) {
-        try { setOrganization(await adminApi.getOrganization(organizationId)); }
-        catch (err) {
-          console.error('Failed to load organization from API, using mock:', err);
-          setOrganization(mockOrganizations.find(o => o.organization_id === organizationId) || null);
-        }
-      }
-    };
-    loadAdminData();
-  }, [groupId, organizationId]);
+    if (!groupId || activeSection !== 'questionBank') return;
+    let cancelled = false;
+    const request = organizationId
+      ? adminApi.getQuestionBankQuestions(organizationId)
+      : instructorService.getGlobalQuestionBank();
+    request.then(questions => {
+      if (cancelled) return;
+      setQuestionBankError(null);
+      setGlobalBankQuestions(questions.filter(q => !q.tags?.includes('patient_specific')));
+      setPatientSpecificBankQuestions(questions.filter(q => q.tags?.includes('patient_specific')));
+    }).catch(err => {
+      if (!cancelled) setQuestionBankError(err instanceof Error ? err.message : 'Failed to load question bank.');
+    }).finally(() => { if (!cancelled) setQuestionBankLoadedGroup(groupId); });
+    return () => { cancelled = true; };
+  }, [groupId, organizationId, activeSection, setGlobalBankQuestions, setPatientSpecificBankQuestions, setQuestionBankError]);
 
   // ── Load prompts ──
   useEffect(() => {
@@ -223,14 +217,16 @@ function AdminSimulationGroupPage() {
     })();
   }, [groupId]);
 
-  // ── Load prompt history ──
+  // ── Load prompt history only while its section is visible ──
   useEffect(() => {
-    if (!groupId) return;
-    (async () => {
-      const type = selectedPromptType === 'system' ? 'system' : 'debrief';
-      setPromptHistory(await instructorService.getPromptHistory(groupId, type));
-    })();
-  }, [groupId, selectedPromptType]);
+    if (!groupId || activeSection !== 'prompts') return;
+    let cancelled = false;
+    const type = selectedPromptType === 'system' ? 'system' : 'debrief';
+    instructorService.getPromptHistory(groupId, type).then(data => {
+      if (!cancelled) setPromptHistory(data);
+    }).catch(err => console.error('Failed to load prompt history:', err));
+    return () => { cancelled = true; };
+  }, [groupId, selectedPromptType, activeSection]);
 
   // ── Load instructors ──
   useEffect(() => {
@@ -815,6 +811,16 @@ function AdminSimulationGroupPage() {
   if (loading) {
     return <DashboardSkeleton cardCount={4} />;
   }
+  if (groupError) {
+    return (
+      <PageContainer>
+        <div className="p-8 space-y-4">
+          <p role="alert" style={{ color: UI_COLORS.text.error }}>{groupError}</p>
+          <Button onClick={() => navigate(`/admin/organization/${organizationId}`)}>Back to groups</Button>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -862,13 +868,25 @@ function AdminSimulationGroupPage() {
         />
 
         <main className="flex-1 overflow-y-auto" style={{ padding: ['rubric', 'questionBank', 'dtpBank', 'recommendationsBank', 'prompts', 'editPatient', 'viewStudent', 'issuesFeedback'].includes(activeSection) ? '0' : '2rem' }}>
-          {activeSection === 'analytics' && (
+          {((activeSection === 'analytics' && analyticsLoading) ||
+            (activeSection === 'patients' && patientsLoading) ||
+            (activeSection === 'students' && studentsLoading)) && (
+            <div className="p-8"><LoadingIndicator message={`Loading ${activeSection}...`} /></div>
+          )}
+          {((activeSection === 'analytics' && analyticsError) ||
+            (activeSection === 'patients' && patientsError) ||
+            (activeSection === 'students' && studentsError)) && (
+            <p role="alert" className="p-4 text-sm" style={{ color: UI_COLORS.text.error }}>
+              {activeSection === 'analytics' ? analyticsError : activeSection === 'patients' ? patientsError : studentsError}
+            </p>
+          )}
+          {activeSection === 'analytics' && !analyticsLoading && (
             <Suspense fallback={<div className="p-8 text-sm" style={{ color: UI_COLORS.text.muted }}>Loading analytics…</div>}>
               <AnalyticsSection patientAnalytics={patientAnalytics} analyticsDateRange={analyticsDateRange} onDateRangeChange={setAnalyticsDateRange} keyQuestionCoverage={keyQuestionCoverage} keyQuestionAnalytics={keyQuestionAnalytics} dtpCoverage={dtpCoverage} recommendationCoverage={recommendationCoverage} dtpAnalytics={dtpAnalytics} recommendationAnalytics={recommendationAnalytics} studentProgress={studentProgress} selectedPatientId={selectedPatientId} onPatientSelect={setSelectedPatientId} labels={labels} simulationGroup={simulationGroup} onNavigateToSection={section => setActiveSection(section as ActiveSection)} />
             </Suspense>
           )}
 
-          {activeSection === 'patients' && (
+          {activeSection === 'patients' && !patientsLoading && !patientsError && (
             <PatientsSection patients={manageablePatients} profilePictures={profilePictures} searchQuery={searchQuery} onSearchChange={setSearchQuery} onEditPatient={handleEditPatient} onDeletePatient={handleDeletePatient} onCreatePatient={handleCreateNewPatient} onTogglePatientVoice={handleTogglePatientVoice} labels={labels} enableVoiceForAll={enableVoiceForAll} onToggleVoice={async (newValue) => {
               for (const p of manageablePatients) {
                 const pid = (p as any).id || (p as any).patient_id;
@@ -896,7 +914,7 @@ function AdminSimulationGroupPage() {
             </PatientsSection>
           )}
 
-          {activeSection === 'students' && <StudentsSection students={students} searchQuery={studentSearchQuery} onSearchChange={setStudentSearchQuery} onViewStudent={handleViewStudent} labels={labels} />}
+          {activeSection === 'students' && !studentsLoading && !studentsError && <StudentsSection students={students} searchQuery={studentSearchQuery} onSearchChange={setStudentSearchQuery} onViewStudent={handleViewStudent} labels={labels} />}
 
           {activeSection === 'instructors' && (
             <div className="space-y-6 max-w-5xl">
@@ -935,7 +953,7 @@ function AdminSimulationGroupPage() {
           {activeSection === 'rubric' && <RubricSection questions={globalRubricQuestions} selectedQuestionId={selectedQuestionId} onSelectQuestion={setSelectedQuestionId} searchQuery={rubricSearchQuery} onSearchChange={setRubricSearchQuery} onSaveQuestion={handleSaveQuestion} onDeleteQuestion={handleDeleteQuestion} onUpdateField={handleUpdateQuestionField} />}
 
           {activeSection === 'questionBank' && (
-            <QuestionBankSection questionBank={questionBank} role="admin" groupId={groupId || '1'} patients={manageablePatients}
+            <QuestionBankSection questionBank={{ ...questionBank, questionBankLoading: questionBankLoadedGroup !== groupId }} role="admin" groupId={groupId || '1'} patients={manageablePatients}
               onToggleQuestionInclusion={handleToggleQuestionInclusion}
               onGlobalTabClick={() => { setIncludedQuestionIds(new Set(globalRubricQuestions.map(q => q.id))); }}
               onPatientSpecificTabClick={() => {
