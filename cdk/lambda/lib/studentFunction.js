@@ -1994,7 +1994,7 @@ exports.handler = async (event, context) => {
           }
 
           let meUserData = await sqlConnection`
-            SELECT user_email, first_name, last_name, roles, organization_id
+            SELECT user_id, user_email, first_name, last_name, roles, organization_id
             FROM "users"
             WHERE user_email = ${meEmail};
           `;
@@ -2016,7 +2016,7 @@ exports.handler = async (event, context) => {
                 UPDATE "users"
                 SET roles = ${newRoles}
                 WHERE user_email = ${meEmail}
-                RETURNING user_email, first_name, last_name, roles, organization_id;
+                RETURNING user_id, user_email, first_name, last_name, roles, organization_id;
               `;
             }
 

@@ -12,6 +12,8 @@ export interface AuthTokens {
 }
 
 export interface AuthUser {
+  /** Database user ID, available after the profile loads. */
+  userId?: string;
   username: string;
   email: string;
   groups: string[];
@@ -33,6 +35,7 @@ export interface AuthResult {
 
 /** Response shape from GET /student/me */
 interface UserProfileResponse {
+  user_id?: string;
   user_email: string;
   first_name: string;
   last_name: string;
@@ -179,6 +182,7 @@ class AuthService {
     const profile: UserProfileResponse = await response.json();
 
     return {
+      userId: profile.user_id,
       username: profile.user_email,
       email: profile.user_email,
       groups: profile.roles || [],

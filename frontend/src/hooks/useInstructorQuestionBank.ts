@@ -54,6 +54,7 @@ export interface UseInstructorQuestionBankReturn {
   reload: () => Promise<void>;
 
   // mutations
+  removeItem: (id: string) => Promise<void>;
   createItem: (fields: InstructorContentFields) => Promise<void>;
   updateItem: (id: string, fields: InstructorContentFields) => Promise<void>;
 }
@@ -240,6 +241,12 @@ export function useInstructorQuestionBank(): UseInstructorQuestionBankReturn {
     [items]
   );
 
+  /** Remove the row only after the server confirms deletion. */
+  const removeItem = useCallback(async (id: string) => {
+    await instructorService.deleteQuestionBankQuestion(id);
+    setItems((previous) => previous.filter((item) => item.id !== id));
+  }, []);
+
   return {
     // data
     items,
@@ -271,6 +278,7 @@ export function useInstructorQuestionBank(): UseInstructorQuestionBankReturn {
     reload,
 
     // mutations
+    removeItem,
     createItem,
     updateItem,
   };

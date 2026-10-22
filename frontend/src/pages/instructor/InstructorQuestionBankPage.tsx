@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Plus, Search, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Trash2, Plus, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PageContainer from '@/components/PageContainer';
@@ -19,6 +19,7 @@ import {
 import { SIMULATION_GROUP_COLOR_PALETTE, UI_COLORS } from '@/lib/colors';
 import { instructorService, type QuestionBankItem } from '@/services/instructorService';
 import { useAuth } from '@/App';
+import { canDeleteBankItem } from '@/lib/instructorBankUtils';
 
 /** Fields the create dialogs emit. */
 interface CreateDialogFields {
@@ -55,16 +56,11 @@ const FIELD_LABELS: Record<'title' | 'question_text' | 'evaluation_criteria', st
 };
 
 /**
- * InstructorQuestionBankPage
- *
- * Instructor-facing question bank management: read, create, and in-place edit of
- * organization question bank items. Removal is an admin-only capability, so this
- * module carries no removal affordance of any kind and no admin-side import —
- * every call goes through `instructorService` via `useInstructorQuestionBank`.
+ * Instructor bank management: read, create, edit, and delete through instructor routes.
  */
 function InstructorQuestionBankPage() {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { user: authUser, signOut } = useAuth();
   const { showNotification } = useNotification();
 
   const {
@@ -88,6 +84,7 @@ function InstructorQuestionBankPage() {
     reload,
     createItem,
     updateItem,
+    removeItem,
   } = useInstructorQuestionBank();
 
   const [user, setUser] = useState<{ name: string; avatarUrl?: string }>({ name: 'Instructor' });
@@ -106,6 +103,7 @@ function InstructorQuestionBankPage() {
   // Raw comma-separated tag text, kept apart from the parsed list so typing is lossless.
   const [editTagsInput, setEditTagsInput] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   const isPatientSpecificTab = tab === 'patientSpecific';
@@ -240,6 +238,27 @@ function InstructorQuestionBankPage() {
       showNotification({ message, type: 'error' });
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  // Delete a bank item after confirming the effect on its assignments.
+  const handleDelete = async (item: QuestionBankItem) => {
+    if (!canDeleteBankItem(item, authUser?.userId)) return;
+    if (deletingItemId !== null || editSaving || editingItemId !== null) return;
+    if (!window.confirm(`Permanently delete "${item.title}"? This also removes its assignments and recorded question interactions.`)) return;
+
+    setDeletingItemId(item.id);
+    try {
+      await removeItem(item.id);
+      setExpandedItemId((previous) => previous === item.id ? null : previous);
+      showNotification({ message: `"${item.title}" deleted successfully.`, type: 'success' });
+    } catch (err) {
+      showNotification({
+        message: err instanceof Error ? err.message : 'Failed to delete question.',
+        type: 'error',
+      });
+    } finally {
+      setDeletingItemId(null);
     }
   };
 
@@ -502,6 +521,7 @@ function InstructorQuestionBankPage() {
                           <button
                             type="button"
                             onClick={() => startEditing(item)}
+                            disabled={deletingItemId !== null || editSaving}
                             className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer"
                             style={{ color: UI_COLORS.icon.muted }}
                             onMouseEnter={(e) => (e.currentTarget.style.color = UI_COLORS.text.heading)}
@@ -510,6 +530,19 @@ function InstructorQuestionBankPage() {
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
+                          {canDeleteBankItem(item, authUser?.userId) && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(item)}
+                              disabled={deletingItemId !== null || editSaving || editingItemId !== null}
+                              className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ color: UI_COLORS.text.error }}
+                              aria-label={`Delete question: ${item.title}`}
+                              title={editingItemId !== null ? 'Finish editing before deleting' : 'Delete question'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
 
                         {isExpanded && (

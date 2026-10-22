@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface DTPItem {
+  createdBy?: string | null;     // Database user ID of the author
   id: string;                    // UUID
   organizationId: string;        // Parent organization
   title: string;                 // Short descriptive title
@@ -47,6 +48,7 @@ export interface DTPAssignment {
 export function mapBackendToDTPItem(row: Record<string, unknown>): DTPItem {
   return {
     id: row.dtp_id as string,
+    createdBy: typeof row.created_by === 'string' ? row.created_by : null,
     organizationId: row.organization_id as string,
     title: row.title as string,
     expectedDTPText: row.expected_dtp_text as string,
@@ -225,7 +227,17 @@ export async function deleteDTPItem(itemId: string): Promise<void> {
     method: 'DELETE',
   });
 }
-
+/**
+ * Delete a DTP item through the instructor route.
+ */
+export async function deleteDTPItemAsInstructor(
+  itemId: string
+): Promise<void> {
+  await apiClient.request(
+    `instructor/dtp_bank?dtp_id=${encodeURIComponent(itemId)}`,
+    { method: 'DELETE' }
+  );
+}
 /**
  * Assign a DTP item to an entire simulation group (group-level assignment).
  */

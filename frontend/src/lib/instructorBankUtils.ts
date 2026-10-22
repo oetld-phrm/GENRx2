@@ -23,6 +23,14 @@ export interface RequiredTextFieldsValidation<K extends string> {
   errors: K[];
 }
 
+/** Show deletion only when both IDs are known and the user authored the item. */
+export function canDeleteBankItem(
+  item: { createdBy?: string | null },
+  userId: string | null | undefined
+): boolean {
+  return Boolean(userId && item.createdBy && item.createdBy === userId);
+}
+
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 /** Trim a possibly-missing string value. Non-strings collapse to `''`. */

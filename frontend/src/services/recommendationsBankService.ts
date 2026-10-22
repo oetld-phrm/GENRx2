@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface RecommendationItem {
+  createdBy?: string | null;     // Database user ID of the author
   id: string;                    // UUID
   organizationId: string;        // Parent organization
   title: string;                 // Short descriptive title
@@ -44,6 +45,7 @@ export interface RecommendationAssignment {
 export function mapBackendToRecommendationItem(row: Record<string, unknown>): RecommendationItem {
   return {
     id: row.recommendation_id as string,
+    createdBy: typeof row.created_by === 'string' ? row.created_by : null,
     organizationId: row.organization_id as string,
     title: row.title as string,
     recommendationText: row.recommendation_text as string,
@@ -213,6 +215,18 @@ export async function deleteRecommendationItem(itemId: string): Promise<void> {
   await apiClient.request(`admin/recommendations_bank?recommendation_id=${itemId}`, {
     method: 'DELETE',
   });
+}
+
+/**
+ * Delete a recommendation item through the instructor route.
+ */
+export async function deleteRecommendationItemAsInstructor(
+  itemId: string
+): Promise<void> {
+  await apiClient.request(
+    `instructor/recommendations_bank?recommendation_id=${encodeURIComponent(itemId)}`,
+    { method: 'DELETE' }
+  );
 }
 
 /**

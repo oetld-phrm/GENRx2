@@ -1960,6 +1960,41 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify({ error: "question_id and request body are required" });
         }
         break;
+        case "DELETE /instructor/question_bank":
+          if (
+            event.queryStringParameters != null &&
+            event.queryStringParameters.question_id
+          ) {
+            try {
+              const { question_id } = event.queryStringParameters;
+  
+              const deleted = await sqlConnection`
+                DELETE FROM "question_bank"
+                WHERE question_id = ${question_id}
+                  AND created_by = (
+                    SELECT user_id
+                    FROM "users"
+                    WHERE user_email = ${userEmailAttribute}
+                  )
+                RETURNING question_id;
+              `;
+  
+              if (deleted.length === 0) {
+                response.statusCode = 404;
+                response.body = JSON.stringify({ error: "Question not found or you do not have permission to delete it" });
+              } else {
+                response.body = JSON.stringify({ message: "Question deleted successfully." });
+              }
+            } catch (err) {
+              response.statusCode = 500;
+              logger.error("Failed to delete question", { error: err.message, stack: err.stack });
+              response.body = JSON.stringify({ error: "Internal server error" });
+            }
+          } else {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "question_id is required" });
+          }
+        break;
       case "GET /instructor/simulation_group_questions":
         if (
           event.queryStringParameters != null &&
@@ -3404,6 +3439,41 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify({ error: "dtp_id and request body are required" });
         }
         break;
+        case "DELETE /instructor/dtp_bank":
+          if (
+            event.queryStringParameters != null &&
+            event.queryStringParameters.dtp_id
+          ) {
+            try {
+              const { dtp_id } = event.queryStringParameters;
+  
+              const deleted = await sqlConnection`
+                DELETE FROM "dtp_bank"
+                WHERE dtp_id = ${dtp_id}
+                  AND created_by = (
+                    SELECT user_id
+                    FROM "users"
+                    WHERE user_email = ${userEmailAttribute}
+                  )
+                RETURNING dtp_id;
+              `;
+  
+              if (deleted.length === 0) {
+                response.statusCode = 404;
+                response.body = JSON.stringify({ error: "DTP item not found or you do not have permission to delete it." });
+              } else {
+                response.body = JSON.stringify({ message: "DTP item deleted successfully." });
+              }
+            } catch (err) {
+              response.statusCode = 500;
+              logger.error("Failed to delete DTP item", { error: err.message, stack: err.stack });
+              response.body = JSON.stringify({ error: "Internal server error" });
+            }
+          } else {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "dtp_id is required" });
+          }
+      break;
       case "GET /instructor/recommendations_bank":
         if (
           event.queryStringParameters != null &&
@@ -3551,6 +3621,41 @@ exports.handler = async (event, context) => {
           response.body = JSON.stringify({ error: "recommendation_id and request body are required" });
         }
         break;
+      case "DELETE /instructor/recommendations_bank":
+              if (
+                event.queryStringParameters != null &&
+                event.queryStringParameters.recommendation_id
+              ) {
+                try {
+                  const { recommendation_id } = event.queryStringParameters;
+      
+                  const deleted = await sqlConnection`
+                  DELETE FROM "recommendations_bank"
+                  WHERE recommendation_id = ${recommendation_id}
+                    AND created_by = (
+                      SELECT user_id
+                      FROM "users"
+                      WHERE user_email = ${userEmailAttribute}
+                    )
+                  RETURNING recommendation_id;
+                `;
+      
+                  if (deleted.length === 0) {
+                    response.statusCode = 404;
+                    response.body = JSON.stringify({ error: "Recommendation item not found or you do not have permission to delete it." });
+                  } else {
+                    response.body = JSON.stringify({ message: "Recommendation item deleted successfully." });
+                  }
+                } catch (err) {
+                  response.statusCode = 500;
+                  logger.error("Failed to delete recommendation item", { error: err.message, stack: err.stack });
+                  response.body = JSON.stringify({ error: "Internal server error" });
+                }
+              } else {
+                response.statusCode = 400;
+                response.body = JSON.stringify({ error: "recommendation_id is required" });
+              }
+              break;
       case "GET /instructor/dtp_coverage":
         if (
           event.queryStringParameters != null &&

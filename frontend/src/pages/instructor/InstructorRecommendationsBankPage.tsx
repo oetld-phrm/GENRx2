@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import InstructorBankShell from '@/components/instructor-bank/InstructorBankShell';
@@ -12,10 +12,12 @@ import {
 } from '@/lib/instructorBankConfig';
 import {
   PATIENT_SPECIFIC_TAG,
+  canDeleteBankItem,
   parseTagsInput,
   type BankTab,
 } from '@/lib/instructorBankUtils';
 import { UI_COLORS } from '@/lib/colors';
+import { useAuth } from '@/App';
 
 /**
  * The recommendation read model, derived from the descriptor rather than
@@ -46,20 +48,11 @@ const EMPTY_EDIT_FORM: EditFormState = {
 };
 
 /**
- * InstructorRecommendationsBankPage
- *
- * Instructor-facing recommendations bank management: read, create, and in-place
- * edit of the organization's recommendation items. The chrome — header, tabs,
- * search, create control, pagination, empty states — belongs to
- * `InstructorBankShell`; this module owns only the recommendation row body and
- * the two write paths.
- *
- * Removal stays an administrator capability, so no row control here removes
- * anything, and the page names no service module:
- * `RECOMMENDATIONS_BANK_CONFIG` is the only seam to the service layer.
+ * Instructor bank management: read, create, edit, and delete through instructor routes.
  */
 function InstructorRecommendationsBankPage() {
   const { showNotification } = useNotification();
+  const { user: authUser } = useAuth();
 
   const {
     activeItems,
@@ -83,6 +76,7 @@ function InstructorRecommendationsBankPage() {
     reload,
     createItem,
     updateItem,
+    removeItem,
   } = useInstructorItemBank(RECOMMENDATIONS_BANK_CONFIG);
 
   // Create dialog — one dialog serves both tabs, told which by `isPatientSpecific`.
@@ -93,6 +87,7 @@ function InstructorRecommendationsBankPage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>(EMPTY_EDIT_FORM);
   const [editSaving, setEditSaving] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   /** Switching tabs abandons any draft — the row it belonged to is leaving view. */
@@ -189,6 +184,27 @@ function InstructorRecommendationsBankPage() {
     showNotification({ message: `"${fields.title.trim()}" updated successfully.`, type: 'success' });
   };
 
+  // Delete a bank item after confirming the effect on its assignments.
+  const handleDelete = async (item: RecommendationRow) => {
+    if (!canDeleteBankItem(item, authUser?.userId)) return;
+    if (deletingItemId !== null || editSaving || editingItemId !== null) return;
+    if (!window.confirm(`Permanently delete "${item.title}"? This also removes it from all assigned groups and patients.`)) return;
+
+    setDeletingItemId(item.id);
+    try {
+      await removeItem(item.id);
+      setExpandedItemId((previous) => previous === item.id ? null : previous);
+      showNotification({ message: `"${item.title}" deleted successfully.`, type: 'success' });
+    } catch (err) {
+      showNotification({
+        message: err instanceof Error ? err.message : 'Failed to delete recommendation.',
+        type: 'error',
+      });
+    } finally {
+      setDeletingItemId(null);
+    }
+  };
+
   // ─── Row ──────────────────────────────────────────────────────────────────
 
   const renderRow = (item: RecommendationRow) => {
@@ -230,6 +246,7 @@ function InstructorRecommendationsBankPage() {
           <button
             type="button"
             onClick={() => startEditing(item)}
+            disabled={deletingItemId !== null || editSaving}
             className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer"
             style={{ color: UI_COLORS.icon.muted }}
             onMouseEnter={(e) => (e.currentTarget.style.color = UI_COLORS.text.heading)}
@@ -238,6 +255,19 @@ function InstructorRecommendationsBankPage() {
           >
             <Pencil className="w-4 h-4" />
           </button>
+          {canDeleteBankItem(item, authUser?.userId) && (
+            <button
+              type="button"
+              onClick={() => void handleDelete(item)}
+              disabled={deletingItemId !== null || editSaving || editingItemId !== null}
+              className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ color: UI_COLORS.text.error }}
+              aria-label={`Delete recommendation: ${item.title}`}
+              title={editingItemId !== null ? 'Finish editing before deleting' : 'Delete recommendation'}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {isExpanded && (

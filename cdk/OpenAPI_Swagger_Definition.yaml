@@ -3731,6 +3731,40 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+    delete:
+      tags:
+        - Instructor
+      summary: Delete a question created by the instructor
+      operationId: instructor_question_bank_DELETE
+      parameters:
+        - in: query
+          name: question_id
+          required: true
+          description: ID of the question to delete
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Item deleted successfully
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient role
+        "404":
+          description: Item not found or instructor is not its creator
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/dtp_bank:
     <<: *commonOptions
     get:
@@ -3871,6 +3905,40 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+    delete:
+      tags:
+        - Instructor
+      summary: Delete a DTP item created by the instructor
+      operationId: instructor_dtp_bank_DELETE
+      parameters:
+        - in: query
+          name: dtp_id
+          required: true
+          description: ID of the DTP item to delete
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Item deleted successfully
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient role
+        "404":
+          description: Item not found or instructor is not its creator
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/recommendations_bank:
     <<: *commonOptions
     get:
@@ -3997,6 +4065,40 @@ paths:
           description: Unauthorized
         "404":
           description: Recommendation item not found
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+    delete:
+      tags:
+        - Instructor
+      summary: Delete a recommendation created by the instructor
+      operationId: instructor_recommendations_bank_DELETE
+      parameters:
+        - in: query
+          name: recommendation_id
+          required: true
+          description: ID of the recommendation to delete
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Item deleted successfully
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient role
+        "404":
+          description: Item not found or instructor is not its creator
         "500":
           description: Internal Server Error
       security:

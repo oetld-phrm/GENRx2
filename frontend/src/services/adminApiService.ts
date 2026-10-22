@@ -412,6 +412,7 @@ export async function deleteOrganization(organizationId: string): Promise<{ mess
 export function mapBackendToQuestionBankItem(row: any): QuestionBankItem {
   return {
     id: row.question_id,
+    createdBy: typeof row.created_by === 'string' ? row.created_by : null,
     title: row.title,
     questionText: row.question_text,
     clinicalIntent: row.clinical_intent || '',

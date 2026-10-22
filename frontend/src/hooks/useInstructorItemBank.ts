@@ -54,6 +54,7 @@ export interface UseInstructorItemBankReturn<T, F> {
   reload: () => Promise<void>;
 
   // mutations
+  removeItem: (id: string) => Promise<void>;
   createItem: (fields: F) => Promise<void>;
   updateItem: (id: string, fields: F) => Promise<void>;
 }
@@ -103,7 +104,7 @@ export function useInstructorItemBank<T extends BankItem, F>(
   // effect does not repeat the read `reload` just performed.
   const readOrganizationIdRef = useRef<string | null>(null);
 
-  const { list, create, update, fields: fieldConfig, copy } = config;
+  const { list, create, update, remove, fields: fieldConfig, copy } = config;
 
   /** Build a deterministic message naming the blank required fields. */
   const describeMissing = useCallback(
@@ -296,6 +297,12 @@ export function useInstructorItemBank<T extends BankItem, F>(
     [describeMissing, fieldConfig, items, update]
   );
 
+  /** Remove the row only after the server confirms deletion. */
+  const removeItem = useCallback(async (id: string) => {
+    await remove(id);
+    setItems((previous) => previous.filter((item) => item.id !== id));
+  }, [remove]);
+
   return {
     // data
     items,
@@ -326,6 +333,7 @@ export function useInstructorItemBank<T extends BankItem, F>(
     reload,
 
     // mutations
+    removeItem,
     createItem,
     updateItem,
   };

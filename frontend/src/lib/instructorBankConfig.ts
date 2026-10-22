@@ -4,8 +4,7 @@
  * This module is the single seam between the instructor bank pages and the
  * bank service layer: the pages consume a descriptor, so they name no service
  * module at all. Everything reachable from here is instructor-scoped and
- * limited to reading, creating, and updating — no deletion, and no
- * administrator service layer.
+ * supports reading, creating, updating, and deleting through instructor routes.
  */
 
 import type { BankTab } from '@/lib/instructorBankUtils';
@@ -13,12 +12,14 @@ import {
   createDTPItemAsInstructor,
   listDTPItemsAsInstructor,
   updateDTPItemAsInstructor,
+  deleteDTPItemAsInstructor,
   type DTPItem,
 } from '@/services/dtpBankService';
 import {
   createRecommendationItemAsInstructor,
   listRecommendationItemsAsInstructor,
   updateRecommendationItemAsInstructor,
+  deleteRecommendationItemAsInstructor,
   type RecommendationItem,
 } from '@/services/recommendationsBankService';
 
@@ -100,6 +101,7 @@ export interface InstructorBankConfig<T extends { id: string; title: string; tag
   list: (organizationId: string) => Promise<T[]>;
   create: (organizationId: string, fields: F) => Promise<T>;
   update: (itemId: string, fields: F) => Promise<T>;
+  remove: (itemId: string) => Promise<void>;
 }
 
 // ─── DTP bank ────────────────────────────────────────────────────────────────
@@ -149,6 +151,7 @@ export const DTP_BANK_CONFIG: InstructorBankConfig<DTPItem, DTPContentFields> = 
   list: listDTPItemsAsInstructor,
   create: createDTPItemAsInstructor,
   update: updateDTPItemAsInstructor,
+  remove: deleteDTPItemAsInstructor,
 };
 
 // ─── Recommendations bank ────────────────────────────────────────────────────
@@ -200,4 +203,5 @@ export const RECOMMENDATIONS_BANK_CONFIG: InstructorBankConfig<
   list: listRecommendationItemsAsInstructor,
   create: createRecommendationItemAsInstructor,
   update: updateRecommendationItemAsInstructor,
+  remove: deleteRecommendationItemAsInstructor,
 };

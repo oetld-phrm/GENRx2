@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, X, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import InstructorBankShell from '@/components/instructor-bank/InstructorBankShell';
@@ -12,10 +12,12 @@ import {
 } from '@/lib/instructorBankConfig';
 import {
   PATIENT_SPECIFIC_TAG,
+  canDeleteBankItem,
   parseTagsInput,
   type BankTab,
 } from '@/lib/instructorBankUtils';
 import { UI_COLORS } from '@/lib/colors';
+import { useAuth } from '@/App';
 
 /**
  * The DTP read model, derived from the descriptor rather than imported from the
@@ -46,19 +48,11 @@ const EMPTY_EDIT_FORM: EditFormState = {
 };
 
 /**
- * InstructorDTPBankPage
- *
- * Instructor-facing DTP bank management: read, create, and in-place edit of the
- * organization's drug therapy problem items. The chrome — header, tabs, search,
- * create control, pagination, empty states — belongs to `InstructorBankShell`;
- * this module owns only the DTP row body and the two write paths.
- *
- * Removal stays an administrator capability, so no row control here removes
- * anything, and the page names no service module: `DTP_BANK_CONFIG` is the only
- * seam to the service layer.
+ * Instructor bank management: read, create, edit, and delete through instructor routes.
  */
 function InstructorDTPBankPage() {
   const { showNotification } = useNotification();
+  const { user: authUser } = useAuth();
 
   const {
     activeItems,
@@ -82,10 +76,14 @@ function InstructorDTPBankPage() {
     reload,
     createItem,
     updateItem,
+    removeItem,
   } = useInstructorItemBank(DTP_BANK_CONFIG);
 
   // Create dialog — one dialog serves both tabs, told which by `isPatientSpecific`.
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  //delete state
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   // Expand / in-place edit
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -186,6 +184,26 @@ function InstructorDTPBankPage() {
     setEditForm(EMPTY_EDIT_FORM);
     showNotification({ message: `"${fields.title.trim()}" updated successfully.`, type: 'success' });
   };
+  // Delete a bank item after confirming the effect on its assignments.
+  const handleDelete = async (item: DTPRow) => {
+    if (!canDeleteBankItem(item, authUser?.userId)) return;
+    if (deletingItemId !== null || editSaving || editingItemId !== null) return;
+    if (!window.confirm(`Permanently delete "${item.title}"? This also removes it from all assigned groups and patients.`)) return;
+
+    setDeletingItemId(item.id);
+    try {
+      await removeItem(item.id);
+      setExpandedItemId((previous) => previous === item.id ? null : previous);
+      showNotification({ message: `"${item.title}" deleted successfully.`, type: 'success' });
+    } catch (err) {
+      showNotification({
+        message: err instanceof Error ? err.message : 'Failed to delete DTP.',
+        type: 'error',
+      });
+    } finally {
+      setDeletingItemId(null);
+    }
+  };
 
   // ─── Row ──────────────────────────────────────────────────────────────────
 
@@ -239,6 +257,7 @@ function InstructorDTPBankPage() {
 
           <button
             type="button"
+            disabled={deletingItemId !== null || editSaving}
             onClick={() => startEditing(item)}
             className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer"
             style={{ color: UI_COLORS.icon.muted }}
@@ -248,6 +267,19 @@ function InstructorDTPBankPage() {
           >
             <Pencil className="w-4 h-4" />
           </button>
+          {canDeleteBankItem(item, authUser?.userId) && (
+            <button
+              type="button"
+              onClick={() => void handleDelete(item)}
+              disabled={deletingItemId !== null || editSaving || editingItemId !== null}
+              className="p-1.5 rounded transition-colors flex-shrink-0 bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ color: UI_COLORS.text.error }}
+              aria-label={`Delete DTP: ${item.title}`}
+              title={editingItemId !== null ? 'Finish editing before deleting' : 'Delete DTP'}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {isExpanded && (

@@ -341,6 +341,7 @@ export interface PatientUpdateData {
  * Maps to: question_bank table in DB
  */
 export interface QuestionBankItem {
+  createdBy?: string | null;            // Database user ID of the author
   id: string;                           // question_id
   title: string;                        // title
   questionText: string;                 // question_text (the key question)
@@ -413,6 +414,7 @@ export interface InstructorDataService {
   getDefaultPatientPrompt: () => string;
   getGlobalQuestionBank: () => Promise<QuestionBankItem[]>;
   createQuestionBankQuestion: (organizationId: string, data: { title: string; question_text: string; clinical_intent?: string; evaluation_criteria: string; category?: string; difficulty_level?: string; is_mandatory?: boolean; weight?: number; max_score?: number; tags?: string[] }) => Promise<QuestionBankItem>;
+  deleteQuestionBankQuestion: (questionId: string) => Promise<void>;
   updateQuestionBankQuestion: (questionId: string, data: { title?: string; question_text?: string; clinical_intent?: string; evaluation_criteria?: string; is_mandatory?: boolean; tags?: string[] }) => Promise<QuestionBankItem>;
   getPatientSpecificQuestionBank: () => QuestionBankItem[];
   addToGlobalQuestionBank: (question: QuestionBankItem) => void;
@@ -1938,6 +1940,14 @@ async function updateQuestionBankQuestion(
   return mapBackendToQuestionBankItem(response);
 }
 
+/** Delete a bank question through the instructor route. */
+async function deleteQuestionBankQuestion(questionId: string): Promise<void> {
+  await apiClient.request(
+    `instructor/question_bank?question_id=${encodeURIComponent(questionId)}`,
+    { method: 'DELETE' }
+  );
+}
+
 /**
  * Get patient-specific question bank — requires API
  */
@@ -2413,6 +2423,7 @@ export const instructorService: InstructorDataService = {
   getGlobalQuestionBank,
   createQuestionBankQuestion,
   updateQuestionBankQuestion,
+  deleteQuestionBankQuestion,
   getPatientSpecificQuestionBank,
   addToGlobalQuestionBank,
   addToPatientSpecificQuestionBank,
