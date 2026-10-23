@@ -1,7 +1,7 @@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, Star, CheckCircle, AlertTriangle, XCircle, Loader2, CheckCircle2, Circle } from 'lucide-react';
+import { X, Star, CheckCircle, AlertTriangle, XCircle, Loader2, CheckCircle2, Circle, Flag } from 'lucide-react';
 import { UI_COLORS } from '@/lib/colors';
 import { useState, useEffect } from 'react';
 import { studentService, type AIDebriefData } from '@/services/studentService';
@@ -90,6 +90,7 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
   };
 
   /** Render an inline score badge like "5/8 (63%)" */
+  /** old calculation here  {score.matched}/{score.total} ({Math.round(score.percentage)}%) */
   const renderInlineScore = (score: SectionScore | null | undefined) => {
     if (!score) return null;
     return (
@@ -100,7 +101,7 @@ function AIDebriefDialog({ isOpen, onClose, data, updatedDebriefData, simulation
           color: score.percentage >= 70 ? '#166534' : score.percentage >= 50 ? '#854d0e' : '#991b1b',
         }}
       >
-        {score.matched}/{score.total} ({Math.round(score.percentage)}%)
+       <Flag className="w-4 h-4" style={{ margin: '0 0 4px 0', display: 'inline-block', color: UI_COLORS.button.textDark }} />
       </span>
     );
   };
