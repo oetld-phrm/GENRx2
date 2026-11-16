@@ -3322,6 +3322,21 @@ exports.handler = async (event, context) => {
         ) {
           try {
             const { organization_id } = event.queryStringParameters;
+            const membership = await sqlConnection`
+              SELECT 1
+              FROM "users" u
+              JOIN "enrollments" e ON e.user_id = u.user_id
+              JOIN "simulation_groups" g ON g.simulation_group_id = e.simulation_group_id
+              WHERE u.user_email = ${userEmailAttribute}
+                AND e.enrollment_type = 'instructor'
+                AND g.organization_id = ${organization_id}
+              LIMIT 1;
+            `;
+            if (membership.length === 0) {
+              response.statusCode = 403;
+              response.body = JSON.stringify({ error: "Forbidden: organization access required" });
+              break;
+            }
             const data = await sqlConnection`
               SELECT * FROM "dtp_bank"
               WHERE organization_id = ${organization_id}
@@ -3506,6 +3521,21 @@ exports.handler = async (event, context) => {
         ) {
           try {
             const { organization_id } = event.queryStringParameters;
+            const membership = await sqlConnection`
+              SELECT 1
+              FROM "users" u
+              JOIN "enrollments" e ON e.user_id = u.user_id
+              JOIN "simulation_groups" g ON g.simulation_group_id = e.simulation_group_id
+              WHERE u.user_email = ${userEmailAttribute}
+                AND e.enrollment_type = 'instructor'
+                AND g.organization_id = ${organization_id}
+              LIMIT 1;
+            `;
+            if (membership.length === 0) {
+              response.statusCode = 403;
+              response.body = JSON.stringify({ error: "Forbidden: organization access required" });
+              break;
+            }
             const data = await sqlConnection`
               SELECT * FROM "recommendations_bank"
               WHERE organization_id = ${organization_id}

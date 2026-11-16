@@ -103,6 +103,7 @@ export function useInstructorItemBank<T extends BankItem, F>(
   // The organization a read has already been issued for, so the selection
   // effect does not repeat the read `reload` just performed.
   const readOrganizationIdRef = useRef<string | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const { list, create, update, remove, fields: fieldConfig, copy } = config;
 
@@ -119,21 +120,23 @@ export function useInstructorItemBank<T extends BankItem, F>(
 
   /** Read the bank for one organization. Failures surface as `error`. */
   const loadItems = useCallback(
-    async (organizationId: string) => {
+    async (organizationId: string, requestId = ++loadRequestIdRef.current) => {
       readOrganizationIdRef.current = organizationId;
       setLoading(true);
       setError(null);
       try {
         const loaded = await list(organizationId);
+        if (requestId !== loadRequestIdRef.current) return;
         setItems(loaded);
       } catch (err) {
+        if (requestId !== loadRequestIdRef.current) return;
         setError(
           err instanceof Error
             ? err.message
             : `Failed to load ${copy.itemNounPlural}. Please try again.`
         );
       } finally {
-        setLoading(false);
+        if (requestId === loadRequestIdRef.current) setLoading(false);
       }
     },
     [list, copy.itemNounPlural]
@@ -145,24 +148,27 @@ export function useInstructorItemBank<T extends BankItem, F>(
    * A null resolution short-circuits with zero service calls.
    */
   const reload = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError(null);
 
     let resolved: string | null;
     try {
       const groups = await instructorService.getSimulationGroups();
+      if (requestId !== loadRequestIdRef.current) return;
       const ids = resolveOrganizationIds(groups);
       resolved = resolveActiveOrganization(ids, activeOrganizationIdRef.current);
       setOrganizationIds(ids);
       setActiveOrganizationIdState(resolved);
       activeOrganizationIdRef.current = resolved;
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(
         err instanceof Error
           ? err.message
           : 'Failed to load your simulation groups. Please try again.'
       );
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
       return;
     }
 
@@ -173,7 +179,7 @@ export function useInstructorItemBank<T extends BankItem, F>(
       return;
     }
 
-    await loadItems(resolved);
+    await loadItems(resolved, requestId);
   }, [loadItems]);
 
   useEffect(() => {

@@ -14,8 +14,6 @@ export interface DTPBankSectionProps {
   patients: Array<{ id?: string; patient_id?: string; name?: string; patient_name?: string }>;
   /** Instructor flow: called when user clicks "Confirm Selections" */
   onConfirmSelections?: () => void;
-  /** Admin flow: called when a checkbox is toggled immediately */
-  onToggleDTPInclusion?: (dtpId: string, dtpItem: DTPItem, isChecked: boolean) => void;
   /** Called when the group-wide tab is clicked — lets the page reload included IDs */
   onGroupWideTabClick?: () => void;
   /** Called when the patient-specific tab is clicked */
@@ -37,14 +35,12 @@ export function DTPBankSection({
   groupId: _groupId,
   patients,
   onConfirmSelections,
-  onToggleDTPInclusion,
   onGroupWideTabClick,
   onPatientSpecificTabClick,
   onPatientSelect,
 }: DTPBankSectionProps) {
   const {
     filteredItems,
-    includedIds,
     pendingIds,
     searchQuery, setSearchQuery,
     pagination,
@@ -212,12 +208,20 @@ export function DTPBankSection({
                         <DTPAccordionItem
                           key={item.id}
                           item={item}
-                          isChecked={includedIds.has(item.id)}
-                          onToggle={() => onToggleDTPInclusion?.(item.id, item, !includedIds.has(item.id))}
+                          isChecked={pendingIds.has(item.id)}
+                          onToggle={() => handleTogglePendingItem(item.id)}
                         />
                       ))}
                     </Accordion>
                   )}
+
+                  <ConfirmResetBar
+                    hasPendingChanges={hasPendingChanges}
+                    pendingAddCount={pendingAddCount}
+                    pendingRemoveCount={pendingRemoveCount}
+                    onConfirm={onConfirmSelections}
+                    onReset={handleResetSelections}
+                  />
 
                   {/* Pagination Controls */}
                   {totalPages > 1 && (
@@ -341,12 +345,20 @@ export function DTPBankSection({
                             <DTPAccordionItem
                               key={item.id}
                               item={item}
-                              isChecked={includedIds.has(item.id)}
-                              onToggle={() => onToggleDTPInclusion?.(item.id, item, !includedIds.has(item.id))}
+                          isChecked={pendingIds.has(item.id)}
+                          onToggle={() => handleTogglePendingItem(item.id)}
                             />
                           ))}
                         </Accordion>
                       )}
+
+                      <ConfirmResetBar
+                        hasPendingChanges={hasPendingChanges}
+                        pendingAddCount={pendingAddCount}
+                        pendingRemoveCount={pendingRemoveCount}
+                        onConfirm={onConfirmSelections}
+                        onReset={handleResetSelections}
+                      />
 
                       {/* Pagination Controls */}
                       {totalPages > 1 && (

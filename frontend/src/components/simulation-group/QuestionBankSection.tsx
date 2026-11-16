@@ -13,8 +13,6 @@ export interface QuestionBankSectionProps {
   patients: Array<{ id?: string; patient_id?: string; name?: string; patient_name?: string }>;
   /** Instructor flow: called when user clicks "Confirm Selections" */
   onConfirmSelections?: () => void;
-  /** Admin flow: called when a checkbox is toggled immediately */
-  onToggleQuestionInclusion?: (questionId: string, question: QuestionBankItem, isChecked: boolean) => void;
   /** Called when the global tab is clicked — lets the page reload included IDs */
   onGlobalTabClick?: () => void;
   /** Called when the patient-specific tab is clicked */
@@ -36,7 +34,6 @@ export function QuestionBankSection({
   groupId: _groupId,
   patients,
   onConfirmSelections,
-  onToggleQuestionInclusion,
   onGlobalTabClick,
   onPatientSpecificTabClick,
   onPatientSelect,
@@ -44,15 +41,10 @@ export function QuestionBankSection({
   const {
     questionBankTab, setQuestionBankTab,
     filteredGlobalQuestions, filteredPatientQuestions,
-    includedQuestionIds,
     pendingQuestionIds,
-    allExistingTags,
     // Instructor per-tab search
     globalQuestionSearchQuery, setGlobalQuestionSearchQuery,
     patientQuestionSearchQuery, setPatientQuestionSearchQuery,
-    // Admin unified search + tag filter
-    questionBankSearchQuery, setQuestionBankSearchQuery,
-    questionBankTagFilter, setQuestionBankTagFilter,
     // Pagination
     globalPagination, patientPagination,
     handleGlobalPageChange, handlePatientPageChange,
@@ -83,27 +75,19 @@ export function QuestionBankSection({
 
   const handleGlobalTabSwitch = () => {
     setQuestionBankTab('global');
-    if (role === 'admin') {
-      setQuestionBankSearchQuery('');
-      setQuestionBankTagFilter('');
-    }
+    setGlobalQuestionSearchQuery('');
     onGlobalTabClick?.();
   };
 
   const handlePatientSpecificTabSwitch = () => {
     setQuestionBankTab('patientSpecific');
-    if (role === 'admin') {
-      setQuestionBankSearchQuery('');
-      setQuestionBankTagFilter('');
-    }
+    setPatientQuestionSearchQuery('');
     onPatientSpecificTabClick?.();
   };
 
   const handlePatientSelectorChange = (patientId: string | null) => {
     setSelectedPatientForQuestionBank(patientId);
-    if (role === 'instructor') {
-      setPatientPagination({ currentPage: 1, itemsPerPage: patientPagination.itemsPerPage });
-    }
+    setPatientPagination({ currentPage: 1, itemsPerPage: patientPagination.itemsPerPage });
     onPatientSelect?.(patientId);
   };
 
@@ -160,9 +144,7 @@ export function QuestionBankSection({
                   : "Select which group-wide questions should be included in this simulation group\u2019s patients. These are questions that are saved in the question bank and are visible to be included for all patients in this simulation group."}
               </p>
 
-              {/* Instructor: per-tab search */}
-              {(role === 'instructor' || role === 'admin') && (
-                <div className="relative mb-4">
+              <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
                   <Input
                     type="text"
@@ -172,8 +154,7 @@ export function QuestionBankSection({
                     className="pl-10"
                     style={{ borderColor: UI_COLORS.border.default }}
                   />
-                </div>
-              )}
+              </div>
 
               {/* Instructor: Pagination Info */}
               {(role === 'instructor' || role === 'admin') && filteredGlobalQuestions.length > 0 && (
@@ -257,9 +238,7 @@ export function QuestionBankSection({
                 </select>
               </div>
 
-              {/* Instructor: per-tab search */}
-              {(role === 'instructor' || role === 'admin') && (
-                <div className="relative mb-4">
+              <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
                   <Input
                     type="text"
@@ -269,8 +248,7 @@ export function QuestionBankSection({
                     className="pl-10"
                     style={{ borderColor: UI_COLORS.border.default }}
                   />
-                </div>
-              )}
+              </div>
 
               {selectedPatientForQuestionBank ? (
                 <>

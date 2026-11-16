@@ -49,10 +49,6 @@ export interface UseQuestionBankReturn {
   setGlobalQuestionSearchQuery: (q: string) => void;
   patientQuestionSearchQuery: string;
   setPatientQuestionSearchQuery: (q: string) => void;
-  questionBankSearchQuery: string;
-  setQuestionBankSearchQuery: (q: string) => void;
-  questionBankTagFilter: string;
-  setQuestionBankTagFilter: (t: string) => void;
 
   // Pagination
   globalPagination: PaginationState;
@@ -101,7 +97,7 @@ export interface UseQuestionBankReturn {
  * pagination, included/pending question IDs, and question lists.
  * Used by both InstructorSimulationGroupPage and AdminSimulationGroupPage.
  */
-export function useQuestionBank({ role }: UseQuestionBankParams): UseQuestionBankReturn {
+export function useQuestionBank({ role: _role }: UseQuestionBankParams): UseQuestionBankReturn {
   // Tab state
   const [questionBankTab, setQuestionBankTab] = useState<'global' | 'patientSpecific'>('global');
 
@@ -117,8 +113,6 @@ export function useQuestionBank({ role }: UseQuestionBankParams): UseQuestionBan
   const [globalQuestionSearchQuery, setGlobalQuestionSearchQuery] = useState('');
   const [patientQuestionSearchQuery, setPatientQuestionSearchQuery] = useState('');
   // Admin uses a single search query + tag filter
-  const [questionBankSearchQuery, setQuestionBankSearchQuery] = useState('');
-  const [questionBankTagFilter, setQuestionBankTagFilter] = useState<string>('');
 
   // Pagination state
   const [globalPagination, setGlobalPagination] = useState<PaginationState>({
@@ -155,18 +149,18 @@ export function useQuestionBank({ role }: UseQuestionBankParams): UseQuestionBan
 
   // Filtered question lists
   const filteredGlobalQuestions = useMemo(() => {
-    //  per-tab search, no tag filter
+    const query = globalQuestionSearchQuery.trim().toLowerCase();
     return globalBankQuestions.filter(q =>
-      q.title.toLowerCase().includes(globalQuestionSearchQuery.toLowerCase())
+      q.title.toLowerCase().includes(query)
     );
-  }, [role, globalBankQuestions, questionBankSearchQuery, questionBankTagFilter, globalQuestionSearchQuery]);
+  }, [globalBankQuestions, globalQuestionSearchQuery]);
 
   const filteredPatientQuestions = useMemo(() => {
-    // per-tab search, no tag filter
+    const query = patientQuestionSearchQuery.trim().toLowerCase();
     return patientSpecificBankQuestions.filter(q =>
-      q.title.toLowerCase().includes(patientQuestionSearchQuery.toLowerCase())
+      q.title.toLowerCase().includes(query)
     );
-  }, [role, patientSpecificBankQuestions, questionBankSearchQuery, questionBankTagFilter, patientQuestionSearchQuery]);
+  }, [patientSpecificBankQuestions, patientQuestionSearchQuery]);
 
   // Pagination helpers
   const getPaginatedQuestions = (questions: QuestionBankItem[], currentPage: number, itemsPerPage: number) => {
@@ -259,10 +253,6 @@ export function useQuestionBank({ role }: UseQuestionBankParams): UseQuestionBan
     setGlobalQuestionSearchQuery,
     patientQuestionSearchQuery,
     setPatientQuestionSearchQuery,
-    questionBankSearchQuery,
-    setQuestionBankSearchQuery,
-    questionBankTagFilter,
-    setQuestionBankTagFilter,
 
     // Pagination
     globalPagination,
