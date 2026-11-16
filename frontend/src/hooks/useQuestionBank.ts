@@ -155,28 +155,14 @@ export function useQuestionBank({ role }: UseQuestionBankParams): UseQuestionBan
 
   // Filtered question lists
   const filteredGlobalQuestions = useMemo(() => {
-    if (role === 'admin') {
-      return globalBankQuestions.filter(q => {
-        const matchesSearch = !questionBankSearchQuery || q.title.toLowerCase().includes(questionBankSearchQuery.toLowerCase());
-        const matchesTag = !questionBankTagFilter || (q.tags || []).includes(questionBankTagFilter);
-        return matchesSearch && matchesTag;
-      });
-    }
-    // Instructor: per-tab search, no tag filter
+    //  per-tab search, no tag filter
     return globalBankQuestions.filter(q =>
       q.title.toLowerCase().includes(globalQuestionSearchQuery.toLowerCase())
     );
   }, [role, globalBankQuestions, questionBankSearchQuery, questionBankTagFilter, globalQuestionSearchQuery]);
 
   const filteredPatientQuestions = useMemo(() => {
-    if (role === 'admin') {
-      return patientSpecificBankQuestions.filter(q => {
-        const matchesSearch = !questionBankSearchQuery || q.title.toLowerCase().includes(questionBankSearchQuery.toLowerCase());
-        const matchesTag = !questionBankTagFilter || (q.tags || []).includes(questionBankTagFilter);
-        return matchesSearch && matchesTag;
-      });
-    }
-    // Instructor: per-tab search, no tag filter
+    // per-tab search, no tag filter
     return patientSpecificBankQuestions.filter(q =>
       q.title.toLowerCase().includes(patientQuestionSearchQuery.toLowerCase())
     );

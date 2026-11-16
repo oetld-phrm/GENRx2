@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   instructorService,
   type InstructorSimulationGroup,
@@ -66,9 +66,8 @@ export interface UseInstructorQuestionBankReturn {
  * state, organization resolution, and the create/update calls. All derivations
  * delegate to the pure helpers in `@/lib/questionBankUtils` and `@/lib/bankUtils`.
  *
- * Reads are never scoped by organization — `GET instructor/question_bank` returns
- * every row the instructor may see. The resolved organization is a write-side
- * concern only: it is the `organization_id` a newly created item is filed under.
+ * Reads and writes are scoped to the active organization resolved from the
+ * instructor's simulation groups.
  */
 export function useInstructorQuestionBank(): UseInstructorQuestionBankReturn {
   // Loaded data
@@ -84,50 +83,49 @@ export function useInstructorQuestionBank(): UseInstructorQuestionBankReturn {
   // Organization resolution
   const [organizationIds, setOrganizationIds] = useState<string[]>([]);
   const [activeOrganizationId, setActiveOrganizationIdState] = useState<string | null>(null);
+  const activeOrganizationIdRef = useRef<string | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   // Lifecycle
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Fetch the question bank and the instructor's simulation groups together, so a
-   * single retry control re-runs both. A question bank failure surfaces as `error`
-   * and leaves the previously loaded list in place; a groups failure degrades to
-   * zero organizations (create disabled) without touching the list or `error`.
+   * Resolve the instructor's available organizations, then fetch the active
+   * organization's question bank. A question bank failure surfaces as `error`
+   * and leaves the previously loaded list in place; no available organizations
+   * clears the list and disables organization-scoped writes.
    */
   const reload = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const [bankResult, groups] = await Promise.all([
-        instructorService.getGlobalQuestionBank().then(
-          (value) => ({ ok: true as const, value }),
-          (err: unknown) => ({ ok: false as const, error: err })
-        ),
-        instructorService
-          .getSimulationGroups()
-          .catch(() => [] as InstructorSimulationGroup[]),
-      ]);
-
+      const groups = await instructorService
+        .getSimulationGroups()
+        .catch(() => [] as InstructorSimulationGroup[]);
+      if (requestId !== loadRequestIdRef.current) return;
       const ids = resolveOrganizationIds(groups);
       setOrganizationIds(ids);
-      setActiveOrganizationIdState((previous) => {
-        if (ids.length === 0) return null;
-        if (previous !== null && ids.includes(previous)) return previous;
-        return ids[0];
-      });
+      const currentId = activeOrganizationIdRef.current;
+      const nextId = currentId !== null && ids.includes(currentId) ? currentId : ids[0] ?? null;
+      activeOrganizationIdRef.current = nextId;
+      setActiveOrganizationIdState(nextId);
 
-      if (bankResult.ok) {
-        setItems(bankResult.value);
+      if (nextId === null) {
+        setItems([]);
       } else {
-        const message =
-          bankResult.error instanceof Error
-            ? bankResult.error.message
-            : 'Failed to load question bank. Please try again.';
-        setError(message);
+        const bankItems = await instructorService.getGlobalQuestionBank(nextId);
+        if (requestId !== loadRequestIdRef.current) return;
+        setItems(bankItems);
       }
+    } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
+      const message =
+        err instanceof Error ? err.message : 'Failed to load question bank. Please try again.';
+      setError(message);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, []);
 
@@ -187,8 +185,10 @@ export function useInstructorQuestionBank(): UseInstructorQuestionBankReturn {
   }, []);
 
   const setActiveOrganizationId = useCallback((id: string) => {
+    activeOrganizationIdRef.current = id;
     setActiveOrganizationIdState(id);
-  }, []);
+    void reload();
+  }, [reload]);
 
   /**
    * Create an item under the resolved organization. Tags are normalized against

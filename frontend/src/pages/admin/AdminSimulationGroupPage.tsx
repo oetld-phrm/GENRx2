@@ -190,7 +190,7 @@ function AdminSimulationGroupPage() {
     let cancelled = false;
     const request = organizationId
       ? adminApi.getQuestionBankQuestions(organizationId)
-      : instructorService.getGlobalQuestionBank();
+      : Promise.resolve([]);
     request.then(questions => {
       if (cancelled) return;
       setQuestionBankError(null);
@@ -545,8 +545,9 @@ function AdminSimulationGroupPage() {
     try {
       const created = await adminApi.createQuestionBankQuestion(organizationId!, { title: question.title, question_text: question.keyQuestion, evaluation_criteria: question.evaluationCriteria, is_mandatory: question.required });
       await instructorService.assignQuestionToGroup(groupId || '', created.id, question.patientId);
-      const updatedBank = await instructorService.getGlobalQuestionBank();
-      setGlobalBankQuestions(updatedBank);
+      const updatedBank = await adminApi.getQuestionBankQuestions(organizationId!);
+      setGlobalBankQuestions(updatedBank.filter(q => !q.tags?.includes('patient_specific')));
+      setPatientSpecificBankQuestions(updatedBank.filter(q => q.tags?.includes('patient_specific')));
       if (questionBankTab === 'patientSpecific' && selectedPatientForQuestionBank === question.patientId) {
         setIncludedQuestionIds(prev => { const s = new Set(prev); s.add(created.id); return s; });
       }

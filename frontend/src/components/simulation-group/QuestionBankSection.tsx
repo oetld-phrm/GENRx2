@@ -150,44 +150,18 @@ export function QuestionBankSection({
       {/* Question List */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="space-y-3">
-          {/* Admin: unified search + tag filter (shown above both tabs) */}
-          {role === 'admin' && (
-            <div className="flex gap-3 mb-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
-                <Input
-                  placeholder="Search questions..."
-                  value={questionBankSearchQuery}
-                  onChange={(e) => setQuestionBankSearchQuery(e.target.value)}
-                  className="pl-9 py-2 text-sm"
-                  style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white }}
-                />
-              </div>
-              <select
-                value={questionBankTagFilter}
-                onChange={(e) => setQuestionBankTagFilter(e.target.value)}
-                className="px-3 py-2 rounded-md border text-sm"
-                style={{ borderColor: UI_COLORS.border.default, backgroundColor: UI_COLORS.background.white, color: UI_COLORS.text.heading, minWidth: '10rem' }}
-              >
-                <option value="">All Tags</option>
-                {allExistingTags.map(tag => (
-                  <option key={tag} value={tag}>{tag}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {/* ===== GLOBAL TAB ===== */}
           {questionBankTab === 'global' && (
             <>
               <p className="text-sm mb-4" style={{ color: UI_COLORS.text.muted }}>
                 {role === 'admin'
-                  ? "Select which group-wide questions should be included in this simulation group's rubric."
-                  : "Select which group-wide questions should be included in this simulation group\u2019s rubric. These are questions that are saved in the question bank and are visible to be included for all patients in this simulation group."}
+                  ? "Select which group-wide questions should be included in this simulation group's patients."
+                  : "Select which group-wide questions should be included in this simulation group\u2019s patients. These are questions that are saved in the question bank and are visible to be included for all patients in this simulation group."}
               </p>
 
               {/* Instructor: per-tab search */}
-              {role === 'instructor' && (
+              {(role === 'instructor' || role === 'admin') && (
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
                   <Input
@@ -202,7 +176,7 @@ export function QuestionBankSection({
               )}
 
               {/* Instructor: Pagination Info */}
-              {role === 'instructor' && filteredGlobalQuestions.length > 0 && (
+              {(role === 'instructor' || role === 'admin') && filteredGlobalQuestions.length > 0 && (
                 <div className="flex items-center justify-between mb-3 text-sm" style={{ color: UI_COLORS.text.muted }}>
                   <span>
                     Showing {((globalPagination.currentPage - 1) * globalPagination.itemsPerPage) + 1}&ndash;
@@ -212,7 +186,7 @@ export function QuestionBankSection({
               )}
 
               {/* Instructor: Accordion-style question list */}
-              {role === 'instructor' && (
+              {(role === 'instructor' || role === 'admin') && (
                 <>
                   <Accordion type="single" collapsible className="space-y-2">
                     {paginatedGlobalQuestions.map((question) => (
@@ -247,27 +221,6 @@ export function QuestionBankSection({
                 </>
               )}
 
-              {/* Admin: accordion-style question list */}
-              {role === 'admin' && (
-                <>
-                  {filteredGlobalQuestions.length === 0 ? (
-                    <p className="text-sm text-center py-8" style={{ color: UI_COLORS.text.muted }}>
-                      {questionBankSearchQuery || questionBankTagFilter ? 'No questions match your filters.' : 'No group-wide questions yet.'}
-                    </p>
-                  ) : (
-                    <Accordion type="single" collapsible className="space-y-2">
-                      {filteredGlobalQuestions.map((question) => (
-                        <QuestionAccordionItem
-                          key={question.id}
-                          question={question}
-                          isChecked={includedQuestionIds.has(question.id)}
-                          onToggle={() => onToggleQuestionInclusion?.(question.id, question, !includedQuestionIds.has(question.id))}
-                        />
-                      ))}
-                    </Accordion>
-                  )}
-                </>
-              )}
             </>
           )}
 
@@ -305,7 +258,7 @@ export function QuestionBankSection({
               </div>
 
               {/* Instructor: per-tab search */}
-              {role === 'instructor' && (
+              {(role === 'instructor' || role === 'admin') && (
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: UI_COLORS.text.muted }} />
                   <Input
@@ -322,7 +275,7 @@ export function QuestionBankSection({
               {selectedPatientForQuestionBank ? (
                 <>
                   {/* Instructor: Pagination Info */}
-                  {role === 'instructor' && filteredPatientQuestions.length > 0 && (
+                  {(role === 'instructor' || role === 'admin') && filteredPatientQuestions.length > 0 && (
                     <div className="flex items-center justify-between mb-3 text-sm" style={{ color: UI_COLORS.text.muted }}>
                       <span>
                         Showing {((patientPagination.currentPage - 1) * patientPagination.itemsPerPage) + 1}&ndash;
@@ -332,7 +285,7 @@ export function QuestionBankSection({
                   )}
 
                   {/* Instructor: Accordion-style question list */}
-                  {role === 'instructor' && (
+                  {(role === 'instructor' || role === 'admin') && (
                     <>
                       <Accordion type="single" collapsible className="space-y-2">
                         {paginatedPatientQuestions.map((question) => (
@@ -367,27 +320,7 @@ export function QuestionBankSection({
                     </>
                   )}
 
-                  {/* Admin: accordion-style question list */}
-                  {role === 'admin' && (
-                    <>
-                      {filteredPatientQuestions.length === 0 ? (
-                        <p className="text-sm text-center py-8" style={{ color: UI_COLORS.text.muted }}>
-                          {questionBankSearchQuery || questionBankTagFilter ? 'No questions match your filters.' : 'No patient-specific questions yet.'}
-                        </p>
-                      ) : (
-                        <Accordion type="single" collapsible className="space-y-2">
-                          {filteredPatientQuestions.map((question) => (
-                            <QuestionAccordionItem
-                              key={question.id}
-                              question={question}
-                              isChecked={includedQuestionIds.has(question.id)}
-                              onToggle={() => onToggleQuestionInclusion?.(question.id, question, !includedQuestionIds.has(question.id))}
-                            />
-                          ))}
-                        </Accordion>
-                      )}
-                    </>
-                  )}
+                
                 </>
               ) : (
                 <p className="text-sm text-center py-8" style={{ color: UI_COLORS.text.muted }}>

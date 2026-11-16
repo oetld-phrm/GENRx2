@@ -412,7 +412,7 @@ export interface InstructorDataService {
   getChatMessages: (attemptId: string) => ChatMessage[];
   getChatNotes: (attemptId: string) => string;
   getDefaultPatientPrompt: () => string;
-  getGlobalQuestionBank: () => Promise<QuestionBankItem[]>;
+  getGlobalQuestionBank: (organizationId: string) => Promise<QuestionBankItem[]>;
   createQuestionBankQuestion: (organizationId: string, data: { title: string; question_text: string; clinical_intent?: string; evaluation_criteria: string; category?: string; difficulty_level?: string; is_mandatory?: boolean; weight?: number; max_score?: number; tags?: string[] }) => Promise<QuestionBankItem>;
   deleteQuestionBankQuestion: (questionId: string) => Promise<void>;
   updateQuestionBankQuestion: (questionId: string, data: { title?: string; question_text?: string; clinical_intent?: string; evaluation_criteria?: string; is_mandatory?: boolean; tags?: string[] }) => Promise<QuestionBankItem>;
@@ -1884,9 +1884,10 @@ function getDefaultPatientPrompt(): string {
 /**
  * Get global question bank
  */
-async function getGlobalQuestionBank(): Promise<QuestionBankItem[]> {
+async function getGlobalQuestionBank(organizationId: string): Promise<QuestionBankItem[]> {
   try {
-    const rows = await apiClient.request<any[]>('instructor/question_bank');
+    const query = `?organization_id=${encodeURIComponent(organizationId)}`;
+    const rows = await apiClient.request<any[]>(`instructor/question_bank${query}`);
     return rows.map(mapBackendToQuestionBankItem);
   } catch (error) {
     console.error('Failed to fetch global question bank from API:', error);

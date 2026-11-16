@@ -1836,8 +1836,33 @@ exports.handler = async (event, context) => {
         break;
       case "GET /instructor/question_bank":
         try {
+          const organizationId = event.queryStringParameters?.organization_id;
+          if (!organizationId) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "organization_id is required" });
+            break;
+          }
+
+          const membership = await sqlConnection`
+            SELECT 1
+            FROM "users" u
+            JOIN "enrollments" e ON e.user_id = u.user_id
+            JOIN "simulation_groups" g ON g.simulation_group_id = e.simulation_group_id
+            WHERE u.user_email = ${userEmailAttribute}
+              AND e.enrollment_type = 'instructor'
+              AND g.organization_id = ${organizationId}
+            LIMIT 1;
+          `;
+          if (membership.length === 0) {
+            response.statusCode = 403;
+            response.body = JSON.stringify({ error: "Forbidden: organization access required" });
+            break;
+          }
+
           const data = await sqlConnection`
-            SELECT * FROM "question_bank" ORDER BY created_at DESC;
+            SELECT * FROM "question_bank"
+            WHERE organization_id = ${organizationId}
+            ORDER BY created_at DESC;
           `;
           response.statusCode = 200;
           response.body = JSON.stringify(data);
