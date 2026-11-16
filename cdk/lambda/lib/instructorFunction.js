@@ -2035,8 +2035,10 @@ exports.handler = async (event, context) => {
                 SELECT sgq.*, qb.title, qb.question_text, qb.evaluation_criteria, qb.clinical_intent, qb.category, qb.is_mandatory
                 FROM "simulation_group_questions" sgq
                 JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgq.simulation_group_id
                 WHERE sgq.simulation_group_id = ${simulation_group_id}
                   AND sgq.persona_id = ${persona_id}
+                  AND qb.organization_id = sg.organization_id
                 ORDER BY sgq."order" ASC;
               `;
             } else {
@@ -2044,7 +2046,9 @@ exports.handler = async (event, context) => {
                 SELECT sgq.*, qb.title, qb.question_text, qb.evaluation_criteria, qb.clinical_intent, qb.category, qb.is_mandatory
                 FROM "simulation_group_questions" sgq
                 JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgq.simulation_group_id
                 WHERE sgq.simulation_group_id = ${simulation_group_id}
+                  AND qb.organization_id = sg.organization_id
                 ORDER BY sgq."order" ASC;
               `;
             }
@@ -2916,8 +2920,10 @@ exports.handler = async (event, context) => {
                        db.evaluation_criteria, db.tags, db.is_required, db.is_active
                 FROM "simulation_group_dtps" sgd
                 JOIN "dtp_bank" db ON sgd.dtp_id = db.dtp_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgd.simulation_group_id
                 WHERE sgd.simulation_group_id = ${simulation_group_id}
                   AND sgd.persona_id = ${persona_id}
+                  AND db.organization_id = sg.organization_id
                 ORDER BY sgd.sort_order ASC, sgd.added_at ASC;
               `;
             } else {
@@ -2926,7 +2932,9 @@ exports.handler = async (event, context) => {
                        db.evaluation_criteria, db.tags, db.is_required, db.is_active
                 FROM "simulation_group_dtps" sgd
                 JOIN "dtp_bank" db ON sgd.dtp_id = db.dtp_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgd.simulation_group_id
                 WHERE sgd.simulation_group_id = ${simulation_group_id}
+                  AND db.organization_id = sg.organization_id
                 ORDER BY sgd.sort_order ASC, sgd.added_at ASC;
               `;
             }
@@ -3124,8 +3132,10 @@ exports.handler = async (event, context) => {
                        rb.evaluation_criteria, rb.rationale, rb.is_active
                 FROM "simulation_group_recommendations" sgr
                 JOIN "recommendations_bank" rb ON sgr.recommendation_id = rb.recommendation_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgr.simulation_group_id
                 WHERE sgr.simulation_group_id = ${simulation_group_id}
                   AND sgr.persona_id = ${persona_id}
+                  AND rb.organization_id = sg.organization_id
                 ORDER BY sgr.sort_order ASC, sgr.added_at ASC;
               `;
             } else {
@@ -3134,7 +3144,9 @@ exports.handler = async (event, context) => {
                        rb.evaluation_criteria, rb.rationale, rb.is_active
                 FROM "simulation_group_recommendations" sgr
                 JOIN "recommendations_bank" rb ON sgr.recommendation_id = rb.recommendation_id
+                JOIN "simulation_groups" sg ON sg.simulation_group_id = sgr.simulation_group_id
                 WHERE sgr.simulation_group_id = ${simulation_group_id}
+                  AND rb.organization_id = sg.organization_id
                 ORDER BY sgr.sort_order ASC, sgr.added_at ASC;
               `;
             }

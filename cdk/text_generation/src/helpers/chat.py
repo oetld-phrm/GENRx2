@@ -967,9 +967,11 @@ def fetch_key_questions(simulation_group_id: str, persona_id: str, tracker: Degr
                    sgq.weight_override
             FROM "simulation_group_questions" sgq
             JOIN "question_bank" qb ON sgq.question_id = qb.question_id
+            JOIN "simulation_groups" sg ON sg.simulation_group_id = sgq.simulation_group_id
             WHERE sgq.simulation_group_id = %s
               AND (sgq.persona_id = %s OR sgq.persona_id IS NULL)
               AND qb.is_active = TRUE
+              AND qb.organization_id = sg.organization_id
             ORDER BY sgq."order" NULLS LAST, qb.question_text
         """, (simulation_group_id, persona_id))
         rows = cursor.fetchall()
@@ -1016,7 +1018,7 @@ def cache_key_questions(
             table.put_item(Item={
                 "SessionId": f"QCACHE#{session_id}",
                 "questions": [],
-                "cache_version": 2,
+                "cache_version": 3,
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "expireAt": int(time.time()) + (7 * 24 * 60 * 60),
             })
@@ -1080,7 +1082,7 @@ def cache_key_questions(
         table.put_item(Item={
             "SessionId": f"QCACHE#{session_id}",
             "questions": serializable_questions,
-            "cache_version": 2,  # v2 = symmetric embedding space (search_query for both sides)
+            "cache_version": 3,  # v3 = organization-scoped evaluation inputs
             "cached_at": datetime.now(timezone.utc).isoformat(),
             "expireAt": int(time.time()) + (7 * 24 * 60 * 60),
         })
@@ -1111,10 +1113,9 @@ def get_cached_key_questions(
             logger.info(f"Cache miss for session={session_id}")
             return None
 
-        # Reject stale v1 cache entries that used the wrong embedding space
-        # (embed_documents / search_document). Returning None triggers a re-cache.
+        # Reject caches predating organization-scoped evaluation inputs.
         cache_version = item.get("cache_version", 1)
-        if cache_version < 2:
+        if cache_version < 3:
             logger.info(f"Stale cache (v{cache_version}) for session={session_id}, will re-embed")
             return None
 
@@ -1164,9 +1165,11 @@ def fetch_instructor_dtps(simulation_group_id: str, persona_id: str) -> list[dic
             SELECT db.dtp_id, db.expected_dtp_text, db.evaluation_criteria
             FROM "simulation_group_dtps" sgd
             JOIN "dtp_bank" db ON sgd.dtp_id = db.dtp_id
+            JOIN "simulation_groups" sg ON sg.simulation_group_id = sgd.simulation_group_id
             WHERE sgd.simulation_group_id = %s
               AND (sgd.persona_id = %s OR sgd.persona_id IS NULL)
               AND db.is_active = TRUE
+              AND db.organization_id = sg.organization_id
             ORDER BY sgd.sort_order, db.title
         """, (simulation_group_id, persona_id))
         rows = cursor.fetchall()
@@ -1192,9 +1195,11 @@ def fetch_instructor_recommendations(simulation_group_id: str, persona_id: str) 
             SELECT rb.recommendation_id, rb.recommendation_text, rb.rationale, rb.evaluation_criteria
             FROM "simulation_group_recommendations" sgr
             JOIN "recommendations_bank" rb ON sgr.recommendation_id = rb.recommendation_id
+            JOIN "simulation_groups" sg ON sg.simulation_group_id = sgr.simulation_group_id
             WHERE sgr.simulation_group_id = %s
               AND (sgr.persona_id = %s OR sgr.persona_id IS NULL)
               AND rb.is_active = TRUE
+              AND rb.organization_id = sg.organization_id
             ORDER BY sgr.sort_order, rb.title
         """, (simulation_group_id, persona_id))
         rows = cursor.fetchall()
@@ -1228,7 +1233,7 @@ def cache_instructor_dtp_embeddings(
 
     dtps = fetch_instructor_dtps(simulation_group_id, persona_id)
 
-    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+    cache_key = f"DTPCACHE_ORG2#{simulation_group_id}#{persona_id}"
 
     if not dtps:
         logger.info(f"No instructor DTPs for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
@@ -1305,7 +1310,7 @@ def cache_instructor_rec_embeddings(
 
     recs = fetch_instructor_recommendations(simulation_group_id, persona_id)
 
-    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+    cache_key = f"RECCACHE_ORG2#{simulation_group_id}#{persona_id}"
 
     if not recs:
         logger.info(f"No instructor recommendations for group={simulation_group_id}, persona={persona_id}. Caching empty list.")
@@ -1377,7 +1382,7 @@ def get_cached_instructor_dtps(
     Read cached instructor DTP embeddings from DynamoDB.
     Returns the list of DTP dicts with embeddings, or None on cache miss/failure.
     """
-    cache_key = f"DTPCACHE#{simulation_group_id}#{persona_id}"
+    cache_key = f"DTPCACHE_ORG2#{simulation_group_id}#{persona_id}"
 
     try:
         dynamodb = boto3.resource("dynamodb")
@@ -1417,7 +1422,7 @@ def get_cached_instructor_recs(
     Read cached instructor recommendation embeddings from DynamoDB.
     Returns the list of recommendation dicts with embeddings, or None on cache miss/failure.
     """
-    cache_key = f"RECCACHE#{simulation_group_id}#{persona_id}"
+    cache_key = f"RECCACHE_ORG2#{simulation_group_id}#{persona_id}"
 
     try:
         dynamodb = boto3.resource("dynamodb")
