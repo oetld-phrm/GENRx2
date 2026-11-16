@@ -614,12 +614,13 @@ function InstructorSimulationGroupPage() {
           await instructorService.assignQuestionToGroup(groupId || '1', idsToAdd, selectedPatientForQuestionBank);
         }
 
-        includedQuestionIds.forEach(id => {
-          if (!pendingQuestionIds.has(id)) {
-            instructorService.deleteCaseSpecificQuestion(selectedPatientForQuestionBank, id);
-            if (patientEditor.selectedPatientForEdit === selectedPatientForQuestionBank) patientEditor.setCaseSpecificQuestions(instructorService.getCaseSpecificQuestions(selectedPatientForQuestionBank));
-          }
-        });
+        const idsToRemove = Array.from(includedQuestionIds).filter(id => !pendingQuestionIds.has(id));
+        for (const id of idsToRemove) {
+          await instructorService.deleteCaseSpecificQuestion(groupId || '1', selectedPatientForQuestionBank, id);
+        }
+        if (patientEditor.selectedPatientForEdit === selectedPatientForQuestionBank && idsToRemove.length > 0) {
+          patientEditor.setCaseSpecificQuestions(prev => prev.filter(question => !idsToRemove.includes(question.id)));
+        }
       }
       setIncludedQuestionIds(new Set(pendingQuestionIds));
     } catch (err) { setQuestionBankError(err instanceof Error ? err.message : 'Failed to confirm selections'); }
@@ -805,7 +806,7 @@ function InstructorSimulationGroupPage() {
               </div>
             </div>
           )}
-          {activeSection === 'editPatient' && <EditPatientPanel patientEditor={patientEditor} profilePictures={profilePictures} onBack={handleBackFromEditPatient} labels={labels} groupId={groupId || ''} globalRubricQuestions={globalRubricQuestions} onSavePatient={handleSavePatientChanges} onSaveCaseQuestion={(pid, q) => instructorService.updateCaseSpecificQuestion(pid, q)} onDeleteCaseQuestion={(pid, qid) => instructorService.deleteCaseSpecificQuestion(pid, qid)} onCreatePatientDTP={handleCreatePatientDTP} onUpdatePatientDTP={handleUpdatePatientDTP} onDeletePatientDTP={handleDeletePatientDTP} patientDTPs={patientDTPs} groupDTPs={groupDTPs} onLoadPatientDTPs={handleLoadPatientDTPs} onCreatePatientRecommendation={handleCreatePatientRecommendation} onUpdatePatientRecommendation={handleUpdatePatientRecommendation} onDeletePatientRecommendation={handleDeletePatientRecommendation} patientRecommendations={patientRecommendations} groupRecommendations={groupRecommendations} onLoadPatientRecommendations={handleLoadPatientRecommendations} />}
+          {activeSection === 'editPatient' && <EditPatientPanel patientEditor={patientEditor} profilePictures={profilePictures} onBack={handleBackFromEditPatient} labels={labels} groupId={groupId || ''} globalRubricQuestions={globalRubricQuestions} onSavePatient={handleSavePatientChanges} onSaveCaseQuestion={(pid, q) => instructorService.updateCaseSpecificQuestion(pid, q)} onDeleteCaseQuestion={(gid, pid, qid, groupQuestionId) => instructorService.deleteCaseSpecificQuestion(gid, pid, qid, groupQuestionId)} onCreatePatientDTP={handleCreatePatientDTP} onUpdatePatientDTP={handleUpdatePatientDTP} onDeletePatientDTP={handleDeletePatientDTP} patientDTPs={patientDTPs} groupDTPs={groupDTPs} onLoadPatientDTPs={handleLoadPatientDTPs} onCreatePatientRecommendation={handleCreatePatientRecommendation} onUpdatePatientRecommendation={handleUpdatePatientRecommendation} onDeletePatientRecommendation={handleDeletePatientRecommendation} patientRecommendations={patientRecommendations} groupRecommendations={groupRecommendations} onLoadPatientRecommendations={handleLoadPatientRecommendations} />}
           {activeSection === 'viewStudent' && studentViewer.selectedStudentId && <StudentDetailsPanel studentDetails={studentViewer.studentDetails} studentDetailsLoading={studentViewer.studentDetailsLoading} studentPatientData={studentViewer.studentPatientData} expandedAttemptId={studentViewer.expandedAttemptId} onExpandAttempt={studentViewer.setExpandedAttemptId} selectedPatientFilter={studentViewer.selectedPatientFilter} onPatientFilterChange={studentViewer.setSelectedPatientFilter} onViewDebrief={debriefViewer.viewDebrief} isFetchingDebrief={debriefViewer.isFetchingDebrief} onDownloadPdf={async (attemptId) => { const el = debriefViewer.attemptPdfRefs.current[String(attemptId)]; if (el) await debriefViewer.downloadPdf(attemptId, el); }} isGeneratingPdf={debriefViewer.isGeneratingPdf} onBack={handleBackFromViewStudent} attemptPdfRefs={debriefViewer.attemptPdfRefs} labels={labels} />}
         </main>
       </div>

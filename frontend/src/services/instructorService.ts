@@ -392,7 +392,7 @@ export interface InstructorDataService {
   getCaseSpecificQuestions: (patientId: string) => GlobalRubricQuestion[];
   addCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
   updateCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  deleteCaseSpecificQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
+  deleteCaseSpecificQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
   getCaseMaterials: (patientId: string) => Promise<CaseMaterial[]>;
   addCaseMaterial: (patientId: string, material: CaseMaterial) => Promise<CaseMaterial>;
   updateCaseMaterial: (patientId: string, material: CaseMaterial) => Promise<CaseMaterial>;
@@ -1773,14 +1773,20 @@ function updateCaseSpecificQuestion(_patientId: string, question: GlobalRubricQu
  * FIX: Changed from async to sync (void) to match InstructorDataService interface.
  * Removed async getManageablePatients calls that used an empty string group ID.
  */
-async function deleteCaseSpecificQuestion(patientId: string, groupQuestionId: string): Promise<void> {
+async function deleteCaseSpecificQuestion(simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string): Promise<void> {
+  const params = new URLSearchParams({
+    simulation_group_id: simulationGroupId,
+    persona_id: patientId,
+    question_id: questionId,
+  });
+  if (groupQuestionId) params.set('group_question_id', groupQuestionId);
   await apiClient.request<any>(
-    `instructor/simulation_group_questions?group_question_id=${encodeURIComponent(groupQuestionId)}`,
+    `instructor/simulation_group_questions?${params.toString()}`,
     { method: 'DELETE' }
   );
   const questions = caseSpecificQuestions[patientId];
   if (questions) {
-    caseSpecificQuestions[patientId] = questions.filter(q => q.group_question_id !== groupQuestionId);
+    caseSpecificQuestions[patientId] = questions.filter(q => q.id !== questionId);
   }
 }
 

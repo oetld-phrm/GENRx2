@@ -23,7 +23,7 @@ export interface EditPatientPanelProps {
   globalRubricQuestions: GlobalRubricQuestion[];
   onSavePatient: () => Promise<void>;
   onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  onDeleteCaseQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
+  onDeleteCaseQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
   // DTP/Rec patient-specific authoring
   onCreatePatientDTP?: (patientId: string, data: { title: string; expectedDTPText: string; clinicalIntent: string; evaluationCriteria: string; tags: string[]; isRequired: boolean }) => Promise<void>;
   onUpdatePatientDTP?: (dtpId: string, data: { title: string; expectedDTPText: string; clinicalIntent: string; evaluationCriteria: string; tags: string[]; isRequired: boolean }) => Promise<void>;
@@ -44,7 +44,7 @@ export function EditPatientPanel({
   profilePictures,
   onBack,
   labels,
-  groupId: _groupId,
+  groupId,
   globalRubricQuestions,
   onSavePatient,
   onSaveCaseQuestion,
@@ -151,6 +151,7 @@ export function EditPatientPanel({
           {patientEditor.editPatientTab === 'questions' && (
             <QuestionsTab
               patientEditor={patientEditor}
+              groupId={groupId}
               caseQuestionSearchQuery={caseQuestionSearchQuery}
               onCaseQuestionSearchChange={setCaseQuestionSearchQuery}
               filteredCaseQuestions={filteredCaseQuestions}
@@ -818,6 +819,7 @@ function QuestionsTab({
   filteredGlobalRubric,
   onSaveCaseQuestion,
   onDeleteCaseQuestion,
+  groupId,
 }: {
   patientEditor: UsePatientEditorReturn;
   caseQuestionSearchQuery: string;
@@ -827,21 +829,22 @@ function QuestionsTab({
   onGlobalRubricSearchChange: (query: string) => void;
   filteredGlobalRubric: GlobalRubricQuestion[];
   onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  onDeleteCaseQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
+  onDeleteCaseQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
+  groupId: string;
 }) {
   const { showNotification } = useNotification();
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; groupQuestionId: string; questionTitle: string }>({
-    open: false, groupQuestionId: '', questionTitle: ''
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; questionId: string; groupQuestionId?: string; questionTitle: string }>({
+    open: false, questionId: '', groupQuestionId: undefined, questionTitle: ''
   });
 
   const [isDeleting, setIsDeleting] = useState(false);
   const handleConfirmDeleteCaseQuestion = async () => {
-    if (!patientEditor.selectedPatientForEdit || !deleteConfirm.groupQuestionId || isDeleting) return;
+    if (!patientEditor.selectedPatientForEdit || !deleteConfirm.questionId || isDeleting) return;
     setIsDeleting(true);
     try {
-      await onDeleteCaseQuestion(patientEditor.selectedPatientForEdit, deleteConfirm.groupQuestionId);
-      patientEditor.setCaseSpecificQuestions(patientEditor.caseSpecificQuestions.filter(q => q.group_question_id !== deleteConfirm.groupQuestionId));
-      setDeleteConfirm({ open: false, groupQuestionId: '', questionTitle: '' });
+      await onDeleteCaseQuestion(groupId, patientEditor.selectedPatientForEdit, deleteConfirm.questionId, deleteConfirm.groupQuestionId);
+      patientEditor.setCaseSpecificQuestions(patientEditor.caseSpecificQuestions.filter(q => q.id !== deleteConfirm.questionId));
+      setDeleteConfirm({ open: false, questionId: '', groupQuestionId: undefined, questionTitle: '' });
     } catch (error) {
       console.error('Failed to remove case-specific question:', error);
       showNotification({ message: 'Failed to remove key question. Please try again.', type: 'error' });
@@ -1117,11 +1120,7 @@ function QuestionsTab({
                     <Button
                       onClick={() => {
                         if (patientEditor.selectedPatientForEdit) {
-                          if (question.group_question_id) {
-                            setDeleteConfirm({ open: true, groupQuestionId: question.group_question_id, questionTitle: question.title });
-                          } else {
-                            showNotification({ message: 'This question is missing its assignment ID and cannot be removed.', type: 'error' });
-                          }
+                          setDeleteConfirm({ open: true, questionId: question.id, groupQuestionId: question.group_question_id, questionTitle: question.title });
                         }
                       }}
                       variant="outline"

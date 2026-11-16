@@ -2140,35 +2140,44 @@ exports.handler = async (event, context) => {
         }
         break;
       case "DELETE /instructor/simulation_group_questions":
-        if (
-          event.queryStringParameters != null &&
-          event.queryStringParameters.group_question_id
-        ) {
-          const { group_question_id } =
-            event.queryStringParameters;
-
+        if (event.queryStringParameters != null) {
+          const {
+            group_question_id,
+            simulation_group_id,
+            persona_id,
+            question_id,
+          } = event.queryStringParameters;
+          const hasPatientAssignment = simulation_group_id && persona_id && question_id;
+          if (!group_question_id && !hasPatientAssignment) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "group_question_id or simulation_group_id, persona_id, and question_id are required" });
+            break;
+          }
           try {
-            const existing = await sqlConnection`
-              SELECT group_question_id FROM "simulation_group_questions"
-              WHERE group_question_id = ${group_question_id};
-            `;
+            const deleted = hasPatientAssignment
+              ? await sqlConnection`
+                  DELETE FROM "simulation_group_questions"
+                  WHERE simulation_group_id = ${simulation_group_id}
+                    AND persona_id = ${persona_id}
+                    AND question_id = ${question_id}
+                  RETURNING group_question_id;
+                `
+              : await sqlConnection`
+                  DELETE FROM "simulation_group_questions"
+                  WHERE group_question_id = ${group_question_id}
+                  RETURNING group_question_id;
+                `;
 
-            if (existing.length === 0) {
+            if (deleted.length === 0) {
               response.statusCode = 404;
-              response.body = JSON.stringify({
-                error: "Assignment not found",
-              });
+              response.body = JSON.stringify({ error: "Assignment not found" });
               break;
             }
-
-            await sqlConnection`
-              DELETE FROM "simulation_group_questions"
-              WHERE group_question_id = ${group_question_id};
-            `;
 
             response.statusCode = 200;
             response.body = JSON.stringify({
               message: "Question unassigned successfully",
+              group_question_ids: deleted.map((row) => row.group_question_id),
             });
           } catch (err) {
             response.statusCode = 500;
@@ -2177,9 +2186,7 @@ exports.handler = async (event, context) => {
           }
         } else {
           response.statusCode = 400;
-          response.body = JSON.stringify({
-            error: "group_question_id is required",
-          });
+          response.body = JSON.stringify({ error: "Question assignment identifiers are required" });
         }
         break;
       case "PUT /instructor/simulation_group_questions":
