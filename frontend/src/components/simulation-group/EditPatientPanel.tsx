@@ -23,7 +23,7 @@ export interface EditPatientPanelProps {
   globalRubricQuestions: GlobalRubricQuestion[];
   onSavePatient: () => Promise<void>;
   onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  onDeleteCaseQuestion: (patientId: string, questionId: string) => void;
+  onDeleteCaseQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
   // DTP/Rec patient-specific authoring
   onCreatePatientDTP?: (patientId: string, data: { title: string; expectedDTPText: string; clinicalIntent: string; evaluationCriteria: string; tags: string[]; isRequired: boolean }) => Promise<void>;
   onUpdatePatientDTP?: (dtpId: string, data: { title: string; expectedDTPText: string; clinicalIntent: string; evaluationCriteria: string; tags: string[]; isRequired: boolean }) => Promise<void>;
@@ -827,18 +827,27 @@ function QuestionsTab({
   onGlobalRubricSearchChange: (query: string) => void;
   filteredGlobalRubric: GlobalRubricQuestion[];
   onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  onDeleteCaseQuestion: (patientId: string, questionId: string) => void;
+  onDeleteCaseQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
 }) {
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; questionId: string; questionTitle: string }>({
-    open: false, questionId: '', questionTitle: ''
+  const { showNotification } = useNotification();
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; groupQuestionId: string; questionTitle: string }>({
+    open: false, groupQuestionId: '', questionTitle: ''
   });
 
-  const handleConfirmDeleteCaseQuestion = () => {
-    if (patientEditor.selectedPatientForEdit && deleteConfirm.questionId) {
-      onDeleteCaseQuestion(patientEditor.selectedPatientForEdit, deleteConfirm.questionId);
-      patientEditor.setCaseSpecificQuestions(patientEditor.caseSpecificQuestions.filter(q => q.id !== deleteConfirm.questionId));
+  const [isDeleting, setIsDeleting] = useState(false);
+  const handleConfirmDeleteCaseQuestion = async () => {
+    if (!patientEditor.selectedPatientForEdit || !deleteConfirm.groupQuestionId || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteCaseQuestion(patientEditor.selectedPatientForEdit, deleteConfirm.groupQuestionId);
+      patientEditor.setCaseSpecificQuestions(patientEditor.caseSpecificQuestions.filter(q => q.group_question_id !== deleteConfirm.groupQuestionId));
+      setDeleteConfirm({ open: false, groupQuestionId: '', questionTitle: '' });
+    } catch (error) {
+      console.error('Failed to remove case-specific question:', error);
+      showNotification({ message: 'Failed to remove key question. Please try again.', type: 'error' });
+    } finally {
+      setIsDeleting(false);
     }
-    setDeleteConfirm({ open: false, questionId: '', questionTitle: '' });
   };
 
   return (
@@ -866,11 +875,12 @@ function QuestionsTab({
             </Button>
             <Button
               onClick={handleConfirmDeleteCaseQuestion}
+              disabled={isDeleting}
               style={{ backgroundColor: '#ef4444', color: '#fff' }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
             >
-              Remove
+              {isDeleting ? 'Removing…' : 'Remove'}
             </Button>
           </div>
         </DialogContent>
@@ -1107,7 +1117,11 @@ function QuestionsTab({
                     <Button
                       onClick={() => {
                         if (patientEditor.selectedPatientForEdit) {
-                          setDeleteConfirm({ open: true, questionId: question.id, questionTitle: question.title });
+                          if (question.group_question_id) {
+                            setDeleteConfirm({ open: true, groupQuestionId: question.group_question_id, questionTitle: question.title });
+                          } else {
+                            showNotification({ message: 'This question is missing its assignment ID and cannot be removed.', type: 'error' });
+                          }
                         }
                       }}
                       variant="outline"

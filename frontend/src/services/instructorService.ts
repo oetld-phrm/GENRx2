@@ -392,7 +392,7 @@ export interface InstructorDataService {
   getCaseSpecificQuestions: (patientId: string) => GlobalRubricQuestion[];
   addCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
   updateCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  deleteCaseSpecificQuestion: (patientId: string, questionId: string) => void;
+  deleteCaseSpecificQuestion: (patientId: string, groupQuestionId: string) => Promise<void>;
   getCaseMaterials: (patientId: string) => Promise<CaseMaterial[]>;
   addCaseMaterial: (patientId: string, material: CaseMaterial) => Promise<CaseMaterial>;
   updateCaseMaterial: (patientId: string, material: CaseMaterial) => Promise<CaseMaterial>;
@@ -1773,20 +1773,14 @@ function updateCaseSpecificQuestion(_patientId: string, question: GlobalRubricQu
  * FIX: Changed from async to sync (void) to match InstructorDataService interface.
  * Removed async getManageablePatients calls that used an empty string group ID.
  */
-function deleteCaseSpecificQuestion(patientId: string, questionId: string): void {
-  // Remove from local cache
+async function deleteCaseSpecificQuestion(patientId: string, groupQuestionId: string): Promise<void> {
+  await apiClient.request<any>(
+    `instructor/simulation_group_questions?group_question_id=${encodeURIComponent(groupQuestionId)}`,
+    { method: 'DELETE' }
+  );
   const questions = caseSpecificQuestions[patientId];
   if (questions) {
-    // Find the group_question_id from the cached question before removing
-    const question = questions.find(q => q.id === questionId);
-    if (question?.group_question_id) {
-      // Unassign via real API call
-      apiClient.request<any>(
-        `instructor/simulation_group_questions?group_question_id=${question.group_question_id}`,
-        { method: 'DELETE' }
-      ).catch((err) => console.error('Failed to delete case-specific question assignment:', err));
-    }
-    caseSpecificQuestions[patientId] = questions.filter(q => q.id !== questionId);
+    caseSpecificQuestions[patientId] = questions.filter(q => q.group_question_id !== groupQuestionId);
   }
 }
 
