@@ -391,7 +391,7 @@ export interface InstructorDataService {
   deleteGlobalRubricQuestion: (simulationGroupId: string, questionId: string) => void;
   getCaseSpecificQuestions: (patientId: string) => GlobalRubricQuestion[];
   addCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
-  updateCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
+  updateCaseSpecificQuestion: (patientId: string, question: GlobalRubricQuestion) => Promise<void>;
   deleteCaseSpecificQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
   getCaseMaterials: (patientId: string) => Promise<CaseMaterial[]>;
   addCaseMaterial: (patientId: string, material: CaseMaterial) => Promise<CaseMaterial>;
@@ -1750,9 +1750,8 @@ function addCaseSpecificQuestion(patientId: string, question: GlobalRubricQuesti
 /**
  * Update a case-specific question
  */
-function updateCaseSpecificQuestion(_patientId: string, question: GlobalRubricQuestion): void {
-  // Update the question in the question bank via API
-  apiClient.request<any>(
+async function updateCaseSpecificQuestion(_patientId: string, question: GlobalRubricQuestion): Promise<void> {
+  await apiClient.request<any>(
     `instructor/question_bank?question_id=${question.id}`,
     {
       method: 'PUT',
@@ -1764,7 +1763,7 @@ function updateCaseSpecificQuestion(_patientId: string, question: GlobalRubricQu
         is_mandatory: question.required,
       },
     }
-  ).catch((err) => console.error('Failed to update case-specific question:', err));
+  );
 }
 
 /**

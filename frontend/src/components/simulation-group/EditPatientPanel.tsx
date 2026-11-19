@@ -22,7 +22,7 @@ export interface EditPatientPanelProps {
   groupId: string;
   globalRubricQuestions: GlobalRubricQuestion[];
   onSavePatient: () => Promise<void>;
-  onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
+  onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => Promise<void>;
   onDeleteCaseQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
   // DTP/Rec patient-specific authoring
   onCreatePatientDTP?: (patientId: string, data: { title: string; expectedDTPText: string; clinicalIntent: string; evaluationCriteria: string; tags: string[]; isRequired: boolean }) => Promise<void>;
@@ -828,7 +828,7 @@ function QuestionsTab({
   globalRubricSearchQuery: string;
   onGlobalRubricSearchChange: (query: string) => void;
   filteredGlobalRubric: GlobalRubricQuestion[];
-  onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => void;
+  onSaveCaseQuestion: (patientId: string, question: GlobalRubricQuestion) => Promise<void>;
   onDeleteCaseQuestion: (simulationGroupId: string, patientId: string, questionId: string, groupQuestionId?: string) => Promise<void>;
   groupId: string;
 }) {
@@ -838,6 +838,20 @@ function QuestionsTab({
   });
 
   const [isDeleting, setIsDeleting] = useState(false);
+  const [savingQuestionId, setSavingQuestionId] = useState<string | null>(null);
+  const handleSaveCaseQuestion = async (question: GlobalRubricQuestion) => {
+    if (!patientEditor.selectedPatientForEdit || savingQuestionId) return;
+    setSavingQuestionId(question.id);
+    try {
+      await onSaveCaseQuestion(patientEditor.selectedPatientForEdit, question);
+      showNotification({ message: 'Key question saved.', type: 'success' });
+    } catch (error) {
+      console.error('Failed to save case-specific question:', error);
+      showNotification({ message: 'Failed to save key question. Please try again.', type: 'error' });
+    } finally {
+      setSavingQuestionId(null);
+    }
+  };
   const handleConfirmDeleteCaseQuestion = async () => {
     if (!patientEditor.selectedPatientForEdit || !deleteConfirm.questionId || isDeleting) return;
     setIsDeleting(true);
@@ -1102,11 +1116,8 @@ function QuestionsTab({
                   {/* Action Buttons */}
                   <div className="flex items-center gap-4 pt-4">
                     <Button
-                      onClick={() => {
-                        if (patientEditor.selectedPatientForEdit) {
-                          onSaveCaseQuestion(patientEditor.selectedPatientForEdit, question);
-                        }
-                      }}
+                      onClick={() => void handleSaveCaseQuestion(question)}
+                      disabled={savingQuestionId !== null}
                       className="px-8 py-3 text-base font-medium transition-colors"
                       style={{
                         backgroundColor: UI_COLORS.button.primary,
@@ -1115,7 +1126,7 @@ function QuestionsTab({
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primaryHover}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = UI_COLORS.button.primary}
                     >
-                      Save
+                      {savingQuestionId === question.id ? 'Saving…' : 'Save'}
                     </Button>
                     <Button
                       onClick={() => {
